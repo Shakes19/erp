@@ -1353,10 +1353,8 @@ def exibir_pdf(label, data_pdf):
         st.warning("PDF não disponível")
         return
     b64 = base64.b64encode(data_pdf).decode()
-    pdf_html = (
-        f"<iframe src='data:application/pdf;base64,{b64}' width='100%' "
-        "height='500' type='application/pdf'></iframe>"
-    )
+    pdf_html = f'<embed src="data:application/pdf;base64,{b64}" width="100%" height="500" type="application/pdf">'
+
     with st.expander(label):
         st.components.v1.html(pdf_html, height=500)
 
@@ -1529,6 +1527,11 @@ st.markdown("""
 # Menu lateral
 with st.sidebar:
     st.title("📋 Menu Principal")
+
+    if st.button("🚪 Sair"):
+        st.session_state.logged_in = False
+        st.session_state.role = None
+        st.rerun()
     opcoes_menu = ["🏠 Dashboard", "📝 Nova Cotação", "📩 Responder Cotações", "📊 Relatórios"]
     if st.session_state.get("role") in ["admin", "gestor"]:
         opcoes_menu.append("⚙️ Configurações")
@@ -1538,6 +1541,13 @@ with st.sidebar:
         label_visibility="collapsed"
     )
     
+    st.markdown("---")
+    
+    # Estatísticas rápidas
+    stats = obter_estatisticas_db()
+    st.metric("Cotações Pendentes", stats.get('rfq_pendentes', 0))
+    st.metric("Cotações Respondidas", stats.get('rfq_respondidas', 0))
+
     st.markdown("---")
 
     # Estatísticas rápidas
