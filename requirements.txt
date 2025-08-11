@@ -1,0 +1,5 @@
+# requirements.txt
+fpdf
+streamlit
+pandas
+numpy
