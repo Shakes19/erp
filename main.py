@@ -1546,7 +1546,7 @@ with st.sidebar:
         opcoes_menu,
         default_index=0,
         styles={
-            "container": {"padding": "0", "background-color": "#f0f2f6"},
+            "container": {"padding": "0", "background-color": "#0e1117"},
             "nav-link": {"font-size": "16px", "text-align": "left", "margin": "2px", "--hover-color": "#eee"},
             "nav-link-selected": {"background-color": "#d0f0c0"},
         },
@@ -2542,3 +2542,4 @@ st.markdown("""
         Sistema ERP KTB Portugal v4.0 | Desenvolvido por Ricardo Nogueira | © 2025
     </div>
 """, unsafe_allow_html=True)
+
