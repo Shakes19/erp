@@ -1352,7 +1352,9 @@ def exibir_pdf(label, data_pdf):
         st.warning("PDF não disponível")
         return
     b64 = base64.b64encode(data_pdf).decode()
-    pdf_html = f'<embed src="data:application/pdf;base64,{b64}" width="100%" height="500" type="application/pdf">'
+    pdf_html = f"""
+        <iframe src='data:application/pdf;base64,{b64}' width='100%' height='500' style='border:none;'></iframe>
+    """
 
     with st.expander(label):
         st.components.v1.html(pdf_html, height=500)
@@ -1466,6 +1468,18 @@ if 'logged_in' not in st.session_state:
 
 def login_screen():
     st.title("🔐 Login")
+    # Estilizar o formulário para ser mais compacto e centralizado
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stForm"] {
+            max-width: 300px;
+            margin: auto;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     with st.form("login_form"):
         username = st.text_input("Utilizador")
         password = st.text_input("Password", type="password")
@@ -1751,7 +1765,10 @@ elif menu_option == "📩 Responder Cotações":
         st.markdown(
             """
             <style>
-            [data-testid="stDialog"] {width: 80vw;}
+            [data-testid="stDialog"] {
+                width: 60vw;
+                max-width: 900px;
+            }
             </style>
             """,
             unsafe_allow_html=True,
