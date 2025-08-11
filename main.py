@@ -11,6 +11,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
+import streamlit.components.v1 as components
+
 
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
 DB_PATH = "cotacoes.db"
@@ -22,6 +24,13 @@ EMAIL_CONFIG = {
     'email_user': 'GRINYTUI@hotmail.com',
     'email_password': 'ricardo19985'
 }
+
+USERS = {
+    "admin": {"password": "admin", "role": "admin"},
+    "gestor": {"password": "gestor", "role": "gestor"},
+    "user": {"password": "user", "role": "user"},
+}
+
 
 st.set_page_config(
     page_title="ERP KTB Portugal",
@@ -1350,7 +1359,8 @@ def exibir_pdf(label, data_pdf):
     b64 = base64.b64encode(data_pdf).decode()
     pdf_html = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="500"></iframe>'
     with st.expander(label):
-        st.markdown(pdf_html, unsafe_allow_html=True)
+        components.html(pdf_html, height=500)
+
 
 def verificar_pdfs(rfq_id):
     """Verifica se os PDFs existem na base de dados"""
@@ -1466,14 +1476,11 @@ def login_screen():
     username = st.text_input("Utilizador")
     password = st.text_input("Password", type="password")
     if st.button("Entrar"):
-        user = obter_utilizador_por_username(username)
-        if user and user[2] == password:
+        user = USERS.get(username)
+        if user and user["password"] == password:
             st.session_state.logged_in = True
-            st.session_state.role = user[5]
-            st.session_state.username = user[1]
-            st.session_state.nome = user[3]
-            st.session_state.email = user[4]
-            st.rerun()
+            st.session_state.role = user["role"]
+            st.experimental_rerun()
         else:
             st.error("Credenciais inválidas")
 
@@ -1529,15 +1536,7 @@ with st.sidebar:
         opcoes_menu,
         label_visibility="collapsed"
     )
-
-    if st.button("🚪 Sair"):
-        st.session_state.logged_in = False
-        st.session_state.role = None
-        st.session_state.pop("username", None)
-        st.session_state.pop("nome", None)
-        st.session_state.pop("email", None)
-        st.rerun()
-
+    
     st.markdown("---")
     
     # Estatísticas rápidas
@@ -2220,14 +2219,8 @@ elif menu_option == "⚙️ Configurações":
         st.error("Sem permissão para aceder a esta área")
     else:
         st.title("⚙️ Configurações do Sistema")
+        tab1, tab2, tab3, tab4 = st.tabs(["Fornecedores", "Marcas e Margens", "Email", "Backup"])
 
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "Fornecedores",
-            "Utilizadores",
-            "Marcas e Margens",
-            "Email",
-            "Backup",
-        ])
 
         with tab1:
             st.subheader("Gestão de Fornecedores")
