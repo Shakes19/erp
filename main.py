@@ -172,6 +172,28 @@ def criar_base_dados_completa():
         )
         """)
 
+        # Tabela de utilizadores do sistema
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS utilizador (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            nome TEXT,
+            email TEXT,
+            role TEXT NOT NULL
+        )
+        """)
+
+        # Inserir utilizador administrador padrão se a tabela estiver vazia
+        c.execute("SELECT COUNT(*) FROM utilizador")
+        if c.fetchone()[0] == 0:
+            c.execute(
+                """
+                INSERT INTO utilizador (username, password, nome, email, role)
+                VALUES ('admin', 'admin', 'Administrador', 'admin@example.com', 'admin')
+                """
+            )
+
         # Criar índices para melhor performance
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_rfq_fornecedor ON rfq(fornecedor_id)",
@@ -182,7 +204,8 @@ def criar_base_dados_completa():
             "CREATE INDEX IF NOT EXISTS idx_resposta_fornecedor ON resposta_fornecedor(fornecedor_id, rfq_id)",
             "CREATE INDEX IF NOT EXISTS idx_resposta_artigo ON resposta_fornecedor(artigo_id)",
             "CREATE INDEX IF NOT EXISTS idx_fornecedor_nome ON fornecedor(nome)",
-            "CREATE INDEX IF NOT EXISTS idx_fornecedor_marca ON fornecedor_marca(fornecedor_id, marca)"
+            "CREATE INDEX IF NOT EXISTS idx_fornecedor_marca ON fornecedor_marca(fornecedor_id, marca)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_utilizador_username ON utilizador(username)"
         ]
         
         for indice in indices:
@@ -272,7 +295,9 @@ def listar_fornecedores():
     """Obter todos os fornecedores"""
     conn = obter_conexao()
     c = conn.cursor()
-    c.execute("SELECT id, nome, email, telefone FROM fornecedor ORDER BY nome")
+    c.execute(
+        "SELECT id, nome, email, telefone, morada, nif FROM fornecedor ORDER BY nome"
+    )
     fornecedores = c.fetchall()
     conn.close()
     return fornecedores
@@ -298,6 +323,38 @@ def inserir_fornecedor(nome, email="", telefone="", morada="", nif=""):
             return c.lastrowid
     finally:
         conn.close()
+
+
+def atualizar_fornecedor(fornecedor_id, nome, email="", telefone="", morada="", nif=""):
+    """Atualizar dados de um fornecedor existente"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    try:
+        c.execute(
+            """
+            UPDATE fornecedor
+            SET nome = ?, email = ?, telefone = ?, morada = ?, nif = ?
+            WHERE id = ?
+            """,
+            (nome, email, telefone, morada, nif, fornecedor_id),
+        )
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
+
+
+def eliminar_fornecedor_db(fornecedor_id):
+    """Eliminar fornecedor"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute("DELETE FROM fornecedor WHERE id = ?", (fornecedor_id,))
+    conn.commit()
+    removidos = c.rowcount
+    conn.close()
+    return removidos > 0
 
 def obter_marcas_fornecedor(fornecedor_id):
     """Obter marcas associadas a um fornecedor"""
@@ -333,13 +390,100 @@ def remover_marca_fornecedor(fornecedor_id, marca):
     conn = obter_conexao()
     c = conn.cursor()
     c.execute("""
-        DELETE FROM fornecedor_marca 
+        DELETE FROM fornecedor_marca
         WHERE fornecedor_id = ? AND marca = ?
     """, (fornecedor_id, marca))
     conn.commit()
     rows_affected = c.rowcount
     conn.close()
     return rows_affected > 0
+
+
+# ========================== FUNÇÕES DE GESTÃO DE UTILIZADORES ==========================
+
+def listar_utilizadores():
+    """Obter todos os utilizadores"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id, username, nome, email, role FROM utilizador ORDER BY username"
+    )
+    utilizadores = c.fetchall()
+    conn.close()
+    return utilizadores
+
+
+def obter_utilizador_por_username(username):
+    """Obter utilizador pelo username"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id, username, password, nome, email, role FROM utilizador WHERE username = ?",
+        (username,),
+    )
+    user = c.fetchone()
+    conn.close()
+    return user
+
+
+def inserir_utilizador(username, password, nome="", email="", role="user"):
+    """Inserir novo utilizador"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    try:
+        c.execute(
+            """
+            INSERT INTO utilizador (username, password, nome, email, role)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (username, password, nome, email, role),
+        )
+        conn.commit()
+        return c.lastrowid
+    except sqlite3.IntegrityError:
+        return None
+    finally:
+        conn.close()
+
+
+def atualizar_utilizador(user_id, username, nome, email, role, password=None):
+    """Atualizar dados de um utilizador"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    try:
+        if password:
+            c.execute(
+                """
+                UPDATE utilizador
+                SET username = ?, password = ?, nome = ?, email = ?, role = ?
+                WHERE id = ?
+                """,
+                (username, password, nome, email, role, user_id),
+            )
+        else:
+            c.execute(
+                """
+                UPDATE utilizador
+                SET username = ?, nome = ?, email = ?, role = ?
+                WHERE id = ?
+                """,
+                (username, nome, email, role, user_id),
+            )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def eliminar_utilizador(user_id):
+    """Eliminar utilizador"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute("DELETE FROM utilizador WHERE id = ?", (user_id,))
+    conn.commit()
+    removed = c.rowcount
+    conn.close()
+    return removed > 0
 
 # ========================== FUNÇÕES DE GESTÃO DE RFQs ==========================
 
@@ -1200,6 +1344,14 @@ def obter_pdf_da_db(rfq_id, tipo_pdf="pedido"):
     conn.close()
     return result[0] if result else None
 
+
+def exibir_pdf(label, data_pdf):
+    """Mostra PDF diretamente na página"""
+    b64 = base64.b64encode(data_pdf).decode()
+    pdf_html = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="500"></iframe>'
+    with st.expander(label):
+        st.markdown(pdf_html, unsafe_allow_html=True)
+
 def verificar_pdfs(rfq_id):
     """Verifica se os PDFs existem na base de dados"""
     conn = obter_conexao()
@@ -1304,6 +1456,32 @@ if 'artigos' not in st.session_state:
 if 'show_response_form' not in st.session_state:
     st.session_state.show_response_form = None
 
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.role = None
+
+
+def login_screen():
+    st.title("🔐 Login")
+    username = st.text_input("Utilizador")
+    password = st.text_input("Password", type="password")
+    if st.button("Entrar"):
+        user = obter_utilizador_por_username(username)
+        if user and user[2] == password:
+            st.session_state.logged_in = True
+            st.session_state.role = user[5]
+            st.session_state.username = user[1]
+            st.session_state.nome = user[3]
+            st.session_state.email = user[4]
+            st.rerun()
+        else:
+            st.error("Credenciais inválidas")
+
+
+if not st.session_state.logged_in:
+    login_screen()
+    st.stop()
+
 # CSS personalizado
 st.markdown("""
     <style>
@@ -1343,13 +1521,23 @@ st.markdown("""
 # Menu lateral
 with st.sidebar:
     st.title("📋 Menu Principal")
+    opcoes_menu = ["🏠 Dashboard", "📝 Nova Cotação", "📩 Responder Cotações", "📊 Relatórios"]
+    if st.session_state.get("role") in ["admin", "gestor"]:
+        opcoes_menu.append("⚙️ Configurações")
     menu_option = st.radio(
         "Navegação",
-        ["🏠 Dashboard", "📝 Nova Cotação", "📩 Responder Cotações", 
-         "📊 Relatórios", "⚙️ Configurações"],
+        opcoes_menu,
         label_visibility="collapsed"
     )
-    
+
+    if st.button("🚪 Sair"):
+        st.session_state.logged_in = False
+        st.session_state.role = None
+        st.session_state.pop("username", None)
+        st.session_state.pop("nome", None)
+        st.session_state.pop("email", None)
+        st.rerun()
+
     st.markdown("---")
     
     # Estatísticas rápidas
@@ -1423,9 +1611,11 @@ elif menu_option == "📝 Nova Cotação":
         col1, col2 = st.columns(2)
         
         with col1:
-            fornecedor_opcoes = [""] + [f[1] for f in fornecedores] + ["➕ Novo Fornecedor"]
+            fornecedor_opcoes = [""] + [f[1] for f in fornecedores]
+            if st.session_state.get("role") in ["admin", "gestor"]:
+                fornecedor_opcoes.append("➕ Novo Fornecedor")
             fornecedor_selecionado = st.selectbox("Fornecedor *", fornecedor_opcoes)
-            
+
             if fornecedor_selecionado == "➕ Novo Fornecedor":
                 nome_fornecedor = st.text_input("Nome do novo fornecedor *")
                 email_fornecedor = st.text_input("Email do fornecedor")
@@ -1567,11 +1757,14 @@ elif menu_option == "📝 Nova Cotação":
             st.error("A referência é obrigatória")
         else:
             # Obter ou criar fornecedor
-            if fornecedor_selecionado == "➕ Novo Fornecedor":
+            if (
+                fornecedor_selecionado == "➕ Novo Fornecedor"
+                and st.session_state.get("role") in ["admin", "gestor"]
+            ):
                 fornecedor_id = inserir_fornecedor(
                     nome_fornecedor,
                     email_fornecedor if 'email_fornecedor' in locals() else "",
-                    telefone_fornecedor if 'telefone_fornecedor' in locals() else ""
+                    telefone_fornecedor if 'telefone_fornecedor' in locals() else "",
                 )
             else:
                 fornecedor_id = next((f[0] for f in fornecedores if f[1] == nome_fornecedor), None)
@@ -1767,13 +1960,15 @@ elif menu_option == "📩 Responder Cotações":
                             if anexos:
                                 st.markdown("**Anexos:**")
                                 for tipo, nome, data_pdf in anexos:
+                                    rotulo = f"{tipo} - {nome if nome else 'ficheiro.pdf'}"
                                     st.download_button(
-                                        label=f"⬇️ {tipo} - {nome if nome else 'ficheiro.pdf'}",
+                                        label=f"⬇️ {rotulo}",
                                         data=data_pdf,
                                         file_name=nome if nome else f"{tipo}_{cotacao['id']}.pdf",
                                         mime="application/pdf",
                                         key=f"anexo_{cotacao['id']}_{tipo}"
                                     )
+                                    exibir_pdf(f"👁️ {rotulo}", data_pdf)
                             st.write(f"**Solicitante:** {cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else 'N/A'}")
                             st.write(f"**Email:** {cotacao['email_solicitante'] if cotacao['email_solicitante'] else 'N/A'}")
                             st.write(f"**Artigos:** {cotacao['num_artigos']}")
@@ -1789,6 +1984,7 @@ elif menu_option == "📩 Responder Cotações":
                                     mime="application/pdf",
                                     key=f"pdf_pend_{cotacao['id']}"
                                 )
+                                exibir_pdf("👁️ PDF", pdf_pedido)
                             
                             if st.button("💬 Responder", key=f"resp_{cotacao['id']}"):
                                 st.session_state.show_response_form = cotacao['id']
@@ -1851,13 +2047,15 @@ elif menu_option == "📩 Responder Cotações":
                         if anexos:
                             st.markdown("**Anexos:**")
                             for tipo, nome, data_pdf in anexos:
+                                rotulo = f"{tipo} - {nome if nome else 'ficheiro.pdf'}"
                                 st.download_button(
-                                    label=f"⬇️ {tipo} - {nome if nome else 'ficheiro.pdf'}",
+                                    label=f"⬇️ {rotulo}",
                                     data=data_pdf,
                                     file_name=nome if nome else f"{tipo}_{cotacao['id']}.pdf",
                                     mime="application/pdf",
                                     key=f"anexo_resp_{cotacao['id']}_{tipo}"
                                 )
+                                exibir_pdf(f"👁️ {rotulo}", data_pdf)
                         # PDF interno
                         pdf_interno = obter_pdf_da_db(cotacao['id'], "pedido")
                         if pdf_interno:
@@ -1868,7 +2066,8 @@ elif menu_option == "📩 Responder Cotações":
                                 mime="application/pdf",
                                 key=f"pdf_int_{cotacao['id']}"
                             )
-                        
+                            exibir_pdf("👁️ PDF Interno", pdf_interno)
+
                         # PDF cliente
                         pdf_cliente = obter_pdf_da_db(cotacao['id'], "cliente")
                         if pdf_cliente:
@@ -1879,6 +2078,7 @@ elif menu_option == "📩 Responder Cotações":
                                 mime="application/pdf",
                                 key=f"pdf_cli_{cotacao['id']}"
                             )
+                            exibir_pdf("👁️ PDF Cliente", pdf_cliente)
                         
                         # Reenviar email
                         if st.button("📧 Reenviar", key=f"reenviar_{cotacao['id']}"):
@@ -2016,47 +2216,149 @@ elif menu_option == "📊 Relatórios":
             st.info("Nenhum fornecedor registado")
 
 elif menu_option == "⚙️ Configurações":
-    st.title("⚙️ Configurações do Sistema")
-    
-    tab1, tab2, tab3, tab4 = st.tabs(["Fornecedores", "Marcas e Margens", "Email", "Backup"])
-    
-    with tab1:
-        st.subheader("Gestão de Fornecedores")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### Adicionar Fornecedor")
-            with st.form("novo_fornecedor_form"):
-                nome = st.text_input("Nome *")
-                email = st.text_input("Email")
-                telefone = st.text_input("Telefone")
-                morada = st.text_area("Morada")
-                nif = st.text_input("NIF")
-                
-                if st.form_submit_button("➕ Adicionar"):
-                    if nome:
-                        forn_id = inserir_fornecedor(nome, email, telefone, morada, nif)
-                        if forn_id:
-                            st.success(f"Fornecedor {nome} adicionado!")
-                            st.rerun()
-                    else:
-                        st.error("Nome é obrigatório")
-        
-        with col2:
-            st.markdown("### Fornecedores Registados")
-            fornecedores = listar_fornecedores()
-            
-            for forn in fornecedores:
-                with st.expander(forn[1]):
-                    st.write(f"**ID:** {forn[0]}")
-                    st.write(f"**Email:** {forn[2] if forn[2] else 'N/A'}")
-                    st.write(f"**Telefone:** {forn[3] if forn[3] else 'N/A'}")
-                    
+    if st.session_state.get("role") not in ["admin", "gestor"]:
+        st.error("Sem permissão para aceder a esta área")
+    else:
+        st.title("⚙️ Configurações do Sistema")
+
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "Fornecedores",
+            "Utilizadores",
+            "Marcas e Margens",
+            "Email",
+            "Backup",
+        ])
+
+        with tab1:
+            st.subheader("Gestão de Fornecedores")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("### Adicionar Fornecedor")
+                with st.form("novo_fornecedor_form"):
+                    nome = st.text_input("Nome *")
+                    email = st.text_input("Email")
+                    telefone = st.text_input("Telefone")
+                    morada = st.text_area("Morada")
+                    nif = st.text_input("NIF")
+
+                    if st.form_submit_button("➕ Adicionar"):
+                        if nome:
+                            forn_id = inserir_fornecedor(nome, email, telefone, morada, nif)
+                            if forn_id:
+                                st.success(f"Fornecedor {nome} adicionado!")
+                                st.rerun()
+                        else:
+                            st.error("Nome é obrigatório")
+
+            with col2:
+                st.markdown("### Fornecedores Registados")
+                fornecedores = listar_fornecedores()
+
+                for forn in fornecedores:
+                    with st.expander(forn[1]):
+                        with st.form(f"edit_forn_{forn[0]}"):
+                            nome_edit = st.text_input("Nome", forn[1])
+                            email_edit = st.text_input("Email", forn[2] or "")
+                            telefone_edit = st.text_input("Telefone", forn[3] or "")
+                            morada_edit = st.text_area("Morada", forn[4] or "")
+                            nif_edit = st.text_input("NIF", forn[5] or "")
+
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                if st.form_submit_button("💾 Guardar"):
+                                    if atualizar_fornecedor(
+                                        forn[0],
+                                        nome_edit,
+                                        email_edit,
+                                        telefone_edit,
+                                        morada_edit,
+                                        nif_edit,
+                                    ):
+                                        st.success("Fornecedor atualizado")
+                                        st.rerun()
+                                    else:
+                                        st.error("Erro ao atualizar fornecedor")
+                            with col_b:
+                                if st.form_submit_button("🗑️ Eliminar"):
+                                    if eliminar_fornecedor_db(forn[0]):
+                                        st.success("Fornecedor eliminado")
+                                        st.rerun()
+                                    else:
+                                        st.error("Erro ao eliminar fornecedor")
+
                     marcas = obter_marcas_fornecedor(forn[0])
                     st.write(f"**Marcas:** {', '.join(marcas) if marcas else 'Nenhuma'}")
     
     with tab2:
+        if st.session_state.get("role") != "admin":
+            st.warning("Apenas administradores podem gerir utilizadores.")
+        else:
+            st.subheader("Gestão de Utilizadores")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("### Adicionar Utilizador")
+                with st.form("novo_user_form"):
+                    username = st.text_input("Username *")
+                    nome = st.text_input("Nome")
+                    email_user = st.text_input("Email")
+                    role = st.selectbox("Role", ["admin", "gestor", "user"])
+                    password = st.text_input("Password *", type="password")
+
+                    if st.form_submit_button("➕ Adicionar"):
+                        if username and password:
+                            if inserir_utilizador(username, password, nome, email_user, role):
+                                st.success(f"Utilizador {username} adicionado!")
+                                st.rerun()
+                            else:
+                                st.error("Erro ao adicionar utilizador")
+                        else:
+                            st.error("Username e password são obrigatórios")
+
+            with col2:
+                st.markdown("### Utilizadores Registados")
+                utilizadores = listar_utilizadores()
+
+                for user in utilizadores:
+                    with st.expander(user[1]):
+                        with st.form(f"edit_user_{user[0]}"):
+                            username_edit = st.text_input("Username", user[1])
+                            nome_edit = st.text_input("Nome", user[2] or "")
+                            email_edit = st.text_input("Email", user[3] or "")
+                            role_edit = st.selectbox(
+                                "Role",
+                                ["admin", "gestor", "user"],
+                                index=["admin", "gestor", "user"].index(user[4]),
+                            )
+                            password_edit = st.text_input("Password", type="password")
+
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                if st.form_submit_button("💾 Guardar"):
+                                    if atualizar_utilizador(
+                                        user[0],
+                                        username_edit,
+                                        nome_edit,
+                                        email_edit,
+                                        role_edit,
+                                        password_edit or None,
+                                    ):
+                                        st.success("Utilizador atualizado")
+                                        st.rerun()
+                                    else:
+                                        st.error("Erro ao atualizar utilizador")
+                            with col_b:
+                                if st.form_submit_button("🗑️ Eliminar"):
+                                    if eliminar_utilizador(user[0]):
+                                        st.success("Utilizador eliminado")
+                                        st.rerun()
+                                    else:
+                                        st.error("Erro ao eliminar utilizador")
+
+    with tab3:
         st.subheader("Configuração de Marcas e Margens")
         
         fornecedores = listar_fornecedores()
@@ -2154,7 +2456,7 @@ elif menu_option == "⚙️ Configurações":
             st.success("Margem padrão atualizada!")
             st.rerun()
     
-    with tab3:
+    with tab4:
         st.subheader("Configuração de Email")
         
         # Obter configuração atual
@@ -2203,7 +2505,7 @@ elif menu_option == "⚙️ Configurações":
         
         st.info("Nota: Para Gmail, use uma 'App Password' em vez da password normal")
     
-    with tab4:
+    with tab5:
         st.subheader("Backup e Restauro")
         
         if st.button("💾 Criar Backup"):
