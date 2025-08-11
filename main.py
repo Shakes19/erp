@@ -1546,7 +1546,7 @@ with st.sidebar:
         opcoes_menu,
         default_index=0,
         styles={
-            "container": {"padding": "0", "background-color": "transparent"},
+            "container": {"padding": "0", "background-color": "#f0f2f6"},
             "nav-link": {"font-size": "16px", "text-align": "left", "margin": "2px", "--hover-color": "#eee"},
             "nav-link-selected": {"background-color": "#d0f0c0"},
         },
