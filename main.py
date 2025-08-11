@@ -401,6 +401,34 @@ def remover_marca_fornecedor(fornecedor_id, marca):
     return rows_affected > 0
 
 
+def listar_todas_marcas():
+    """Obter todas as marcas disponíveis"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute("SELECT DISTINCT marca FROM fornecedor_marca ORDER BY marca")
+    marcas = [row[0] for row in c.fetchall()]
+    conn.close()
+    return marcas
+
+
+def obter_fornecedor_por_marca(marca):
+    """Retorna fornecedor (id, nome, email) associado à marca"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT f.id, f.nome, f.email
+        FROM fornecedor f
+        JOIN fornecedor_marca fm ON f.id = fm.fornecedor_id
+        WHERE fm.marca = ?
+        """,
+        (marca,),
+    )
+    res = c.fetchone()
+    conn.close()
+    return res
+
+
 # ========================== FUNÇÕES DE GESTÃO DE UTILIZADORES ==========================
 
 def listar_utilizadores():
@@ -823,35 +851,6 @@ def configurar_margem_marca(fornecedor_id, marca, margem_percentual):
         return False
 
 # ========================== FUNÇÕES DE EMAIL ==========================
-
-def testar_conexao_smtp():
-    """Teste independente de conexão SMTP"""
-    try:
-        conn = obter_conexao()
-        c = conn.cursor()
-        c.execute("SELECT * FROM configuracao_email WHERE ativo = TRUE LIMIT 1")
-        config = c.fetchone()
-        conn.close()
-
-        if not config:
-            st.warning("Nenhuma configuração ativa encontrada")
-            return False
-
-        smtp_server, smtp_port, email_user, email_password = config[1:5]
-        
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.starttls()
-            server.login(email_user, email_password)
-            st.success("✅ Conexão SMTP bem-sucedida!")
-            return True
-            
-    except Exception as e:
-        st.error(f"❌ Falha na conexão SMTP: {str(e)}")
-        return False
-
-# Adicione no menu de Configurações > Email
-if st.button("🔌 Testar Conexão SMTP"):
-    testar_conexao_smtp()
 
 def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
     """Enviar email com o orçamento ao cliente"""
@@ -1603,25 +1602,18 @@ if menu_option == "🏠 Dashboard":
 elif menu_option == "📝 Nova Cotação":
     st.title("📝 Criar Nova Cotação")
 
-    fornecedores = listar_fornecedores()
+    marcas = listar_todas_marcas()
 
     col1, col2 = st.columns(2)
     with col1:
-        fornecedor_opcoes = [""] + [f[1] for f in fornecedores]
-        if st.session_state.get("role") in ["admin", "gestor"]:
-            fornecedor_opcoes.append("➕ Novo Fornecedor")
-        fornecedor_selecionado = st.selectbox("Fornecedor *", fornecedor_opcoes, key="fornecedor_select")
-        if fornecedor_selecionado == "➕ Novo Fornecedor":
-            nome_fornecedor = st.text_input("Nome do novo fornecedor *")
-            email_fornecedor = st.text_input("Email do fornecedor")
-            telefone_fornecedor = st.text_input("Telefone")
-            fornecedor_id_selecionado = None
-        else:
-            nome_fornecedor = fornecedor_selecionado
-            if fornecedor_selecionado:
-                fornecedor_id_selecionado = next((f[0] for f in fornecedores if f[1] == fornecedor_selecionado), None)
-            else:
-                fornecedor_id_selecionado = None
+        marca_opcoes = [""] + marcas
+        marca_selecionada = st.selectbox("Marca *", marca_opcoes, key="marca_select")
+        fornecedor_id_selecionado = None
+        nome_fornecedor = ""
+        if marca_selecionada:
+            fornecedor_info = obter_fornecedor_por_marca(marca_selecionada)
+            if fornecedor_info:
+                fornecedor_id_selecionado, nome_fornecedor, _ = fornecedor_info
     with col2:
         data = st.date_input("Data da cotação", datetime.today())
 
@@ -1634,14 +1626,17 @@ elif menu_option == "📝 Nova Cotação":
         with col3:
             email_solicitante = st.text_input("Email do solicitante")
 
-        observacoes = st.text_area("Observações", height=100)
-        upload_pedido_cliente = st.file_uploader("📎 Pedido do cliente (PDF)", type=['pdf'], key='upload_pedido_cliente')
+        col_obs, col_pdf = st.columns(2)
+        with col_obs:
+            observacoes = st.text_area("Observações", height=100)
+        with col_pdf:
+            upload_pedido_cliente = st.file_uploader(
+                "📎 Pedido do cliente (PDF)",
+                type=['pdf'],
+                key='upload_pedido_cliente'
+            )
 
         st.markdown("### 📦 Artigos")
-
-        marcas_disponiveis = []
-        if fornecedor_id_selecionado:
-            marcas_disponiveis = obter_marcas_fornecedor(fornecedor_id_selecionado)
 
         for i, artigo in enumerate(st.session_state.artigos, 1):
             with st.expander(f"Artigo {i}", expanded=(i == 1)):
@@ -1649,23 +1644,8 @@ elif menu_option == "📝 Nova Cotação":
 
                 with col1:
                     artigo['artigo_num'] = st.text_input("Nº Artigo", value=artigo['artigo_num'], key=f"art_num_{i}")
-
-                    if fornecedor_id_selecionado:
-                        if marcas_disponiveis:
-                            current_marca = artigo.get('marca', '')
-                            if current_marca not in [""] + marcas_disponiveis:
-                                current_marca = ""
-                            if current_marca in marcas_disponiveis:
-                                marca_index = marcas_disponiveis.index(current_marca) + 1
-                            else:
-                                marca_index = 0
-                            artigo['marca'] = st.selectbox("Marca", [""] + marcas_disponiveis, index=marca_index, key=f"marca_{i}")
-                        else:
-                            st.info("Sem marcas")
-                            artigo['marca'] = ""
-                    else:
-                        st.info("Selecione fornecedor")
-                        artigo['marca'] = ""
+                    st.text_input("Marca", value=marca_selecionada or "", key=f"marca_{i}", disabled=True)
+                    artigo['marca'] = marca_selecionada or ""
 
                 with col2:
                     artigo['descricao'] = st.text_area("Descrição *", value=artigo['descricao'], key=f"desc_{i}", height=100)
@@ -1714,41 +1694,32 @@ elif menu_option == "📝 Nova Cotação":
     
     if criar_cotacao:
         # Validar campos obrigatórios
-        if not nome_fornecedor:
-            st.error("Por favor, selecione um fornecedor")
+        if not marca_selecionada or not fornecedor_id_selecionado:
+            st.error("Por favor, selecione uma marca válida")
         elif not referencia:
             st.error("A referência é obrigatória")
         else:
-            # Obter ou criar fornecedor
-            if (
-                fornecedor_selecionado == "➕ Novo Fornecedor"
-                and st.session_state.get("role") in ["admin", "gestor"]
-            ):
-                fornecedor_id = inserir_fornecedor(
-                    nome_fornecedor,
-                    email_fornecedor if 'email_fornecedor' in locals() else "",
-                    telefone_fornecedor if 'telefone_fornecedor' in locals() else "",
-                )
-            else:
-                fornecedor_id = next((f[0] for f in fornecedores if f[1] == nome_fornecedor), None)
-            
-            # Criar RFQ
+            fornecedor_id = fornecedor_id_selecionado
             artigos_validos = [a for a in st.session_state.artigos if a['descricao'].strip()]
-            
+
             if artigos_validos and fornecedor_id:
                 rfq_id = criar_rfq(
                     fornecedor_id, data, artigos_validos,
                     referencia, nome_solicitante,
                     email_solicitante, observacoes
                 )
-                
+
                 if rfq_id:
                     st.success(f"✅ Cotação #{rfq_id} criada com sucesso!")
                     # Guardar PDF do cliente (upload) se existir
                     if upload_pedido_cliente is not None:
-                        guardar_pdf_upload(rfq_id, 'anexo_cliente', upload_pedido_cliente.name, upload_pedido_cliente.getvalue())
+                        guardar_pdf_upload(
+                            rfq_id, 'anexo_cliente',
+                            upload_pedido_cliente.name,
+                            upload_pedido_cliente.getvalue()
+                        )
                         st.success("Anexo do cliente guardado!")
-                    
+
                     # Download do PDF
                     pdf_bytes = obter_pdf_da_db(rfq_id, "pedido")
                     if pdf_bytes:
@@ -1756,16 +1727,16 @@ elif menu_option == "📝 Nova Cotação":
                             "📄 Download PDF",
                             data=pdf_bytes,
                             file_name=f"cotacao_{rfq_id}.pdf",
-                            mime="application/pdf"
+                            mime="application/pdf",
                         )
-                    
+
                     # Limpar formulário
                     st.session_state.artigos = [{
                         "artigo_num": "",
                         "descricao": "",
                         "quantidade": 1,
                         "unidade": "Peças",
-                        "marca": ""
+                        "marca": "",
                     }]
                 else:
                     st.error("Erro ao criar cotação. Verifique se a referência já não existe.")
@@ -1777,6 +1748,14 @@ elif menu_option == "📩 Responder Cotações":
 
     @st.dialog("Responder Cotação")
     def responder_cotacao_dialog(cotacao):
+        st.markdown(
+            """
+            <style>
+            [data-testid="stDialog"] {width: 80vw;}
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         detalhes = obter_detalhes_cotacao(cotacao['id'])
         st.info(f"**Respondendo Cotação #{cotacao['id']}**")
 
