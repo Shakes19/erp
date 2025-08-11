@@ -11,7 +11,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-import streamlit.components.v1 as components
 
 
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
@@ -1356,10 +1355,13 @@ def obter_pdf_da_db(rfq_id, tipo_pdf="pedido"):
 
 def exibir_pdf(label, data_pdf):
     """Mostra PDF diretamente na página"""
+    if not data_pdf:
+        st.warning("PDF não disponível")
+        return
     b64 = base64.b64encode(data_pdf).decode()
     pdf_html = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="500"></iframe>'
     with st.expander(label):
-        components.html(pdf_html, height=500)
+        st.markdown(pdf_html, unsafe_allow_html=True)
 
 
 def verificar_pdfs(rfq_id):
@@ -1473,9 +1475,11 @@ if 'logged_in' not in st.session_state:
 
 def login_screen():
     st.title("🔐 Login")
-    username = st.text_input("Utilizador")
-    password = st.text_input("Password", type="password")
-    if st.button("Entrar"):
+    with st.form("login_form"):
+        username = st.text_input("Utilizador")
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Entrar")
+    if submitted:
         user = USERS.get(username)
         if user and user["password"] == password:
             st.session_state.logged_in = True
@@ -2219,7 +2223,13 @@ elif menu_option == "⚙️ Configurações":
         st.error("Sem permissão para aceder a esta área")
     else:
         st.title("⚙️ Configurações do Sistema")
-        tab1, tab2, tab3, tab4 = st.tabs(["Fornecedores", "Marcas e Margens", "Email", "Backup"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "Fornecedores",
+            "Utilizadores",
+            "Marcas e Margens",
+            "Email",
+            "Backup",
+        ])
 
 
         with tab1:
