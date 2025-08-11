@@ -1542,13 +1542,6 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    
-    # Estatísticas rápidas
-    stats = obter_estatisticas_db()
-    st.metric("Cotações Pendentes", stats.get('rfq_pendentes', 0))
-    st.metric("Cotações Respondidas", stats.get('rfq_respondidas', 0))
-
-    st.markdown("---")
 
     # Estatísticas rápidas
     stats = obter_estatisticas_db()
@@ -1556,10 +1549,6 @@ with st.sidebar:
     st.metric("Cotações Respondidas", stats.get('rfq_respondidas', 0))
 
     st.markdown("---")
-    if st.button("🚪 Sair", key="footer_logout"):
-        st.session_state.logged_in = False
-        st.session_state.role = None
-        st.rerun()
     st.markdown("""
         <div style="text-align: center; font-size: 12px;">
             <p>Sistema ERP v4.0</p>
