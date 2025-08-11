@@ -17,10 +17,10 @@ DB_PATH = "cotacoes.db"
 
 # Configurações de Email (devem ser configuradas com valores reais)
 EMAIL_CONFIG = {
-    'smtp_server': 'smtp.gmail.com',
+    'smtp_server': 'smtp-mail.outlook.com',
     'smtp_port': 587,
-    'email_user': 'seu_email@gmail.com',
-    'email_password': 'sua_senha_app'
+    'email_user': 'GRINYTUI@hotmail.com',
+    'email_password': 'ricardo19985'
 }
 
 st.set_page_config(
@@ -507,12 +507,22 @@ def eliminar_cotacao(rfq_id):
 
 # ========================== FUNÇÕES DE GESTÃO DE RESPOSTAS ==========================
 
-def guardar_respostas(rfq_id, fornecedor_id, respostas):
+def guardar_respostas(rfq_id, respostas):
     """Guardar respostas do fornecedor e enviar email"""
     conn = obter_conexao()
     c = conn.cursor()
     
     try:
+        # Obter fornecedor_id diretamente da RFQ [CORREÇÃO]
+        c.execute("SELECT fornecedor_id FROM rfq WHERE id = ?", (rfq_id,))
+        resultado = c.fetchone()
+        
+        if not resultado:
+            st.error("RFQ não encontrada!")
+            return False
+            
+        fornecedor_id = resultado[0]  # Obtém o ID do fornecedor da RFQ
+
         # Obter margem para cada artigo baseada na marca
         for item in respostas:
             artigo_id, custo, prazo, peso, hs_code, pais_origem, descricao_editada, quantidade_final = item
@@ -666,13 +676,45 @@ def configurar_margem_marca(fornecedor_id, marca, margem_percentual):
 
 # ========================== FUNÇÕES DE EMAIL ==========================
 
+def testar_conexao_smtp():
+    """Teste independente de conexão SMTP"""
+    try:
+        conn = obter_conexao()
+        c = conn.cursor()
+        c.execute("SELECT * FROM configuracao_email WHERE ativo = TRUE LIMIT 1")
+        config = c.fetchone()
+        conn.close()
+
+        if not config:
+            st.warning("Nenhuma configuração ativa encontrada")
+            return False
+
+        smtp_server, smtp_port, email_user, email_password = config[1:5]
+        
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(email_user, email_password)
+            st.success("✅ Conexão SMTP bem-sucedida!")
+            return True
+            
+    except Exception as e:
+        st.error(f"❌ Falha na conexão SMTP: {str(e)}")
+        return False
+
+# Adicione no menu de Configurações > Email
+if st.button("🔌 Testar Conexão SMTP"):
+    testar_conexao_smtp()
+
 def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
     """Enviar email com o orçamento ao cliente"""
     try:
+        print(f"⏳ Preparando para enviar email para {email_destino}...")
+
         # Obter PDF do cliente
         pdf_bytes = obter_pdf_da_db(rfq_id, "cliente")
         if not pdf_bytes:
-            print("PDF do cliente não encontrado")
+            print("❌ PDF do cliente não encontrado")
+            st.error("PDF não encontrado para anexar ao e-mail")
             return False
         
         # Obter configurações de email
@@ -688,13 +730,16 @@ def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
         conn.close()
         
         if not config:
-            # Usar configurações padrão se não houver na BD
-            smtp_server = EMAIL_CONFIG['smtp_server']
-            smtp_port = EMAIL_CONFIG['smtp_port']
-            email_user = EMAIL_CONFIG['email_user']
-            email_password = EMAIL_CONFIG['email_password']
-        else:
-            smtp_server, smtp_port, email_user, email_password = config
+            print("⚠️ Usando configurações padrão de email")
+            config = (
+                EMAIL_CONFIG['smtp_server'],
+                EMAIL_CONFIG['smtp_port'],
+                EMAIL_CONFIG['email_user'],
+                EMAIL_CONFIG['email_password']
+            )
+
+        smtp_server, smtp_port, email_user, email_password = config
+        print(f"🔧 Configurações SMTP: {smtp_server}:{smtp_port}")
         
         # Criar mensagem
         msg = MIMEMultipart()
@@ -727,17 +772,17 @@ def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
         msg.attach(part)
         
         # Enviar email
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.starttls()
-        server.login(email_user, email_password)
-        server.send_message(msg)
-        server.quit()
-        
-        print(f"Email enviado com sucesso para {email_destino}")
-        return True
-        
+        print(f"🚀 Tentando enviar email para {email_destino}...")
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(email_user, email_password)
+            server.send_message(msg)
+            print("✅ Email enviado com sucesso!")
+            return True
+
     except Exception as e:
-        print(f"Erro ao enviar email: {str(e)}")
+        print(f"❌ Erro ao enviar email: {str(e)}")
+        st.error(f"Falha no envio: {str(e)}")
         return False
 
 # ========================== CLASSES PDF ==========================
@@ -1005,84 +1050,74 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor, data, artigos, referencia=""):
         return None
 
 def gerar_pdf_cliente(rfq_id):
-    """Gerar PDF para cliente com todos os detalhes solicitados"""
+    """Gerar PDF para cliente com tratamento de erros"""
     try:
         conn = obter_conexao()
         c = conn.cursor()
         
-        # Obter informações da RFQ
-        c.execute("""
-            SELECT rfq.*, fornecedor.nome
-            FROM rfq
-            JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id
-            WHERE rfq.id = ?
-        """, (rfq_id,))
+        # 1. Obter dados da RFQ
+        c.execute("""SELECT rfq.*, fornecedor.nome 
+                   FROM rfq JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id 
+                   WHERE rfq.id = ?""", (rfq_id,))
         rfq_data = c.fetchone()
         
         if not rfq_data:
-            conn.close()
+            st.error("RFQ não encontrada")
             return False
+
+        # 2. Obter respostas
+        c.execute("""SELECT a.artigo_num, rf.descricao, rf.quantidade_final, 
+                    a.unidade, rf.preco_venda, rf.prazo_entrega,
+                    rf.peso, rf.hs_code, rf.pais_origem
+                 FROM resposta_fornecedor rf
+                 JOIN artigo a ON rf.artigo_id = a.id
+                 WHERE rf.rfq_id = ?""", (rfq_id,))
         
-        # Preparar informações
-        rfq_info = {
-            'data': rfq_data[2],
-            'referencia': rfq_data[4],
-            'fornecedor': rfq_data[12]
-        }
-        
-        solicitante_info = {
-            'nome': rfq_data[6] if rfq_data[6] else '',
-            'email': rfq_data[7] if rfq_data[7] else ''
-        }
-        
-        # Obter respostas com todos os detalhes
-        c.execute("""
-            SELECT a.artigo_num, rf.descricao, rf.quantidade_final, 
-                   a.unidade, rf.preco_venda, rf.prazo_entrega,
-                   rf.peso, rf.hs_code, rf.pais_origem
-            FROM resposta_fornecedor rf
-            JOIN artigo a ON rf.artigo_id = a.id
-            WHERE rf.rfq_id = ?
-            ORDER BY a.ordem
-        """, (rfq_id,))
-        
-        itens_resposta = []
-        
-        for row in c.fetchall():
-            itens_resposta.append({
-                'artigo_num': row[0] if row[0] else '',
-                'descricao': row[1],
-                'quantidade_final': row[2],
-                'unidade': row[3],
-                'preco_venda': row[4],
-                'prazo_entrega': row[5],
-                'peso': row[6] if row[6] else 0,
-                'hs_code': row[7] if row[7] else '',
-                'pais_origem': row[8] if row[8] else ''
-            })
-        
+        itens_resposta = [{
+            'artigo_num': row[0] or '',
+            'descricao': row[1],
+            'quantidade_final': row[2],
+            'unidade': row[3],
+            'preco_venda': row[4],
+            'prazo_entrega': row[5],
+            'peso': row[6] or 0,
+            'hs_code': row[7] or '',
+            'pais_origem': row[8] or ''
+        } for row in c.fetchall()]
+
         if not itens_resposta:
-            conn.close()
+            st.error("Nenhuma resposta encontrada para esta RFQ")
             return False
-        
-        # Gerar PDF com todos os detalhes
+
+        # 3. Gerar PDF
         pdf_cliente = ClientQuotationPDF()
-        pdf_cliente_bytes = pdf_cliente.gerar(rfq_info, solicitante_info, itens_resposta)
-        
-        # Armazenar PDF
-        c.execute("""
-            INSERT OR REPLACE INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes)
-            VALUES (?, ?, ?, ?)
-        """, (str(rfq_id), "cliente", pdf_cliente_bytes, len(pdf_cliente_bytes)))
+        pdf_bytes = pdf_cliente.gerar(
+            rfq_info={
+                'data': rfq_data[2],
+                'referencia': rfq_data[4],
+                'fornecedor': rfq_data[12]
+            },
+            solicitante_info={
+                'nome': rfq_data[6] or '',
+                'email': rfq_data[7] or ''
+            },
+            itens_resposta=itens_resposta
+        )
+
+        # 4. Armazenar PDF
+        c.execute("""INSERT OR REPLACE INTO pdf_storage 
+                  (rfq_id, tipo_pdf, pdf_data, tamanho_bytes)
+                  VALUES (?, ?, ?, ?)""",
+                  (str(rfq_id), "cliente", pdf_bytes, len(pdf_bytes)))
         
         conn.commit()
-        conn.close()
-        
         return True
-        
+
     except Exception as e:
-        st.error(f"Erro ao gerar PDF de cliente: {str(e)}")
+        st.error(f"Erro ao gerar PDF: {str(e)}")
         return False
+    finally:
+        conn.close()
 
 def obter_pdf_da_db(rfq_id, tipo_pdf="pedido"):
     """Obter PDF da base de dados"""
@@ -1095,6 +1130,26 @@ def obter_pdf_da_db(rfq_id, tipo_pdf="pedido"):
     result = c.fetchone()
     conn.close()
     return result[0] if result else None
+
+def verificar_pdfs(rfq_id):
+    """Verifica se os PDFs existem na base de dados"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    
+    # Verificar PDF do pedido
+    c.execute("SELECT COUNT(*) FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf = 'pedido'", (str(rfq_id),))
+    pedido_existe = c.fetchone()[0] > 0
+    
+    # Verificar PDF do cliente
+    c.execute("SELECT COUNT(*) FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf = 'cliente'", (str(rfq_id),))
+    cliente_existe = c.fetchone()[0] > 0
+    
+    conn.close()
+    
+    return {
+        'pedido': pedido_existe,
+        'cliente': cliente_existe
+    }
 
 # ========================== FUNÇÕES DE UTILIDADE ==========================
 
@@ -1606,7 +1661,7 @@ elif menu_option == "📩 Responder Cotações":
                             respostas_validas = [r for r in respostas if r[1] > 0]
                             
                             if respostas_validas:
-                                if guardar_respostas(cotacao['id'], detalhes['fornecedor_id'], respostas_validas):
+                                if guardar_respostas(cotacao['id'], respostas_validas):
                                     st.success("✅ Resposta guardada e email enviado com sucesso!")
                                     st.session_state.show_response_form = None
                                     st.rerun()
@@ -1716,17 +1771,38 @@ elif menu_option == "📩 Responder Cotações":
                         # Reenviar email
                         if st.button("📧 Reenviar", key=f"reenviar_{cotacao['id']}"):
                             if cotacao['email_solicitante']:
-                                if enviar_email_orcamento(
-                                    cotacao['email_solicitante'],
-                                    cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else "Cliente",
-                                    cotacao['referencia'],
-                                    cotacao['id']
-                                ):
-                                    st.success("Email reenviado!")
+                                # Verificar se o PDF existe antes de tentar enviar
+                                pdf_status = verificar_pdfs(cotacao['id'])
+                                
+                                if not pdf_status['cliente']:
+                                    st.warning("PDF do cliente não encontrado. Gerando novo PDF...")
+                                    if gerar_pdf_cliente(cotacao['id']):  # Tenta gerar novamente
+                                        st.success("PDF gerado com sucesso!")
+                                        # Após gerar com sucesso, tenta enviar
+                                        if enviar_email_orcamento(
+                                            cotacao['email_solicitante'],
+                                            cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else "Cliente",
+                                            cotacao['referencia'],
+                                            cotacao['id']
+                                        ):
+                                            st.success("✅ E-mail reenviado com sucesso!")
+                                        else:
+                                            st.error("Falha no reenvio")
+                                    else:
+                                        st.error("Falha ao gerar PDF. Não foi possível enviar o e-mail.")
                                 else:
-                                    st.error("Erro ao enviar email")
+                                    # PDF já existe, tenta enviar diretamente
+                                    if enviar_email_orcamento(
+                                        cotacao['email_solicitante'],
+                                        cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else "Cliente",
+                                        cotacao['referencia'],
+                                        cotacao['id']
+                                    ):
+                                        st.success("✅ E-mail reenviado com sucesso!")
+                                    else:
+                                        st.error("Falha no reenvio")
                             else:
-                                st.warning("Sem email do solicitante")
+                                st.warning("Nenhum e-mail do solicitante registrado")
                         
                         if st.button("🗑️ Eliminar", key=f"del_resp_{cotacao['id']}"):
                             if eliminar_cotacao(cotacao['id']):
@@ -1972,7 +2048,7 @@ elif menu_option == "⚙️ Configurações":
         # Obter configuração atual
         conn = obter_conexao()
         c = conn.cursor()
-        c.execute("SELECT * FROM configuracao_email WHERE ativo = TRUE LIMIT 1")
+        c.execute("SELECT * FROM configuracao_email WHERE ativo = TRUE")
         config_atual = c.fetchone()
         conn.close()
         
