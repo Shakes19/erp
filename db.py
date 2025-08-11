@@ -193,18 +193,42 @@ def criar_base_dados():
         # Tabela para armazenamento de PDFs
         c.execute("""
         CREATE TABLE IF NOT EXISTS pdf_storage (
-            rfq_id INTEGER PRIMARY KEY,
+            rfq_id INTEGER,
+            tipo_pdf TEXT NOT NULL,
             pdf_data BLOB NOT NULL,
             data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
             tamanho_bytes INTEGER,
+            PRIMARY KEY (rfq_id, tipo_pdf),
             FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
         )
         """)
 
-        # Verificar e adicionar colunas se não existirem na tabela pdf_storage
+        # Verificar e migrar estrutura se necessário
         c.execute("PRAGMA table_info(pdf_storage)")
         columns = [column[1] for column in c.fetchall()]
-        
+
+        if 'tipo_pdf' not in columns:
+            # Criar nova tabela com a estrutura correta
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS pdf_storage_new (
+                    rfq_id INTEGER,
+                    tipo_pdf TEXT NOT NULL,
+                    pdf_data BLOB NOT NULL,
+                    data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
+                    tamanho_bytes INTEGER,
+                    PRIMARY KEY (rfq_id, tipo_pdf),
+                    FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
+                )
+            """)
+            c.execute("""
+                INSERT INTO pdf_storage_new (rfq_id, tipo_pdf, pdf_data, data_criacao, tamanho_bytes)
+                SELECT rfq_id, 'pedido', pdf_data, data_criacao, tamanho_bytes FROM pdf_storage
+            """)
+            c.execute("DROP TABLE pdf_storage")
+            c.execute("ALTER TABLE pdf_storage_new RENAME TO pdf_storage")
+            c.execute("PRAGMA table_info(pdf_storage)")
+            columns = [column[1] for column in c.fetchall()]
+
         if 'data_criacao' not in columns:
             c.execute("ALTER TABLE pdf_storage ADD COLUMN data_criacao TEXT DEFAULT CURRENT_TIMESTAMP")
         if 'tamanho_bytes' not in columns:
