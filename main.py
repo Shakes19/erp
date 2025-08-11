@@ -24,12 +24,6 @@ EMAIL_CONFIG = {
     'email_password': 'ricardo19985'
 }
 
-USERS = {
-    "admin": {"password": "admin", "role": "admin"},
-    "gestor": {"password": "gestor", "role": "gestor"},
-    "user": {"password": "user", "role": "user"},
-}
-
 
 st.set_page_config(
     page_title="ERP KTB Portugal",
@@ -1359,9 +1353,12 @@ def exibir_pdf(label, data_pdf):
         st.warning("PDF não disponível")
         return
     b64 = base64.b64encode(data_pdf).decode()
-    pdf_html = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="500"></iframe>'
+    pdf_html = (
+        f"<iframe src='data:application/pdf;base64,{b64}' width='100%' "
+        "height='500' type='application/pdf'></iframe>"
+    )
     with st.expander(label):
-        st.markdown(pdf_html, unsafe_allow_html=True)
+        st.components.v1.html(pdf_html, height=500)
 
 
 def verificar_pdfs(rfq_id):
@@ -1480,11 +1477,11 @@ def login_screen():
         password = st.text_input("Password", type="password")
         submitted = st.form_submit_button("Entrar")
     if submitted:
-        user = USERS.get(username)
-        if user and user["password"] == password:
+        user = obter_utilizador_por_username(username)
+        if user and user[2] == password:
             st.session_state.logged_in = True
-            st.session_state.role = user["role"]
-            st.experimental_rerun()
+            st.session_state.role = user[5]
+            st.rerun()
         else:
             st.error("Credenciais inválidas")
 
@@ -1542,13 +1539,17 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    
+
     # Estatísticas rápidas
     stats = obter_estatisticas_db()
     st.metric("Cotações Pendentes", stats.get('rfq_pendentes', 0))
     st.metric("Cotações Respondidas", stats.get('rfq_respondidas', 0))
-    
+
     st.markdown("---")
+    if st.button("🚪 Sair"):
+        st.session_state.logged_in = False
+        st.session_state.role = None
+        st.rerun()
     st.markdown("""
         <div style="text-align: center; font-size: 12px;">
             <p>Sistema ERP v4.0</p>
@@ -1605,37 +1606,30 @@ if menu_option == "🏠 Dashboard":
 
 elif menu_option == "📝 Nova Cotação":
     st.title("📝 Criar Nova Cotação")
-    
-    # Obter fornecedor selecionado antes do form para usar nas marcas
-    fornecedores = listar_fornecedores()
-    
-    with st.form(key="nova_cotacao_form"):
-        # Fornecedor e Data
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            fornecedor_opcoes = [""] + [f[1] for f in fornecedores]
-            if st.session_state.get("role") in ["admin", "gestor"]:
-                fornecedor_opcoes.append("➕ Novo Fornecedor")
-            fornecedor_selecionado = st.selectbox("Fornecedor *", fornecedor_opcoes)
 
-            if fornecedor_selecionado == "➕ Novo Fornecedor":
-                nome_fornecedor = st.text_input("Nome do novo fornecedor *")
-                email_fornecedor = st.text_input("Email do fornecedor")
-                telefone_fornecedor = st.text_input("Telefone")
-                fornecedor_id_selecionado = None
+    fornecedores = listar_fornecedores()
+
+    col1, col2 = st.columns(2)
+    with col1:
+        fornecedor_opcoes = [""] + [f[1] for f in fornecedores]
+        if st.session_state.get("role") in ["admin", "gestor"]:
+            fornecedor_opcoes.append("➕ Novo Fornecedor")
+        fornecedor_selecionado = st.selectbox("Fornecedor *", fornecedor_opcoes, key="fornecedor_select")
+        if fornecedor_selecionado == "➕ Novo Fornecedor":
+            nome_fornecedor = st.text_input("Nome do novo fornecedor *")
+            email_fornecedor = st.text_input("Email do fornecedor")
+            telefone_fornecedor = st.text_input("Telefone")
+            fornecedor_id_selecionado = None
+        else:
+            nome_fornecedor = fornecedor_selecionado
+            if fornecedor_selecionado:
+                fornecedor_id_selecionado = next((f[0] for f in fornecedores if f[1] == fornecedor_selecionado), None)
             else:
-                nome_fornecedor = fornecedor_selecionado
-                # Obter ID do fornecedor para buscar marcas
-                if fornecedor_selecionado and fornecedor_selecionado != "":
-                    fornecedor_id_selecionado = next((f[0] for f in fornecedores if f[1] == fornecedor_selecionado), None)
-                else:
-                    fornecedor_id_selecionado = None
-        
-        with col2:
-            data = st.date_input("Data da cotação", datetime.today())
-        
-        # Referência, Nome e Email do solicitante na mesma linha
+                fornecedor_id_selecionado = None
+    with col2:
+        data = st.date_input("Data da cotação", datetime.today())
+
+    with st.form(key="nova_cotacao_form"):
         col1, col2, col3 = st.columns(3)
         with col1:
             referencia = st.text_input("Referência *", placeholder="Ex: KTB-2025-001")
@@ -1643,91 +1637,61 @@ elif menu_option == "📝 Nova Cotação":
             nome_solicitante = st.text_input("Nome do solicitante")
         with col3:
             email_solicitante = st.text_input("Email do solicitante")
-        
+
         observacoes = st.text_area("Observações", height=100)
-        # Dropbox - anexar pedido do cliente
         upload_pedido_cliente = st.file_uploader("📎 Pedido do cliente (PDF)", type=['pdf'], key='upload_pedido_cliente')
 
-        
         st.markdown("### 📦 Artigos")
-        
-        # Obter marcas disponíveis para o fornecedor
+
         marcas_disponiveis = []
         if fornecedor_id_selecionado:
             marcas_disponiveis = obter_marcas_fornecedor(fornecedor_id_selecionado)
-        
-        # Lista de artigos
+
         for i, artigo in enumerate(st.session_state.artigos, 1):
             with st.expander(f"Artigo {i}", expanded=(i == 1)):
-                # Primeira linha: Nº Artigo, Descrição, Quantidade
                 col1, col2, col3 = st.columns([1, 3, 1])
-                
+
                 with col1:
-                    artigo['artigo_num'] = st.text_input(
-                        "Nº Artigo", 
-                        value=artigo['artigo_num'],
-                        key=f"art_num_{i}"
-                    )
-                    
-                    # Marca logo abaixo do Nº Artigo
+                    artigo['artigo_num'] = st.text_input("Nº Artigo", value=artigo['artigo_num'], key=f"art_num_{i}")
+
                     if fornecedor_id_selecionado:
                         if marcas_disponiveis:
-                            # Garantir que o valor atual está na lista
                             current_marca = artigo.get('marca', '')
                             if current_marca not in [""] + marcas_disponiveis:
                                 current_marca = ""
-                            
-                            marca_index = 0
-                            try:
-                                marca_index = [""] + marcas_disponiveis.index(current_marca) if current_marca in [""] + marcas_disponiveis else 0
-                            except:
+                            if current_marca in marcas_disponiveis:
+                                marca_index = marcas_disponiveis.index(current_marca) + 1
+                            else:
                                 marca_index = 0
-                            
-                            artigo['marca'] = st.selectbox(
-                                "Marca",
-                                [""] + marcas_disponiveis,
-                                index=marca_index,
-                                key=f"marca_{i}"
-                            )
+                            artigo['marca'] = st.selectbox("Marca", [""] + marcas_disponiveis, index=marca_index, key=f"marca_{i}")
                         else:
                             st.info("Sem marcas")
                             artigo['marca'] = ""
                     else:
                         st.info("Selecione fornecedor")
                         artigo['marca'] = ""
-                
+
                 with col2:
-                    artigo['descricao'] = st.text_area(
-                        "Descrição *",
-                        value=artigo['descricao'],
-                        key=f"desc_{i}",
-                        height=100
-                    )
-                
+                    artigo['descricao'] = st.text_area("Descrição *", value=artigo['descricao'], key=f"desc_{i}", height=100)
+
                 with col3:
-                    artigo['quantidade'] = st.number_input(
-                        "Quantidade",
-                        min_value=1,
-                        value=artigo['quantidade'],
-                        key=f"qtd_{i}"
-                    )
-                    
-                    # Unidade logo abaixo da Quantidade
+                    artigo['quantidade'] = st.number_input("Quantidade", min_value=1, value=artigo['quantidade'], key=f"qtd_{i}")
+
                     artigo['unidade'] = st.selectbox(
                         "Unidade",
                         ["Peças", "Metros", "KG", "Litros", "Caixas", "Paletes"],
                         index=0,
                         key=f"unidade_{i}"
                     )
-        
+
         col1, col2, col3 = st.columns(3)
-        
+
         with col1:
             adicionar_artigo = st.form_submit_button("➕ Adicionar Artigo")
-        
+
         with col2:
             criar_cotacao = st.form_submit_button("✅ Criar Cotação", type="primary")
-        
+
         with col3:
             limpar_form = st.form_submit_button("🗑️ Limpar Formulário")
     
@@ -1964,14 +1928,17 @@ elif menu_option == "📩 Responder Cotações":
                                 st.markdown("**Anexos:**")
                                 for tipo, nome, data_pdf in anexos:
                                     rotulo = f"{tipo} - {nome if nome else 'ficheiro.pdf'}"
-                                    st.download_button(
-                                        label=f"⬇️ {rotulo}",
-                                        data=data_pdf,
-                                        file_name=nome if nome else f"{tipo}_{cotacao['id']}.pdf",
-                                        mime="application/pdf",
-                                        key=f"anexo_{cotacao['id']}_{tipo}"
-                                    )
-                                    exibir_pdf(f"👁️ {rotulo}", data_pdf)
+                                    col_anexo_dl, col_anexo_view = st.columns([1, 1])
+                                    with col_anexo_dl:
+                                        st.download_button(
+                                            label=f"⬇️ {rotulo}",
+                                            data=data_pdf,
+                                            file_name=nome if nome else f"{tipo}_{cotacao['id']}.pdf",
+                                            mime="application/pdf",
+                                            key=f"anexo_{cotacao['id']}_{tipo}"
+                                        )
+                                    with col_anexo_view:
+                                        exibir_pdf(f"👁️ {rotulo}", data_pdf)
                             st.write(f"**Solicitante:** {cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else 'N/A'}")
                             st.write(f"**Email:** {cotacao['email_solicitante'] if cotacao['email_solicitante'] else 'N/A'}")
                             st.write(f"**Artigos:** {cotacao['num_artigos']}")
@@ -1980,14 +1947,17 @@ elif menu_option == "📩 Responder Cotações":
                             # Botões de ação
                             pdf_pedido = obter_pdf_da_db(cotacao['id'], "pedido")
                             if pdf_pedido:
-                                st.download_button(
-                                    "📄 PDF",
-                                    data=pdf_pedido,
-                                    file_name=f"pedido_{cotacao['id']}.pdf",
-                                    mime="application/pdf",
-                                    key=f"pdf_pend_{cotacao['id']}"
-                                )
-                                exibir_pdf("👁️ PDF", pdf_pedido)
+                                col_pdf_dl, col_pdf_view = st.columns([1, 1])
+                                with col_pdf_dl:
+                                    st.download_button(
+                                        "📄 PDF",
+                                        data=pdf_pedido,
+                                        file_name=f"pedido_{cotacao['id']}.pdf",
+                                        mime="application/pdf",
+                                        key=f"pdf_pend_{cotacao['id']}"
+                                    )
+                                with col_pdf_view:
+                                    exibir_pdf("👁️ PDF", pdf_pedido)
                             
                             if st.button("💬 Responder", key=f"resp_{cotacao['id']}"):
                                 st.session_state.show_response_form = cotacao['id']
@@ -2051,37 +2021,46 @@ elif menu_option == "📩 Responder Cotações":
                             st.markdown("**Anexos:**")
                             for tipo, nome, data_pdf in anexos:
                                 rotulo = f"{tipo} - {nome if nome else 'ficheiro.pdf'}"
-                                st.download_button(
-                                    label=f"⬇️ {rotulo}",
-                                    data=data_pdf,
-                                    file_name=nome if nome else f"{tipo}_{cotacao['id']}.pdf",
-                                    mime="application/pdf",
-                                    key=f"anexo_resp_{cotacao['id']}_{tipo}"
-                                )
-                                exibir_pdf(f"👁️ {rotulo}", data_pdf)
+                                col_resp_dl, col_resp_view = st.columns([1, 1])
+                                with col_resp_dl:
+                                    st.download_button(
+                                        label=f"⬇️ {rotulo}",
+                                        data=data_pdf,
+                                        file_name=nome if nome else f"{tipo}_{cotacao['id']}.pdf",
+                                        mime="application/pdf",
+                                        key=f"anexo_resp_{cotacao['id']}_{tipo}"
+                                    )
+                                with col_resp_view:
+                                    exibir_pdf(f"👁️ {rotulo}", data_pdf)
                         # PDF interno
                         pdf_interno = obter_pdf_da_db(cotacao['id'], "pedido")
                         if pdf_interno:
-                            st.download_button(
-                                "📄 PDF Interno",
-                                data=pdf_interno,
-                                file_name=f"interno_{cotacao['id']}.pdf",
-                                mime="application/pdf",
-                                key=f"pdf_int_{cotacao['id']}"
-                            )
-                            exibir_pdf("👁️ PDF Interno", pdf_interno)
+                            col_int_dl, col_int_view = st.columns([1, 1])
+                            with col_int_dl:
+                                st.download_button(
+                                    "📄 PDF Interno",
+                                    data=pdf_interno,
+                                    file_name=f"interno_{cotacao['id']}.pdf",
+                                    mime="application/pdf",
+                                    key=f"pdf_int_{cotacao['id']}"
+                                )
+                            with col_int_view:
+                                exibir_pdf("👁️ PDF Interno", pdf_interno)
 
                         # PDF cliente
                         pdf_cliente = obter_pdf_da_db(cotacao['id'], "cliente")
                         if pdf_cliente:
-                            st.download_button(
-                                "💰 PDF Cliente",
-                                data=pdf_cliente,
-                                file_name=f"cliente_{cotacao['id']}.pdf",
-                                mime="application/pdf",
-                                key=f"pdf_cli_{cotacao['id']}"
-                            )
-                            exibir_pdf("👁️ PDF Cliente", pdf_cliente)
+                            col_cli_dl, col_cli_view = st.columns([1, 1])
+                            with col_cli_dl:
+                                st.download_button(
+                                    "💰 PDF Cliente",
+                                    data=pdf_cliente,
+                                    file_name=f"cliente_{cotacao['id']}.pdf",
+                                    mime="application/pdf",
+                                    key=f"pdf_cli_{cotacao['id']}"
+                                )
+                            with col_cli_view:
+                                exibir_pdf("👁️ PDF Cliente", pdf_cliente)
                         
                         # Reenviar email
                         if st.button("📧 Reenviar", key=f"reenviar_{cotacao['id']}"):
