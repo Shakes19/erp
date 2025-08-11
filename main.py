@@ -13,6 +13,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 import streamlit.components.v1 as components
 
+
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
 DB_PATH = "cotacoes.db"
 
@@ -29,6 +30,7 @@ USERS = {
     "gestor": {"password": "gestor", "role": "gestor"},
     "user": {"password": "user", "role": "user"},
 }
+
 
 st.set_page_config(
     page_title="ERP KTB Portugal",
@@ -179,6 +181,28 @@ def criar_base_dados_completa():
         )
         """)
 
+        # Tabela de utilizadores do sistema
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS utilizador (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            nome TEXT,
+            email TEXT,
+            role TEXT NOT NULL
+        )
+        """)
+
+        # Inserir utilizador administrador padrão se a tabela estiver vazia
+        c.execute("SELECT COUNT(*) FROM utilizador")
+        if c.fetchone()[0] == 0:
+            c.execute(
+                """
+                INSERT INTO utilizador (username, password, nome, email, role)
+                VALUES ('admin', 'admin', 'Administrador', 'admin@example.com', 'admin')
+                """
+            )
+
         # Criar índices para melhor performance
         indices = [
             "CREATE INDEX IF NOT EXISTS idx_rfq_fornecedor ON rfq(fornecedor_id)",
@@ -189,7 +213,8 @@ def criar_base_dados_completa():
             "CREATE INDEX IF NOT EXISTS idx_resposta_fornecedor ON resposta_fornecedor(fornecedor_id, rfq_id)",
             "CREATE INDEX IF NOT EXISTS idx_resposta_artigo ON resposta_fornecedor(artigo_id)",
             "CREATE INDEX IF NOT EXISTS idx_fornecedor_nome ON fornecedor(nome)",
-            "CREATE INDEX IF NOT EXISTS idx_fornecedor_marca ON fornecedor_marca(fornecedor_id, marca)"
+            "CREATE INDEX IF NOT EXISTS idx_fornecedor_marca ON fornecedor_marca(fornecedor_id, marca)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_utilizador_username ON utilizador(username)"
         ]
         
         for indice in indices:
@@ -374,13 +399,100 @@ def remover_marca_fornecedor(fornecedor_id, marca):
     conn = obter_conexao()
     c = conn.cursor()
     c.execute("""
-        DELETE FROM fornecedor_marca 
+        DELETE FROM fornecedor_marca
         WHERE fornecedor_id = ? AND marca = ?
     """, (fornecedor_id, marca))
     conn.commit()
     rows_affected = c.rowcount
     conn.close()
     return rows_affected > 0
+
+
+# ========================== FUNÇÕES DE GESTÃO DE UTILIZADORES ==========================
+
+def listar_utilizadores():
+    """Obter todos os utilizadores"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id, username, nome, email, role FROM utilizador ORDER BY username"
+    )
+    utilizadores = c.fetchall()
+    conn.close()
+    return utilizadores
+
+
+def obter_utilizador_por_username(username):
+    """Obter utilizador pelo username"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id, username, password, nome, email, role FROM utilizador WHERE username = ?",
+        (username,),
+    )
+    user = c.fetchone()
+    conn.close()
+    return user
+
+
+def inserir_utilizador(username, password, nome="", email="", role="user"):
+    """Inserir novo utilizador"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    try:
+        c.execute(
+            """
+            INSERT INTO utilizador (username, password, nome, email, role)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (username, password, nome, email, role),
+        )
+        conn.commit()
+        return c.lastrowid
+    except sqlite3.IntegrityError:
+        return None
+    finally:
+        conn.close()
+
+
+def atualizar_utilizador(user_id, username, nome, email, role, password=None):
+    """Atualizar dados de um utilizador"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    try:
+        if password:
+            c.execute(
+                """
+                UPDATE utilizador
+                SET username = ?, password = ?, nome = ?, email = ?, role = ?
+                WHERE id = ?
+                """,
+                (username, password, nome, email, role, user_id),
+            )
+        else:
+            c.execute(
+                """
+                UPDATE utilizador
+                SET username = ?, nome = ?, email = ?, role = ?
+                WHERE id = ?
+                """,
+                (username, nome, email, role, user_id),
+            )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def eliminar_utilizador(user_id):
+    """Eliminar utilizador"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute("DELETE FROM utilizador WHERE id = ?", (user_id,))
+    conn.commit()
+    removed = c.rowcount
+    conn.close()
+    return removed > 0
 
 # ========================== FUNÇÕES DE GESTÃO DE RFQs ==========================
 
@@ -1249,6 +1361,7 @@ def exibir_pdf(label, data_pdf):
     with st.expander(label):
         components.html(pdf_html, height=500)
 
+
 def verificar_pdfs(rfq_id):
     """Verifica se os PDFs existem na base de dados"""
     conn = obter_conexao()
@@ -2106,8 +2219,8 @@ elif menu_option == "⚙️ Configurações":
         st.error("Sem permissão para aceder a esta área")
     else:
         st.title("⚙️ Configurações do Sistema")
-
         tab1, tab2, tab3, tab4 = st.tabs(["Fornecedores", "Marcas e Margens", "Email", "Backup"])
+
 
         with tab1:
             st.subheader("Gestão de Fornecedores")
@@ -2172,6 +2285,73 @@ elif menu_option == "⚙️ Configurações":
                     st.write(f"**Marcas:** {', '.join(marcas) if marcas else 'Nenhuma'}")
     
     with tab2:
+        if st.session_state.get("role") != "admin":
+            st.warning("Apenas administradores podem gerir utilizadores.")
+        else:
+            st.subheader("Gestão de Utilizadores")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("### Adicionar Utilizador")
+                with st.form("novo_user_form"):
+                    username = st.text_input("Username *")
+                    nome = st.text_input("Nome")
+                    email_user = st.text_input("Email")
+                    role = st.selectbox("Role", ["admin", "gestor", "user"])
+                    password = st.text_input("Password *", type="password")
+
+                    if st.form_submit_button("➕ Adicionar"):
+                        if username and password:
+                            if inserir_utilizador(username, password, nome, email_user, role):
+                                st.success(f"Utilizador {username} adicionado!")
+                                st.rerun()
+                            else:
+                                st.error("Erro ao adicionar utilizador")
+                        else:
+                            st.error("Username e password são obrigatórios")
+
+            with col2:
+                st.markdown("### Utilizadores Registados")
+                utilizadores = listar_utilizadores()
+
+                for user in utilizadores:
+                    with st.expander(user[1]):
+                        with st.form(f"edit_user_{user[0]}"):
+                            username_edit = st.text_input("Username", user[1])
+                            nome_edit = st.text_input("Nome", user[2] or "")
+                            email_edit = st.text_input("Email", user[3] or "")
+                            role_edit = st.selectbox(
+                                "Role",
+                                ["admin", "gestor", "user"],
+                                index=["admin", "gestor", "user"].index(user[4]),
+                            )
+                            password_edit = st.text_input("Password", type="password")
+
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                if st.form_submit_button("💾 Guardar"):
+                                    if atualizar_utilizador(
+                                        user[0],
+                                        username_edit,
+                                        nome_edit,
+                                        email_edit,
+                                        role_edit,
+                                        password_edit or None,
+                                    ):
+                                        st.success("Utilizador atualizado")
+                                        st.rerun()
+                                    else:
+                                        st.error("Erro ao atualizar utilizador")
+                            with col_b:
+                                if st.form_submit_button("🗑️ Eliminar"):
+                                    if eliminar_utilizador(user[0]):
+                                        st.success("Utilizador eliminado")
+                                        st.rerun()
+                                    else:
+                                        st.error("Erro ao eliminar utilizador")
+
+    with tab3:
         st.subheader("Configuração de Marcas e Margens")
         
         fornecedores = listar_fornecedores()
@@ -2269,7 +2449,7 @@ elif menu_option == "⚙️ Configurações":
             st.success("Margem padrão atualizada!")
             st.rerun()
     
-    with tab3:
+    with tab4:
         st.subheader("Configuração de Email")
         
         # Obter configuração atual
@@ -2318,7 +2498,7 @@ elif menu_option == "⚙️ Configurações":
         
         st.info("Nota: Para Gmail, use uma 'App Password' em vez da password normal")
     
-    with tab4:
+    with tab5:
         st.subheader("Backup e Restauro")
         
         if st.button("💾 Criar Backup"):
