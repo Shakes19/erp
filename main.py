@@ -15,6 +15,14 @@ from email import encoders
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
 DB_PATH = "cotacoes.db"
 
+# Diretórios para armazenamento de PDFs enviados
+UPLOAD_DIR = "uploads"
+CLIENTE_UPLOAD_DIR = os.path.join(UPLOAD_DIR, "cliente")
+FORNECEDOR_UPLOAD_DIR = os.path.join(UPLOAD_DIR, "fornecedor")
+
+for d in (CLIENTE_UPLOAD_DIR, FORNECEDOR_UPLOAD_DIR):
+    os.makedirs(d, exist_ok=True)
+
 # Configurações de Email (devem ser configuradas com valores reais)
 EMAIL_CONFIG = {
     'smtp_server': 'smtp-mail.outlook.com',
@@ -930,8 +938,8 @@ class ClientQuotationPDF(FPDF):
             lines = self.split_text(desc, 30)
             self.cell(widths[2], 6, lines[0], border=1)
             self.cell(widths[3], 6, str(quantidade), border=1, align='C')
-            self.cell(widths[4], 6, f"€{preco_venda:.2f}", border=1, align='R')
-            self.cell(widths[5], 6, f"€{total:.2f}", border=1, align='R')
+            self.cell(widths[4], 6, f"{preco_venda:.2f} EUR", border=1, align='R')
+            self.cell(widths[5], 6, f"{total:.2f} EUR", border=1, align='R')
             self.cell(widths[6], 6, item.get('hs_code', '')[:10], border=1, align='C')
             self.cell(widths[7], 6, item.get('pais_origem', '')[:8], border=1, align='C')
             self.cell(widths[8], 6, f"{item.get('prazo_entrega', 30)}d", border=1, align='C')
@@ -949,8 +957,8 @@ class ClientQuotationPDF(FPDF):
         else:
             self.cell(widths[2], 6, desc, border=1)
             self.cell(widths[3], 6, str(quantidade), border=1, align='C')
-            self.cell(widths[4], 6, f"€{preco_venda:.2f}", border=1, align='R')
-            self.cell(widths[5], 6, f"€{total:.2f}", border=1, align='R')
+            self.cell(widths[4], 6, f"{preco_venda:.2f} EUR", border=1, align='R')
+            self.cell(widths[5], 6, f"{total:.2f} EUR", border=1, align='R')
             self.cell(widths[6], 6, item.get('hs_code', '')[:10], border=1, align='C')
             self.cell(widths[7], 6, item.get('pais_origem', '')[:8], border=1, align='C')
             self.cell(widths[8], 6, f"{item.get('prazo_entrega', 30)}d", border=1, align='C')
@@ -982,7 +990,7 @@ class ClientQuotationPDF(FPDF):
         self.ln(5)
         self.set_font("Arial", "B", 11)
         self.cell(131, 8, "TOTAL:", border=1, align='R')
-        self.cell(20, 8, f"€{total_geral:.2f}", border=1, align='C')
+        self.cell(20, 8, f"{total_geral:.2f} EUR", border=1, align='C')
         self.cell(39, 8, f"Peso Total: {peso_total:.1f}kg", border=1, align='C')
         self.ln(10)
         
@@ -1006,6 +1014,29 @@ class ClientQuotationPDF(FPDF):
         self.add_total(total_geral, peso_total)
 
         return self.output(dest='S').encode('latin-1')
+
+# ========================== GESTÃO DE PDFs EXTERNOS ==========================
+
+def salvar_pdf_enviado(rfq_id, arquivo, tipo):
+    """Guardar PDF enviado (cliente ou fornecedor) no sistema de ficheiros"""
+    diretorio = CLIENTE_UPLOAD_DIR if tipo == "cliente" else FORNECEDOR_UPLOAD_DIR
+    os.makedirs(diretorio, exist_ok=True)
+    caminho = os.path.join(diretorio, f"{tipo}_{rfq_id}_{arquivo.name}")
+    with open(caminho, "wb") as f:
+        f.write(arquivo.getbuffer())
+    return caminho
+
+def obter_pdf_enviado(rfq_id, tipo):
+    """Obter PDF previamente enviado"""
+    diretorio = CLIENTE_UPLOAD_DIR if tipo == "cliente" else FORNECEDOR_UPLOAD_DIR
+    if not os.path.isdir(diretorio):
+        return None
+    prefixo = f"{tipo}_{rfq_id}_"
+    for fname in os.listdir(diretorio):
+        if fname.startswith(prefixo):
+            with open(os.path.join(diretorio, fname), "rb") as f:
+                return f.read()
+    return None
 
 # ========================== FUNÇÕES DE GESTÃO DE PDFs ==========================
 
@@ -1363,6 +1394,8 @@ elif menu_option == "📝 Nova Cotação":
             email_solicitante = st.text_input("Email do solicitante")
         
         observacoes = st.text_area("Observações", height=100)
+
+        pdf_cliente_upload = st.file_uploader("📎 PDF do Cliente", type="pdf")
         
         st.markdown("### 📦 Artigos")
         
@@ -1493,8 +1526,10 @@ elif menu_option == "📝 Nova Cotação":
                     referencia, nome_solicitante,
                     email_solicitante, observacoes
                 )
-                
+
                 if rfq_id:
+                    if pdf_cliente_upload:
+                        salvar_pdf_enviado(rfq_id, pdf_cliente_upload, "cliente")
                     st.success(f"✅ Cotação #{rfq_id} criada com sucesso!")
                     
                     # Download do PDF
@@ -1629,11 +1664,13 @@ elif menu_option == "📩 Responder Cotações":
                                 
                                 st.markdown("---")
                             
+                            pdf_fornecedor_upload = st.file_uploader("📎 PDF do Fornecedor", type="pdf")
+
                             col1, col2 = st.columns(2)
-                            
+
                             with col1:
                                 enviar = st.form_submit_button("✅ Enviar Resposta e Email", type="primary")
-                            
+
                             with col2:
                                 cancelar = st.form_submit_button("❌ Cancelar")
                         
@@ -1642,6 +1679,8 @@ elif menu_option == "📩 Responder Cotações":
                             
                             if respostas_validas:
                                 if guardar_respostas(cotacao['id'], respostas_validas):
+                                    if pdf_fornecedor_upload:
+                                        salvar_pdf_enviado(cotacao['id'], pdf_fornecedor_upload, "fornecedor")
                                     st.success("✅ Resposta guardada e email enviado com sucesso!")
                                     st.session_state.show_response_form = None
                                     st.rerun()
@@ -1672,6 +1711,16 @@ elif menu_option == "📩 Responder Cotações":
                                     file_name=f"pedido_{cotacao['id']}.pdf",
                                     mime="application/pdf",
                                     key=f"pdf_pend_{cotacao['id']}"
+                                )
+
+                            pdf_cliente_anexo = obter_pdf_enviado(cotacao['id'], "cliente")
+                            if pdf_cliente_anexo:
+                                st.download_button(
+                                    "📎 Cliente PDF",
+                                    data=pdf_cliente_anexo,
+                                    file_name=f"cliente_{cotacao['id']}.pdf",
+                                    mime="application/pdf",
+                                    key=f"cli_anexo_{cotacao['id']}"
                                 )
                             
                             if st.button("💬 Responder", key=f"resp_{cotacao['id']}"):
@@ -1746,6 +1795,26 @@ elif menu_option == "📩 Responder Cotações":
                                 file_name=f"cliente_{cotacao['id']}.pdf",
                                 mime="application/pdf",
                                 key=f"pdf_cli_{cotacao['id']}"
+                            )
+
+                        pdf_fornecedor_anexo = obter_pdf_enviado(cotacao['id'], "fornecedor")
+                        if pdf_fornecedor_anexo:
+                            st.download_button(
+                                "📎 PDF Fornecedor",
+                                data=pdf_fornecedor_anexo,
+                                file_name=f"fornecedor_{cotacao['id']}.pdf",
+                                mime="application/pdf",
+                                key=f"pdf_forn_{cotacao['id']}"
+                            )
+
+                        pdf_cliente_anexo = obter_pdf_enviado(cotacao['id'], "cliente")
+                        if pdf_cliente_anexo:
+                            st.download_button(
+                                "📎 Cliente PDF",
+                                data=pdf_cliente_anexo,
+                                file_name=f"cliente_{cotacao['id']}.pdf",
+                                mime="application/pdf",
+                                key=f"cli_anexo_resp_{cotacao['id']}"
                             )
                         
                         # Reenviar email
