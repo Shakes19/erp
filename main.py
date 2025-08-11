@@ -1069,6 +1069,11 @@ def gerar_pdf_cliente(rfq_id):
             st.error("Nenhuma resposta encontrada para esta RFQ")
             return False
 
+        prazo_medio = round(
+            sum(item.get('prazo_entrega', 0) for item in itens_resposta)
+            / len(itens_resposta)
+        )
+
         # 3. Gerar PDF
         pdf_cliente = ClientQuotationPDF()
         pdf_bytes = pdf_cliente.gerar(
@@ -1081,7 +1086,9 @@ def gerar_pdf_cliente(rfq_id):
                 'nome': rfq_data[6] or '',
                 'email': rfq_data[7] or ''
             },
-            itens_resposta=itens_resposta
+            itens_resposta=itens_resposta,
+            prazo_medio=prazo_medio
+        )itens_resposta=itens_resposta
         )
 
         # 4. Armazenar PDF
@@ -2125,5 +2132,6 @@ st.markdown("""
         Sistema ERP KTB Portugal v4.0 | Desenvolvido por Ricardo Nogueira | © 2025
     </div>
 """, unsafe_allow_html=True)
+
 
 
