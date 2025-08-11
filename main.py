@@ -376,6 +376,8 @@ def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
         c.execute("SELECT nome FROM fornecedor WHERE id = ?", (fornecedor_id,))
         nome_fornecedor = c.fetchone()[0]
         gerar_e_armazenar_pdf(rfq_id, nome_fornecedor, data, artigos, referencia)
+        # Enviar pedido por email ao fornecedor
+        enviar_email_pedido_fornecedor(rfq_id)
         
         return rfq_id
     except Exception as e:
@@ -785,6 +787,99 @@ def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
         st.error(f"Falha no envio: {str(e)}")
         return False
 
+
+def enviar_email_pedido_fornecedor(rfq_id):
+    """Envia por email o PDF de pedido ao fornecedor associado à RFQ."""
+    try:
+        # Buscar fornecedor (nome+email) e referência
+        conn = obter_conexao()
+        c = conn.cursor()
+        c.execute("""
+            SELECT f.nome, f.email, r.referencia
+            FROM rfq r
+            JOIN fornecedor f ON r.fornecedor_id = f.id
+            WHERE r.id = ?
+        """, (rfq_id,))
+        row = c.fetchone()
+        conn.close()
+        if not row:
+            st.warning("Fornecedor não encontrado para a RFQ.")
+            return False
+        fornecedor_nome, fornecedor_email, referencia = row[0], row[1], row[2]
+        if not fornecedor_email:
+            st.info("Fornecedor sem email definido — não foi enviado o pedido.")
+            return False
+
+        # Obter PDF do pedido
+        pdf_bytes = obter_pdf_da_db(rfq_id, "pedido")
+        if not pdf_bytes:
+            st.error("PDF do pedido não encontrado para envio ao fornecedor.")
+            return False
+
+        # Configuração SMTP
+        conn = obter_conexao()
+        c = conn.cursor()
+        c.execute("SELECT smtp_server, smtp_port, email_user, email_password FROM configuracao_email WHERE ativo = TRUE LIMIT 1")
+        config = c.fetchone()
+        conn.close()
+
+        if config:
+            smtp_server, smtp_port, email_user, email_password = config
+        else:
+            smtp_server = EMAIL_CONFIG['smtp_server']
+            smtp_port = EMAIL_CONFIG['smtp_port']
+            email_user = EMAIL_CONFIG['email_user']
+            email_password = EMAIL_CONFIG['email_password']
+
+        # Construir email
+        msg = MIMEMultipart()
+        msg['From'] = email_user
+        msg['To'] = fornecedor_email
+        msg['Subject'] = f"Pedido de Cotação - Ref: {referencia}"
+
+        corpo = f"""
+Estimado(a) {fornecedor_nome},
+
+Segue em anexo o pedido de cotação relativo à referência {referencia}.
+Agradecemos o envio do preço, prazo de entrega, HS Code, país de origem e peso.
+
+Com os melhores cumprimentos,
+KTB Portugal
+"""
+        msg.attach(MIMEText(corpo, 'plain'))
+
+        part = MIMEBase('application', 'octet-stream')
+        part.set_payload(pdf_bytes)
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', f'attachment; filename="pedido_{referencia}.pdf"')
+        msg.attach(part)
+
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(email_user, email_password)
+            server.send_message(msg)
+
+        return True
+    except Exception as e:
+        st.error(f"Falha ao enviar email ao fornecedor: {e}")
+        return False
+
+def guardar_pdf_upload(rfq_id, tipo_pdf, nome_arquivo, bytes_):
+    """Guarda um PDF carregado pelo utilizador na tabela pdf_storage."""
+    try:
+        conn = obter_conexao()
+        c = conn.cursor()
+        c.execute("""
+            INSERT OR REPLACE INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes, nome_arquivo)
+            VALUES (?, ?, ?, ?, ?)
+        """, (str(rfq_id), tipo_pdf, bytes_, len(bytes_), nome_arquivo))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"Erro a guardar PDF: {e}")
+        return False
+
 # ========================== CLASSES PDF ==========================
 
 class QuotationPDF(FPDF):
@@ -881,13 +976,14 @@ class QuotationPDF(FPDF):
         
         return self.output(dest='S').encode('latin-1')
 
+
 class ClientQuotationPDF(FPDF):
     """PDF para orçamento ao cliente com todos os detalhes"""
     def header(self):
         try:
             if os.path.exists("logo.jpeg"):
                 self.image("logo.jpeg", 160, 10, 40)
-        except:
+        except Exception:
             pass
         self.set_font("Arial", "B", 16)
         self.cell(0, 10, "ORÇAMENTO", ln=True, align='C')
@@ -897,12 +993,10 @@ class ClientQuotationPDF(FPDF):
         self.set_font("Arial", "", 12)
         self.cell(0, 8, f"Data: {rfq_info['data']}", ln=True)
         self.cell(0, 8, f"Referência: {rfq_info['referencia']}", ln=True)
-        
         if solicitante_info.get('nome'):
             self.cell(0, 8, f"Para: {solicitante_info['nome']}", ln=True)
         if solicitante_info.get('email'):
             self.cell(0, 8, f"Email: {solicitante_info['email']}", ln=True)
-        
         self.ln(5)
 
     def add_table_header(self):
@@ -913,29 +1007,45 @@ class ClientQuotationPDF(FPDF):
             self.cell(widths[i], 7, headers[i], border=1, align='C')
         self.ln()
 
+    def split_text(self, text, max_length):
+        lines = []
+        words = text.split()
+        current_line = ""
+        for word in words:
+            test_line = (current_line + " " + word).strip() if current_line else word
+            if len(test_line) <= max_length:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        if current_line:
+            lines.append(current_line)
+        return lines if lines else [text[:max_length]]
+
     def add_table_row(self, idx, item):
         self.set_font("Arial", "", 8)
         widths = [8, 18, 55, 12, 18, 20, 18, 15, 12, 14]
         
-        preco_venda = item['preco_venda']
-        quantidade = item['quantidade_final']
+        preco_venda = float(item['preco_venda'])
+        quantidade = int(item['quantidade_final'])
         total = preco_venda * quantidade
         
         # Primeira linha sempre
         self.cell(widths[0], 6, str(idx), border=1, align='C')
-        self.cell(widths[1], 6, item.get('artigo_num', '')[:10], border=1)
+        self.cell(widths[1], 6, (item.get('artigo_num') or '')[:10], border=1)
         
         desc = item['descricao']
         if len(desc) > 30:
             lines = self.split_text(desc, 30)
             self.cell(widths[2], 6, lines[0], border=1)
             self.cell(widths[3], 6, str(quantidade), border=1, align='C')
-            self.cell(widths[4], 6, f"€{preco_venda:.2f}", border=1, align='R')
-            self.cell(widths[5], 6, f"€{total:.2f}", border=1, align='R')
-            self.cell(widths[6], 6, item.get('hs_code', '')[:10], border=1, align='C')
-            self.cell(widths[7], 6, item.get('pais_origem', '')[:8], border=1, align='C')
+            self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=1, align='R')
+            self.cell(widths[5], 6, f"EUR {total:.2f}", border=1, align='R')
+            self.cell(widths[6], 6, (item.get('hs_code') or '')[:10], border=1, align='C')
+            self.cell(widths[7], 6, (item.get('pais_origem') or '')[:8], border=1, align='C')
             self.cell(widths[8], 6, f"{item.get('prazo_entrega', 30)}d", border=1, align='C')
-            self.cell(widths[9], 6, f"{item.get('peso', 0):.1f}kg", border=1, align='C')
+            self.cell(widths[9], 6, f"{(item.get('peso') or 0):.1f}kg", border=1, align='C')
             self.ln()
             
             # Linhas adicionais para descrição longa
@@ -949,40 +1059,21 @@ class ClientQuotationPDF(FPDF):
         else:
             self.cell(widths[2], 6, desc, border=1)
             self.cell(widths[3], 6, str(quantidade), border=1, align='C')
-            self.cell(widths[4], 6, f"€{preco_venda:.2f}", border=1, align='R')
-            self.cell(widths[5], 6, f"€{total:.2f}", border=1, align='R')
-            self.cell(widths[6], 6, item.get('hs_code', '')[:10], border=1, align='C')
-            self.cell(widths[7], 6, item.get('pais_origem', '')[:8], border=1, align='C')
+            self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=1, align='R')
+            self.cell(widths[5], 6, f"EUR {total:.2f}", border=1, align='R')
+            self.cell(widths[6], 6, (item.get('hs_code') or '')[:10], border=1, align='C')
+            self.cell(widths[7], 6, (item.get('pais_origem') or '')[:8], border=1, align='C')
             self.cell(widths[8], 6, f"{item.get('prazo_entrega', 30)}d", border=1, align='C')
-            self.cell(widths[9], 6, f"{item.get('peso', 0):.1f}kg", border=1, align='C')
+            self.cell(widths[9], 6, f"{(item.get('peso') or 0):.1f}kg", border=1, align='C')
             self.ln()
         
         return total
-
-    def split_text(self, text, max_length):
-        lines = []
-        words = text.split()
-        current_line = ""
-        
-        for word in words:
-            test_line = current_line + " " + word if current_line else word
-            if len(test_line) <= max_length:
-                current_line = test_line
-            else:
-                if current_line:
-                    lines.append(current_line)
-                current_line = word
-        
-        if current_line:
-            lines.append(current_line)
-        
-        return lines if lines else [text[:max_length]]
 
     def add_total(self, total_geral, peso_total):
         self.ln(5)
         self.set_font("Arial", "B", 11)
         self.cell(131, 8, "TOTAL:", border=1, align='R')
-        self.cell(20, 8, f"€{total_geral:.2f}", border=1, align='C')
+        self.cell(20, 8, f"EUR {total_geral:.2f}", border=1, align='C')
         self.cell(39, 8, f"Peso Total: {peso_total:.1f}kg", border=1, align='C')
         self.ln(10)
         
@@ -995,18 +1086,16 @@ class ClientQuotationPDF(FPDF):
         self.add_page()
         self.add_info(rfq_info, solicitante_info)
         self.add_table_header()
-
-        total_geral = 0
-        peso_total = 0
+        
+        total_geral = 0.0
+        peso_total = 0.0
         for idx, item in enumerate(itens_resposta, 1):
             total_item = self.add_table_row(idx, item)
             total_geral += total_item
-            peso_total += item.get('peso', 0) * item['quantidade_final']
-
+            peso_total += float(item.get('peso') or 0) * int(item['quantidade_final'])
+        
         self.add_total(total_geral, peso_total)
-
         return self.output(dest='S').encode('latin-1')
-
 # ========================== FUNÇÕES DE GESTÃO DE PDFs ==========================
 
 def gerar_e_armazenar_pdf(rfq_id, fornecedor, data, artigos, referencia=""):
@@ -1069,11 +1158,6 @@ def gerar_pdf_cliente(rfq_id):
             st.error("Nenhuma resposta encontrada para esta RFQ")
             return False
 
-        prazo_medio = round(
-            sum(item.get('prazo_entrega', 0) for item in itens_resposta)
-            / len(itens_resposta)
-        )
-
         # 3. Gerar PDF
         pdf_cliente = ClientQuotationPDF()
         pdf_bytes = pdf_cliente.gerar(
@@ -1086,9 +1170,7 @@ def gerar_pdf_cliente(rfq_id):
                 'nome': rfq_data[6] or '',
                 'email': rfq_data[7] or ''
             },
-            itens_resposta=itens_resposta,
-            prazo_medio=prazo_medio
-        )itens_resposta=itens_resposta
+            itens_resposta=itens_resposta
         )
 
         # 4. Armazenar PDF
@@ -1370,6 +1452,9 @@ elif menu_option == "📝 Nova Cotação":
             email_solicitante = st.text_input("Email do solicitante")
         
         observacoes = st.text_area("Observações", height=100)
+        # Dropbox - anexar pedido do cliente
+        upload_pedido_cliente = st.file_uploader("📎 Pedido do cliente (PDF)", type=['pdf'], key='upload_pedido_cliente')
+
         
         st.markdown("### 📦 Artigos")
         
@@ -1503,6 +1588,10 @@ elif menu_option == "📝 Nova Cotação":
                 
                 if rfq_id:
                     st.success(f"✅ Cotação #{rfq_id} criada com sucesso!")
+                    # Guardar PDF do cliente (upload) se existir
+                    if upload_pedido_cliente is not None:
+                        guardar_pdf_upload(rfq_id, 'anexo_cliente', upload_pedido_cliente.name, upload_pedido_cliente.getvalue())
+                        st.success("Anexo do cliente guardado!")
                     
                     # Download do PDF
                     pdf_bytes = obter_pdf_da_db(rfq_id, "pedido")
@@ -1558,6 +1647,8 @@ elif menu_option == "📩 Responder Cotações":
                         st.info(f"**Respondendo Cotação #{cotacao['id']}**")
                         
                         with st.form(f"resposta_form_{cotacao['id']}"):
+                            # Dropbox - anexar resposta do fornecedor
+                            upload_resposta_forn = st.file_uploader("📎 Resposta do fornecedor (PDF)", type=['pdf'], key=f"upload_resp_{cotacao['id']}")
                             respostas = []
                             
                             for i, artigo in enumerate(detalhes['artigos'], 1):
@@ -1590,14 +1681,14 @@ elif menu_option == "📩 Responder Cotações":
                                 
                                 with col3:
                                     custo = st.number_input(
-                                        "Preço Compra (€)",
+                                        "Preço Compra (EUR )",
                                         min_value=0.0,
                                         step=0.01,
                                         key=f"custo_{artigo['id']}"
                                     )
                                     if custo > 0:
                                         preco_venda = custo * (1 + margem/100)
-                                        st.success(f"P.V.: €{preco_venda:.2f}")
+                                        st.success(f"P.V.: EUR {preco_venda:.2f}")
                                 
                                 with col4:
                                     prazo = st.number_input(
@@ -1648,6 +1739,8 @@ elif menu_option == "📩 Responder Cotações":
                             respostas_validas = [r for r in respostas if r[1] > 0]
                             
                             if respostas_validas:
+                                if upload_resposta_forn is not None:
+                                    guardar_pdf_upload(cotacao['id'], 'anexo_fornecedor', upload_resposta_forn.name, upload_resposta_forn.getvalue())
                                 if guardar_respostas(cotacao['id'], respostas_validas):
                                     st.success("✅ Resposta guardada e email enviado com sucesso!")
                                     st.session_state.show_response_form = None
@@ -1665,6 +1758,22 @@ elif menu_option == "📩 Responder Cotações":
                         
                         with col1:
                             st.write(f"**Data:** {cotacao['data']}")
+                            # Mostrar anexos existentes
+                            conn = obter_conexao()
+                            c = conn.cursor()
+                            c.execute("SELECT tipo_pdf, nome_arquivo, pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf IN ('anexo_cliente', 'anexo_fornecedor')", (str(cotacao['id']),))
+                            anexos = c.fetchall()
+                            conn.close()
+                            if anexos:
+                                st.markdown("**Anexos:**")
+                                for tipo, nome, data_pdf in anexos:
+                                    st.download_button(
+                                        label=f"⬇️ {tipo} - {nome if nome else 'ficheiro.pdf'}",
+                                        data=data_pdf,
+                                        file_name=nome if nome else f"{tipo}_{cotacao['id']}.pdf",
+                                        mime="application/pdf",
+                                        key=f"anexo_{cotacao['id']}_{tipo}"
+                                    )
                             st.write(f"**Solicitante:** {cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else 'N/A'}")
                             st.write(f"**Email:** {cotacao['email_solicitante'] if cotacao['email_solicitante'] else 'N/A'}")
                             st.write(f"**Artigos:** {cotacao['num_artigos']}")
@@ -1729,10 +1838,26 @@ elif menu_option == "📩 Responder Cotações":
                                 preco_total = resp['preco_venda'] * resp['quantidade_final']
                                 total_geral += preco_total
                                 st.write(f"• {resp['descricao'][:50]}...")
-                                st.write(f"  Qtd: {resp['quantidade_final']} | P.V.: €{resp['preco_venda']:.2f} | Total: €{preco_total:.2f}")
-                            st.success(f"**Total Geral: €{total_geral:.2f}**")
+                                st.write(f"  Qtd: {resp['quantidade_final']} | P.V.: EUR {resp['preco_venda']:.2f} | Total: EUR {preco_total:.2f}")
+                            st.success(f"**Total Geral: EUR {total_geral:.2f}**")
                     
                     with col2:
+                        # Anexos
+                        conn = obter_conexao()
+                        c = conn.cursor()
+                        c.execute("SELECT tipo_pdf, nome_arquivo, pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf IN ('anexo_cliente', 'anexo_fornecedor')", (str(cotacao['id']),))
+                        anexos = c.fetchall()
+                        conn.close()
+                        if anexos:
+                            st.markdown("**Anexos:**")
+                            for tipo, nome, data_pdf in anexos:
+                                st.download_button(
+                                    label=f"⬇️ {tipo} - {nome if nome else 'ficheiro.pdf'}",
+                                    data=data_pdf,
+                                    file_name=nome if nome else f"{tipo}_{cotacao['id']}.pdf",
+                                    mime="application/pdf",
+                                    key=f"anexo_resp_{cotacao['id']}_{tipo}"
+                                )
                         # PDF interno
                         pdf_interno = obter_pdf_da_db(cotacao['id'], "pedido")
                         if pdf_interno:
@@ -2132,6 +2257,3 @@ st.markdown("""
         Sistema ERP KTB Portugal v4.0 | Desenvolvido por Ricardo Nogueira | © 2025
     </div>
 """, unsafe_allow_html=True)
-
-
-
