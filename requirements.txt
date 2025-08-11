@@ -3,3 +3,4 @@ fpdf
 streamlit
 pandas
 numpy
+streamlit-option-menu

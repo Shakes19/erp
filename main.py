@@ -7,6 +7,7 @@ from io import BytesIO
 import os
 import shutil
 import smtplib
+from streamlit_option_menu import option_menu
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -1467,13 +1468,13 @@ if 'logged_in' not in st.session_state:
 
 
 def login_screen():
-    st.title("🔐 Login")
-    # Estilizar o formulário para ser mais compacto e centralizado
+    st.markdown("<h1 style='text-align:center;'>🔐 Login</h1>", unsafe_allow_html=True)
+    # Estilizar o formulário para ser mais amplo e centralizado
     st.markdown(
         """
         <style>
         div[data-testid="stForm"] {
-            max-width: 300px;
+            max-width: 400px;
             margin: auto;
         }
         </style>
@@ -1540,10 +1541,15 @@ with st.sidebar:
     opcoes_menu = ["🏠 Dashboard", "📝 Nova Cotação", "📩 Responder Cotações", "📊 Relatórios"]
     if st.session_state.get("role") in ["admin", "gestor"]:
         opcoes_menu.append("⚙️ Configurações")
-    menu_option = st.radio(
+    menu_option = option_menu(
         "Navegação",
         opcoes_menu,
-        label_visibility="collapsed"
+        default_index=0,
+        styles={
+            "container": {"padding": "0", "background-color": "transparent"},
+            "nav-link": {"font-size": "16px", "text-align": "left", "margin": "2px", "--hover-color": "#eee"},
+            "nav-link-selected": {"background-color": "#d0f0c0"},
+        },
     )
     
     st.markdown("---")
@@ -1768,6 +1774,8 @@ elif menu_option == "📩 Responder Cotações":
             [data-testid="stDialog"] {
                 width: 60vw;
                 max-width: 900px;
+                left: 50%;
+                transform: translateX(-50%);
             }
             </style>
             """,
