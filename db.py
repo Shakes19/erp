@@ -190,25 +190,123 @@ def criar_base_dados():
         if 'validade_dias' not in columns:
             c.execute("ALTER TABLE resposta_fornecedor ADD COLUMN validade_dias INTEGER DEFAULT 30")
 
-        # Tabela para armazenamento de PDFs
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS pdf_storage (
-            rfq_id INTEGER PRIMARY KEY,
-            pdf_data BLOB NOT NULL,
-            data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
-            tamanho_bytes INTEGER,
-            FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
-        )
-        """)
-
-        # Verificar e adicionar colunas se não existirem na tabela pdf_storage
-        c.execute("PRAGMA table_info(pdf_storage)")
-        columns = [column[1] for column in c.fetchall()]
-        
-        if 'data_criacao' not in columns:
-            c.execute("ALTER TABLE pdf_storage ADD COLUMN data_criacao TEXT DEFAULT CURRENT_TIMESTAMP")
-        if 'tamanho_bytes' not in columns:
-            c.execute("ALTER TABLE pdf_storage ADD COLUMN tamanho_bytes INTEGER")
+       diff --git a/db.py b/db.py
+index 3b3e57e8cc7e3798481ada1831a6133733afaf21..d88f1faf6c9d1064e769260bee3def2ac0de6ee0 100644
+--- a/db.py
++++ b/db.py
+@@ -168,69 +168,93 @@ def criar_base_dados():
+             FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE,
+             FOREIGN KEY (artigo_id) REFERENCES artigo(id) ON DELETE CASCADE,
+             UNIQUE (fornecedor_id, rfq_id, artigo_id)
+         )
+         """)
+ 
+         # Verificar e adicionar colunas se não existirem na tabela resposta_fornecedor
+         c.execute("PRAGMA table_info(resposta_fornecedor)")
+         columns = [column[1] for column in c.fetchall()]
+         
+         if 'peso' not in columns:
+             c.execute("ALTER TABLE resposta_fornecedor ADD COLUMN peso REAL DEFAULT 0.0")
+         if 'hs_code' not in columns:
+             c.execute("ALTER TABLE resposta_fornecedor ADD COLUMN hs_code TEXT")
+         if 'pais_origem' not in columns:
+             c.execute("ALTER TABLE resposta_fornecedor ADD COLUMN pais_origem TEXT")
+         if 'moeda' not in columns:
+             c.execute("ALTER TABLE resposta_fornecedor ADD COLUMN moeda TEXT DEFAULT 'EUR'")
+         if 'observacoes' not in columns:
+             c.execute("ALTER TABLE resposta_fornecedor ADD COLUMN observacoes TEXT")
+         if 'data_resposta' not in columns:
+             c.execute("ALTER TABLE resposta_fornecedor ADD COLUMN data_resposta TEXT DEFAULT CURRENT_TIMESTAMP")
+         if 'validade_dias' not in columns:
+             c.execute("ALTER TABLE resposta_fornecedor ADD COLUMN validade_dias INTEGER DEFAULT 30")
+ 
+-        # Tabela para armazenamento de PDFs
+-        c.execute("""
+-        CREATE TABLE IF NOT EXISTS pdf_storage (
+-            rfq_id INTEGER PRIMARY KEY,
+-            pdf_data BLOB NOT NULL,
+-            data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
+-            tamanho_bytes INTEGER,
+-            FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
+-        )
+-        """)
+-
+-        # Verificar e adicionar colunas se não existirem na tabela pdf_storage
+-        c.execute("PRAGMA table_info(pdf_storage)")
+-        columns = [column[1] for column in c.fetchall()]
+-        
+-        if 'data_criacao' not in columns:
+-            c.execute("ALTER TABLE pdf_storage ADD COLUMN data_criacao TEXT DEFAULT CURRENT_TIMESTAMP")
+-        if 'tamanho_bytes' not in columns:
+-            c.execute("ALTER TABLE pdf_storage ADD COLUMN tamanho_bytes INTEGER")
++        # Tabela para armazenamento de PDFs
++        c.execute("""
++        CREATE TABLE IF NOT EXISTS pdf_storage (
++            rfq_id INTEGER,
++            tipo_pdf TEXT NOT NULL,
++            pdf_data BLOB NOT NULL,
++            data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
++            tamanho_bytes INTEGER,
++            PRIMARY KEY (rfq_id, tipo_pdf),
++            FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
++        )
++        """)
++
++        # Verificar e migrar estrutura se necessário
++        c.execute("PRAGMA table_info(pdf_storage)")
++        columns = [column[1] for column in c.fetchall()]
++
++        if 'tipo_pdf' not in columns:
++            # Criar nova tabela com a estrutura correta
++            c.execute("""
++                CREATE TABLE IF NOT EXISTS pdf_storage_new (
++                    rfq_id INTEGER,
++                    tipo_pdf TEXT NOT NULL,
++                    pdf_data BLOB NOT NULL,
++                    data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
++                    tamanho_bytes INTEGER,
++                    PRIMARY KEY (rfq_id, tipo_pdf),
++                    FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
++                )
++            """)
++            c.execute("""
++                INSERT INTO pdf_storage_new (rfq_id, tipo_pdf, pdf_data, data_criacao, tamanho_bytes)
++                SELECT rfq_id, 'pedido', pdf_data, data_criacao, tamanho_bytes FROM pdf_storage
++            """)
++            c.execute("DROP TABLE pdf_storage")
++            c.execute("ALTER TABLE pdf_storage_new RENAME TO pdf_storage")
++            c.execute("PRAGMA table_info(pdf_storage)")
++            columns = [column[1] for column in c.fetchall()]
++
++        if 'data_criacao' not in columns:
++            c.execute("ALTER TABLE pdf_storage ADD COLUMN data_criacao TEXT DEFAULT CURRENT_TIMESTAMP")
++        if 'tamanho_bytes' not in columns:
++            c.execute("ALTER TABLE pdf_storage ADD COLUMN tamanho_bytes INTEGER")
+ 
+         # Tabela de logs do sistema (para auditoria)
+         c.execute("""
+         CREATE TABLE IF NOT EXISTS sistema_log (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             acao TEXT NOT NULL,
+             tabela_afetada TEXT,
+             registro_id INTEGER,
+             dados_antes TEXT,
+             dados_depois TEXT,
+             usuario TEXT,
+             data_log TEXT DEFAULT CURRENT_TIMESTAMP
+         )
+         """)
+ 
+         # Criar índices para melhor performance
+         indices = [
+             "CREATE INDEX IF NOT EXISTS idx_rfq_fornecedor ON rfq(fornecedor_id)",
+             "CREATE INDEX IF NOT EXISTS idx_rfq_data ON rfq(data)",
+             "CREATE INDEX IF NOT EXISTS idx_rfq_estado ON rfq(estado)",
+             "CREATE INDEX IF NOT EXISTS idx_rfq_referencia ON rfq(referencia)",
+             "CREATE INDEX IF NOT EXISTS idx_artigo_rfq ON artigo(rfq_id)",
+             "CREATE INDEX IF NOT EXISTS idx_resposta_fornecedor ON resposta_fornecedor(fornecedor_id, rfq_id)",
+             "CREATE INDEX IF NOT EXISTS idx_resposta_artigo ON resposta_fornecedor(artigo_id)",
+             "CREATE INDEX IF NOT EXISTS idx_fornecedor_nome ON fornecedor(nome)"
 
         # Tabela de logs do sistema (para auditoria)
         c.execute("""
@@ -419,4 +517,5 @@ if __name__ == "__main__":
         print(f"  {chave}: {valor}")
     
     print("\nLimpando dados órfãos...")
+
     limpar_dados_orfaos()
