@@ -991,7 +991,7 @@ class ClientQuotationPDF(FPDF):
         self.cell(0, 5, "Preços não incluem IVA", ln=True)
         self.cell(0, 5, "Condições de pagamento: A combinar", ln=True)
 
-        def gerar(self, rfq_info, solicitante_info, itens_resposta):
+    def gerar(self, rfq_info, solicitante_info, itens_resposta):
         self.add_page()
         self.add_info(rfq_info, solicitante_info)
         self.add_table_header()
@@ -2125,4 +2125,5 @@ st.markdown("""
         Sistema ERP KTB Portugal v4.0 | Desenvolvido por Ricardo Nogueira | © 2025
     </div>
 """, unsafe_allow_html=True)
+
 
