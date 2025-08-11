@@ -991,40 +991,20 @@ class ClientQuotationPDF(FPDF):
         self.cell(0, 5, "Preços não incluem IVA", ln=True)
         self.cell(0, 5, "Condições de pagamento: A combinar", ln=True)
 
-    def gerar(self, rfq_info, solicitante_info, itens_resposta):
+        def gerar(self, rfq_info, solicitante_info, itens_resposta):
         self.add_page()
         self.add_info(rfq_info, solicitante_info)
         self.add_table_header()
-        
+
         total_geral = 0
         peso_total = 0
         for idx, item in enumerate(itens_resposta, 1):
             total_item = self.add_table_row(idx, item)
             total_geral += total_item
             peso_total += item.get('peso', 0) * item['quantidade_final']
-        
-        self.add_total(total_geral, peso_total)
-        
-        return self.output(dest='S').encode('latin-1')(10)
-        
-        self.set_font("Arial", "", 10)
-        self.cell(0, 5, f"Prazo de entrega: {prazo_medio} dias úteis", ln=True)
-        self.cell(0, 5, "Validade da proposta: 30 dias", ln=True)
-        self.cell(0, 5, "Preços não incluem IVA", ln=True)
-        self.cell(0, 5, "Condições de pagamento: A combinar", ln=True)
 
-    def gerar(self, rfq_info, solicitante_info, itens_resposta, prazo_medio):
-        self.add_page()
-        self.add_info(rfq_info, solicitante_info)
-        self.add_table_header()
-        
-        total_geral = 0
-        for idx, item in enumerate(itens_resposta, 1):
-            total_item = self.add_table_row(idx, item)
-            total_geral += total_item
-        
-        self.add_total(total_geral, prazo_medio)
-        
+        self.add_total(total_geral, peso_total)
+
         return self.output(dest='S').encode('latin-1')
 
 # ========================== FUNÇÕES DE GESTÃO DE PDFs ==========================
@@ -2145,3 +2125,4 @@ st.markdown("""
         Sistema ERP KTB Portugal v4.0 | Desenvolvido por Ricardo Nogueira | © 2025
     </div>
 """, unsafe_allow_html=True)
+
