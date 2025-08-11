@@ -1354,8 +1354,9 @@ def exibir_pdf(label, data_pdf):
         return
     b64 = base64.b64encode(data_pdf).decode()
     pdf_html = f'<embed src="data:application/pdf;base64,{b64}" width="100%" height="500" type="application/pdf">'
+
     with st.expander(label):
-        st.markdown(pdf_html, unsafe_allow_html=True)
+        st.components.v1.html(pdf_html, height=500)
 
 
 def verificar_pdfs(rfq_id):
@@ -1526,6 +1527,7 @@ st.markdown("""
 # Menu lateral
 with st.sidebar:
     st.title("📋 Menu Principal")
+
     if st.button("🚪 Sair"):
         st.session_state.logged_in = False
         st.session_state.role = None
@@ -1545,8 +1547,19 @@ with st.sidebar:
     stats = obter_estatisticas_db()
     st.metric("Cotações Pendentes", stats.get('rfq_pendentes', 0))
     st.metric("Cotações Respondidas", stats.get('rfq_respondidas', 0))
-    
+
     st.markdown("---")
+
+    # Estatísticas rápidas
+    stats = obter_estatisticas_db()
+    st.metric("Cotações Pendentes", stats.get('rfq_pendentes', 0))
+    st.metric("Cotações Respondidas", stats.get('rfq_respondidas', 0))
+
+    st.markdown("---")
+    if st.button("🚪 Sair"):
+        st.session_state.logged_in = False
+        st.session_state.role = None
+        st.rerun()
     st.markdown("""
         <div style="text-align: center; font-size: 12px;">
             <p>Sistema ERP v4.0</p>
@@ -1925,14 +1938,17 @@ elif menu_option == "📩 Responder Cotações":
                                 st.markdown("**Anexos:**")
                                 for tipo, nome, data_pdf in anexos:
                                     rotulo = f"{tipo} - {nome if nome else 'ficheiro.pdf'}"
-                                    st.download_button(
-                                        label=f"⬇️ {rotulo}",
-                                        data=data_pdf,
-                                        file_name=nome if nome else f"{tipo}_{cotacao['id']}.pdf",
-                                        mime="application/pdf",
-                                        key=f"anexo_{cotacao['id']}_{tipo}"
-                                    )
-                                    exibir_pdf(f"👁️ {rotulo}", data_pdf)
+                                    col_anexo_dl, col_anexo_view = st.columns([1, 1])
+                                    with col_anexo_dl:
+                                        st.download_button(
+                                            label=f"⬇️ {rotulo}",
+                                            data=data_pdf,
+                                            file_name=nome if nome else f"{tipo}_{cotacao['id']}.pdf",
+                                            mime="application/pdf",
+                                            key=f"anexo_{cotacao['id']}_{tipo}"
+                                        )
+                                    with col_anexo_view:
+                                        exibir_pdf(f"👁️ {rotulo}", data_pdf)
                             st.write(f"**Solicitante:** {cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else 'N/A'}")
                             st.write(f"**Email:** {cotacao['email_solicitante'] if cotacao['email_solicitante'] else 'N/A'}")
                             st.write(f"**Artigos:** {cotacao['num_artigos']}")
@@ -1941,14 +1957,17 @@ elif menu_option == "📩 Responder Cotações":
                             # Botões de ação
                             pdf_pedido = obter_pdf_da_db(cotacao['id'], "pedido")
                             if pdf_pedido:
-                                st.download_button(
-                                    "📄 PDF",
-                                    data=pdf_pedido,
-                                    file_name=f"pedido_{cotacao['id']}.pdf",
-                                    mime="application/pdf",
-                                    key=f"pdf_pend_{cotacao['id']}"
-                                )
-                                exibir_pdf("👁️ PDF", pdf_pedido)
+                                col_pdf_dl, col_pdf_view = st.columns([1, 1])
+                                with col_pdf_dl:
+                                    st.download_button(
+                                        "📄 PDF",
+                                        data=pdf_pedido,
+                                        file_name=f"pedido_{cotacao['id']}.pdf",
+                                        mime="application/pdf",
+                                        key=f"pdf_pend_{cotacao['id']}"
+                                    )
+                                with col_pdf_view:
+                                    exibir_pdf("👁️ PDF", pdf_pedido)
                             
                             if st.button("💬 Responder", key=f"resp_{cotacao['id']}"):
                                 st.session_state.show_response_form = cotacao['id']
@@ -2012,37 +2031,46 @@ elif menu_option == "📩 Responder Cotações":
                             st.markdown("**Anexos:**")
                             for tipo, nome, data_pdf in anexos:
                                 rotulo = f"{tipo} - {nome if nome else 'ficheiro.pdf'}"
-                                st.download_button(
-                                    label=f"⬇️ {rotulo}",
-                                    data=data_pdf,
-                                    file_name=nome if nome else f"{tipo}_{cotacao['id']}.pdf",
-                                    mime="application/pdf",
-                                    key=f"anexo_resp_{cotacao['id']}_{tipo}"
-                                )
-                                exibir_pdf(f"👁️ {rotulo}", data_pdf)
+                                col_resp_dl, col_resp_view = st.columns([1, 1])
+                                with col_resp_dl:
+                                    st.download_button(
+                                        label=f"⬇️ {rotulo}",
+                                        data=data_pdf,
+                                        file_name=nome if nome else f"{tipo}_{cotacao['id']}.pdf",
+                                        mime="application/pdf",
+                                        key=f"anexo_resp_{cotacao['id']}_{tipo}"
+                                    )
+                                with col_resp_view:
+                                    exibir_pdf(f"👁️ {rotulo}", data_pdf)
                         # PDF interno
                         pdf_interno = obter_pdf_da_db(cotacao['id'], "pedido")
                         if pdf_interno:
-                            st.download_button(
-                                "📄 PDF Interno",
-                                data=pdf_interno,
-                                file_name=f"interno_{cotacao['id']}.pdf",
-                                mime="application/pdf",
-                                key=f"pdf_int_{cotacao['id']}"
-                            )
-                            exibir_pdf("👁️ PDF Interno", pdf_interno)
+                            col_int_dl, col_int_view = st.columns([1, 1])
+                            with col_int_dl:
+                                st.download_button(
+                                    "📄 PDF Interno",
+                                    data=pdf_interno,
+                                    file_name=f"interno_{cotacao['id']}.pdf",
+                                    mime="application/pdf",
+                                    key=f"pdf_int_{cotacao['id']}"
+                                )
+                            with col_int_view:
+                                exibir_pdf("👁️ PDF Interno", pdf_interno)
 
                         # PDF cliente
                         pdf_cliente = obter_pdf_da_db(cotacao['id'], "cliente")
                         if pdf_cliente:
-                            st.download_button(
-                                "💰 PDF Cliente",
-                                data=pdf_cliente,
-                                file_name=f"cliente_{cotacao['id']}.pdf",
-                                mime="application/pdf",
-                                key=f"pdf_cli_{cotacao['id']}"
-                            )
-                            exibir_pdf("👁️ PDF Cliente", pdf_cliente)
+                            col_cli_dl, col_cli_view = st.columns([1, 1])
+                            with col_cli_dl:
+                                st.download_button(
+                                    "💰 PDF Cliente",
+                                    data=pdf_cliente,
+                                    file_name=f"cliente_{cotacao['id']}.pdf",
+                                    mime="application/pdf",
+                                    key=f"pdf_cli_{cotacao['id']}"
+                                )
+                            with col_cli_view:
+                                exibir_pdf("👁️ PDF Cliente", pdf_cliente)
                         
                         # Reenviar email
                         if st.button("📧 Reenviar", key=f"reenviar_{cotacao['id']}"):
