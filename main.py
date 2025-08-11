@@ -1528,7 +1528,7 @@ st.markdown("""
 with st.sidebar:
     st.title("📋 Menu Principal")
 
-    if st.button("🚪 Sair"):
+    if st.button("🚪 Sair", key="sidebar_logout"):
         st.session_state.logged_in = False
         st.session_state.role = None
         st.rerun()
@@ -1556,7 +1556,7 @@ with st.sidebar:
     st.metric("Cotações Respondidas", stats.get('rfq_respondidas', 0))
 
     st.markdown("---")
-    if st.button("🚪 Sair"):
+    if st.button("🚪 Sair", key="footer_logout"):
         st.session_state.logged_in = False
         st.session_state.role = None
         st.rerun()
