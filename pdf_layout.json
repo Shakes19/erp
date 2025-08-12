@@ -1,0 +1,56 @@
+{
+  "pedido": {
+    "header": {
+      "title": "PEDIDO DE COTAÇÃO",
+      "font": "Arial",
+      "font_style": "B",
+      "font_size": 16,
+      "logo": {"path": "logo.jpeg", "x": 160, "y": 10, "w": 40},
+      "line_height": 10,
+      "spacing": 5
+    },
+    "body": {"font": "Arial", "font_size": 12, "note_font_size": 10},
+    "table": {
+      "headers": ["#", "Art. Nº", "Descrição", "Qtd", "Unidade", "Preço Unit."],
+      "widths": [10, 25, 85, 20, 25, 25],
+      "font": "Arial",
+      "font_style": "B",
+      "font_size": 10,
+      "row_font_size": 9
+    },
+    "footer_note": "Por favor, preencha os preços unitários e devolva este documento."
+  },
+  "cliente": {
+    "header": {
+      "title": "ORÇAMENTO",
+      "font": "Arial",
+      "font_style": "B",
+      "font_size": 16,
+      "logo": {"path": "logo.jpeg", "x": 160, "y": 10, "w": 40},
+      "line_height": 10,
+      "spacing": 5
+    },
+    "body": {"font": "Arial", "font_size": 12},
+    "table": {
+      "headers": ["#", "Art. Nº", "Descrição", "Qtd", "P.Unit.", "Total", "HS Code", "Origem", "Prazo", "Peso"],
+      "widths": [8, 18, 55, 12, 18, 20, 18, 15, 12, 14],
+      "font": "Arial",
+      "font_style": "B",
+      "font_size": 9,
+      "row_font_size": 8
+    },
+    "totals": {
+      "font": "Arial",
+      "font_style": "B",
+      "font_size": 11,
+      "label_width": 131,
+      "total_width": 20,
+      "extra_width": 39
+    },
+    "conditions": [
+      "Validade da proposta: 30 dias",
+      "Preços não incluem IVA",
+      "Condições de pagamento: A combinar"
+    ]
+  }
+}
