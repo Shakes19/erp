@@ -3,6 +3,7 @@ import sqlite3
 from datetime import datetime
 from fpdf import FPDF
 import base64
+import json
 from io import BytesIO
 import os
 import shutil
@@ -22,6 +23,15 @@ EMAIL_CONFIG = {
     'smtp_server': 'smtp-mail.outlook.com',
     'smtp_port': 587
 }
+
+def load_pdf_config(tipo):
+    """Carrega configurações de layout do PDF a partir de pdf_layout.json"""
+    try:
+        with open('pdf_layout.json', 'r', encoding='utf-8') as f:
+            data=json.load(f)
+        return data.get(tipo, {})
+    except Exception:
+        return {}
 
 
 st.set_page_config(
@@ -1076,18 +1086,33 @@ def guardar_pdf_upload(rfq_id, tipo_pdf, nome_arquivo, bytes_):
 
 class QuotationPDF(FPDF):
     """PDF para pedido de cotação ao fornecedor (sem marca)"""
+    def __init__(self, config=None):
+        super().__init__()
+        self.cfg = config or {}
+
     def header(self):
+        header_cfg = self.cfg.get("header", {})
+        logo_cfg = header_cfg.get("logo", {})
         try:
-            if os.path.exists("logo.jpeg"):
-                self.image("logo.jpeg", 160, 10, 40)
-        except:
+            path = logo_cfg.get("path", "logo.jpeg")
+            if os.path.exists(path):
+                self.image(path, logo_cfg.get("x", 160), logo_cfg.get("y", 10), logo_cfg.get("w", 40))
+        except Exception:
             pass
-        self.set_font("Arial", "B", 16)
-        self.cell(0, 10, "PEDIDO DE COTAÇÃO", ln=True, align='C')
-        self.ln(5)
+        font = header_cfg.get("font", "Arial")
+        style = header_cfg.get("font_style", "B")
+        size = header_cfg.get("font_size", 16)
+        title = header_cfg.get("title", "PEDIDO DE COTAÇÃO")
+        line_height = header_cfg.get("line_height", 10)
+        self.set_font(font, style, size)
+        self.cell(0, line_height, title, ln=True, align='C')
+        self.ln(header_cfg.get("spacing", 5))
 
     def add_info(self, fornecedor, data, referencia=""):
-        self.set_font("Arial", "", 12)
+        body_cfg = self.cfg.get("body", {})
+        font = body_cfg.get("font", "Arial")
+        size = body_cfg.get("font_size", 12)
+        self.set_font(font, "", size)
         self.cell(0, 10, f"Data: {data}", ln=True)
         self.cell(0, 10, f"Fornecedor: {fornecedor}", ln=True)
         if referencia:
@@ -1095,16 +1120,23 @@ class QuotationPDF(FPDF):
         self.ln(8)
 
     def add_table_header(self):
-        self.set_font("Arial", "B", 10)
-        headers = ["#", "Art. Nº", "Descrição", "Qtd", "Unidade", "Preço Unit."]
-        widths = [10, 25, 85, 20, 25, 25]
+        table_cfg = self.cfg.get("table", {})
+        headers = table_cfg.get("headers", ["#", "Art. Nº", "Descrição", "Qtd", "Unidade", "Preço Unit."])
+        widths = table_cfg.get("widths", [10, 25, 85, 20, 25, 25])
+        font = table_cfg.get("font", "Arial")
+        style = table_cfg.get("font_style", "B")
+        size = table_cfg.get("font_size", 10)
+        self.set_font(font, style, size)
         for i in range(len(headers)):
             self.cell(widths[i], 8, headers[i], border=1, align='C')
         self.ln()
 
     def add_table_row(self, idx, artigo):
-        self.set_font("Arial", "", 9)
-        widths = [10, 25, 85, 20, 25, 25]
+        table_cfg = self.cfg.get("table", {})
+        widths = table_cfg.get("widths", [10, 25, 85, 20, 25, 25])
+        row_font = table_cfg.get("font", "Arial")
+        row_size = table_cfg.get("row_font_size", 9)
+        self.set_font(row_font, "", row_size)
         
         self.cell(widths[0], 8, str(idx), border=1, align='C')
         self.cell(widths[1], 8, artigo.get('artigo_num', '')[:15], border=1)
@@ -1160,29 +1192,47 @@ class QuotationPDF(FPDF):
         self.add_table_header()
         for idx, art in enumerate(artigos, 1):
             self.add_table_row(idx, art)
-        
+
         # Adicionar nota no final
+        note = self.cfg.get("footer_note", "Por favor, preencha os preços unitários e devolva este documento.")
+        body_cfg = self.cfg.get("body", {})
+        note_size = body_cfg.get("note_font_size", 10)
         self.ln(10)
-        self.set_font("Arial", "I", 10)
-        self.cell(0, 5, "Por favor, preencha os preços unitários e devolva este documento.", ln=True)
-        
+        self.set_font(body_cfg.get("font", "Arial"), "I", note_size)
+        self.cell(0, 5, note, ln=True)
+
         return self.output(dest='S').encode('latin-1')
 
 
 class ClientQuotationPDF(FPDF):
     """PDF para orçamento ao cliente com todos os detalhes"""
+    def __init__(self, config=None):
+        super().__init__()
+        self.cfg = config or {}
+
     def header(self):
+        header_cfg = self.cfg.get("header", {})
+        logo_cfg = header_cfg.get("logo", {})
         try:
-            if os.path.exists("logo.jpeg"):
-                self.image("logo.jpeg", 160, 10, 40)
+            path = logo_cfg.get("path", "logo.jpeg")
+            if os.path.exists(path):
+                self.image(path, logo_cfg.get("x", 160), logo_cfg.get("y", 10), logo_cfg.get("w", 40))
         except Exception:
             pass
-        self.set_font("Arial", "B", 16)
-        self.cell(0, 10, "ORÇAMENTO", ln=True, align='C')
-        self.ln(5)
+        font = header_cfg.get("font", "Arial")
+        style = header_cfg.get("font_style", "B")
+        size = header_cfg.get("font_size", 16)
+        title = header_cfg.get("title", "ORÇAMENTO")
+        line_height = header_cfg.get("line_height", 10)
+        self.set_font(font, style, size)
+        self.cell(0, line_height, title, ln=True, align='C')
+        self.ln(header_cfg.get("spacing", 5))
 
     def add_info(self, rfq_info, solicitante_info):
-        self.set_font("Arial", "", 12)
+        body_cfg = self.cfg.get("body", {})
+        font = body_cfg.get("font", "Arial")
+        size = body_cfg.get("font_size", 12)
+        self.set_font(font, "", size)
         self.cell(0, 8, f"Data: {rfq_info['data']}", ln=True)
         self.cell(0, 8, f"Referência: {rfq_info['referencia']}", ln=True)
         if solicitante_info.get('nome'):
@@ -1192,9 +1242,13 @@ class ClientQuotationPDF(FPDF):
         self.ln(5)
 
     def add_table_header(self):
-        self.set_font("Arial", "B", 9)
-        headers = ["#", "Art. Nº", "Descrição", "Qtd", "P.Unit.", "Total", "HS Code", "Origem", "Prazo", "Peso"]
-        widths = [8, 18, 55, 12, 18, 20, 18, 15, 12, 14]
+        table_cfg = self.cfg.get("table", {})
+        headers = table_cfg.get("headers", ["#", "Art. Nº", "Descrição", "Qtd", "P.Unit.", "Total", "HS Code", "Origem", "Prazo", "Peso"])
+        widths = table_cfg.get("widths", [8, 18, 55, 12, 18, 20, 18, 15, 12, 14])
+        font = table_cfg.get("font", "Arial")
+        style = table_cfg.get("font_style", "B")
+        size = table_cfg.get("font_size", 9)
+        self.set_font(font, style, size)
         for i in range(len(headers)):
             self.cell(widths[i], 7, headers[i], border=1, align='C')
         self.ln()
@@ -1216,8 +1270,11 @@ class ClientQuotationPDF(FPDF):
         return lines if lines else [text[:max_length]]
 
     def add_table_row(self, idx, item):
-        self.set_font("Arial", "", 8)
-        widths = [8, 18, 55, 12, 18, 20, 18, 15, 12, 14]
+        table_cfg = self.cfg.get("table", {})
+        widths = table_cfg.get("widths", [8, 18, 55, 12, 18, 20, 18, 15, 12, 14])
+        row_font = table_cfg.get("font", "Arial")
+        row_size = table_cfg.get("row_font_size", 8)
+        self.set_font(row_font, "", row_size)
         
         preco_venda = float(item['preco_venda'])
         quantidade = int(item['quantidade_final'])
@@ -1262,30 +1319,41 @@ class ClientQuotationPDF(FPDF):
         return total
 
     def add_total(self, total_geral, peso_total):
+        totals_cfg = self.cfg.get("totals", {})
+        font = totals_cfg.get("font", "Arial")
+        style = totals_cfg.get("font_style", "B")
+        size = totals_cfg.get("font_size", 11)
+        label_w = totals_cfg.get("label_width", 131)
+        total_w = totals_cfg.get("total_width", 20)
+        extra_w = totals_cfg.get("extra_width", 39)
         self.ln(5)
-        self.set_font("Arial", "B", 11)
-        self.cell(131, 8, "TOTAL:", border=1, align='R')
-        self.cell(20, 8, f"EUR {total_geral:.2f}", border=1, align='C')
-        self.cell(39, 8, f"Peso Total: {peso_total:.1f}kg", border=1, align='C')
+        self.set_font(font, style, size)
+        self.cell(label_w, 8, "TOTAL:", border=1, align='R')
+        self.cell(total_w, 8, f"EUR {total_geral:.2f}", border=1, align='C')
+        self.cell(extra_w, 8, f"Peso Total: {peso_total:.1f}kg", border=1, align='C')
         self.ln(10)
-        
-        self.set_font("Arial", "", 10)
-        self.cell(0, 5, "Validade da proposta: 30 dias", ln=True)
-        self.cell(0, 5, "Preços não incluem IVA", ln=True)
-        self.cell(0, 5, "Condições de pagamento: A combinar", ln=True)
+
+        conditions = self.cfg.get("conditions", [
+            "Validade da proposta: 30 dias",
+            "Preços não incluem IVA",
+            "Condições de pagamento: A combinar",
+        ])
+        self.set_font(font, "", size - 1)
+        for cond in conditions:
+            self.cell(0, 5, cond, ln=True)
 
     def gerar(self, rfq_info, solicitante_info, itens_resposta):
         self.add_page()
         self.add_info(rfq_info, solicitante_info)
         self.add_table_header()
-        
+
         total_geral = 0.0
         peso_total = 0.0
         for idx, item in enumerate(itens_resposta, 1):
             total_item = self.add_table_row(idx, item)
             total_geral += total_item
             peso_total += float(item.get('peso') or 0) * int(item['quantidade_final'])
-        
+
         self.add_total(total_geral, peso_total)
         return self.output(dest='S').encode('latin-1')
 # ========================== FUNÇÕES DE GESTÃO DE PDFs ==========================
@@ -1293,7 +1361,8 @@ class ClientQuotationPDF(FPDF):
 def gerar_e_armazenar_pdf(rfq_id, fornecedor, data, artigos, referencia=""):
     """Gerar e armazenar PDF de pedido de cotação"""
     try:
-        pdf_generator = QuotationPDF()
+        config = load_pdf_config("pedido")
+        pdf_generator = QuotationPDF(config)
         pdf_bytes = pdf_generator.gerar(fornecedor, data.strftime("%Y-%m-%d"), artigos, referencia)
         
         conn = obter_conexao()
@@ -1351,7 +1420,8 @@ def gerar_pdf_cliente(rfq_id):
             return False
 
         # 3. Gerar PDF
-        pdf_cliente = ClientQuotationPDF()
+        config = load_pdf_config("cliente")
+        pdf_cliente = ClientQuotationPDF(config)
         pdf_bytes = pdf_cliente.gerar(
             rfq_info={
                 'data': rfq_data[2],
