@@ -213,10 +213,19 @@ def criar_base_dados():
                 nome TEXT,
                 morada TEXT,
                 nif TEXT,
-                iban TEXT
+                iban TEXT,
+                telefone TEXT,
+                email TEXT,
+                website TEXT
             )
             """
         )
+
+        c.execute("PRAGMA table_info(configuracao_empresa)")
+        cols = [row[1] for row in c.fetchall()]
+        for col in ["telefone", "email", "website"]:
+            if col not in cols:
+                c.execute(f"ALTER TABLE configuracao_empresa ADD COLUMN {col} TEXT")
 
         # Tabela de logs
         c.execute(
