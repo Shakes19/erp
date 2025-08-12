@@ -218,6 +218,17 @@ def criar_base_dados_completa():
         )
         """)
 
+        # Tabela de configuração da empresa
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS configuracao_empresa (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT,
+            morada TEXT,
+            nif TEXT,
+            iban TEXT
+        )
+        """)
+
         # Tabela de utilizadores do sistema
         c.execute("""
         CREATE TABLE IF NOT EXISTS utilizador (
@@ -340,6 +351,20 @@ def inserir_dados_exemplo(cursor):
 def obter_conexao():
     """Retorna uma conexão à base de dados"""
     return sqlite3.connect(DB_PATH, check_same_thread=False)
+
+
+def obter_config_empresa():
+    """Obtém dados da empresa para uso nos PDFs"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute(
+        "SELECT nome, morada, nif, iban FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
+    )
+    row = c.fetchone()
+    conn.close()
+    if row:
+        return {"nome": row[0], "morada": row[1], "nif": row[2], "iban": row[3]}
+    return None
 
 # ========================== FUNÇÕES DE GESTÃO DE FORNECEDORES ==========================
 
@@ -611,7 +636,7 @@ def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
         # Gerar PDF
         c.execute("SELECT nome FROM fornecedor WHERE id = ?", (fornecedor_id,))
         nome_fornecedor = c.fetchone()[0]
-        gerar_e_armazenar_pdf(rfq_id, nome_fornecedor, data, artigos, referencia)
+        gerar_e_armazenar_pdf(rfq_id, nome_fornecedor, data, artigos)
         # Enviar pedido por email ao fornecedor
         enviar_email_pedido_fornecedor(rfq_id)
 
@@ -1148,11 +1173,12 @@ class InquiryPDF(FPDF):
         self.set_xy(self.w - 15 - 70, 45)
         for line in company_lines:
             self.cell(70, 4, line, ln=1, align="R")
+        y_after_company = self.get_y()
 
         # Grelha de metadados
         meta = self.recipient.get("metadata", {})
         meta.setdefault("Page", str(self.page_no()))
-        start_y = 45
+        start_y = y_after_company + 2
         self.set_xy(self.w - 15 - 70, start_y)
         for label, value in meta.items():
             self.set_xy(self.w - 15 - 70, start_y)
@@ -1202,8 +1228,8 @@ class InquiryPDF(FPDF):
     #  Corpo do documento
     # ------------------------------------------------------------------
     def _table_col_widths(self):
-        item_w = self.w - 30 - 12 - 12 - 14
-        return [12, 12, 14, item_w]
+        item_w = self.w - 30 - 12 - 25 - 12 - 14
+        return [12, 25, 12, 14, item_w]
 
     def add_title(self):
         self.set_font("Helvetica", "B", 16)
@@ -1230,8 +1256,8 @@ class InquiryPDF(FPDF):
     def table_header(self):
         col_w = self._table_col_widths()
         self.set_font("Helvetica", "B", 11)
-        headers = ["Pos.", "Quantity", "Unit", "Item"]
-        aligns = ["C", "C", "C", "L"]
+        headers = ["Pos.", "Article No.", "Quantity", "Unit", "Item"]
+        aligns = ["C", "C", "C", "C", "L"]
         for w, h, a in zip(col_w, headers, aligns):
             self.cell(w, 8, h, border=1, align=a)
         self.ln()
@@ -1252,6 +1278,7 @@ class InquiryPDF(FPDF):
 
         x_start = self.get_x()
         y_start = self.get_y()
+        part_no = item.get("artigo_num", "")
         # Desenhar células
         for i in range(line_count):
             border = "LR"
@@ -1261,17 +1288,12 @@ class InquiryPDF(FPDF):
                 border = border.replace("R", "RB")
             self.set_xy(x_start, y_start + i * line_height)
             self.cell(col_w[0], line_height, str(idx) if i == 0 else "", border=border, align="C")
-            self.cell(col_w[1], line_height, str(item.get("quantidade", "")) if i == 0 else "", border=border, align="C")
-            self.cell(col_w[2], line_height, item.get("unidade", "") if i == 0 else "", border=border, align="C")
-            self.cell(col_w[3], line_height, lines[i], border=border)
+            self.cell(col_w[1], line_height, part_no if i == 0 else "", border=border, align="C")
+            self.cell(col_w[2], line_height, str(item.get("quantidade", "")) if i == 0 else "", border=border, align="C")
+            self.cell(col_w[3], line_height, item.get("unidade", "") if i == 0 else "", border=border, align="C")
+            self.cell(col_w[4], line_height, lines[i], border=border)
 
         self.set_y(y_start + row_height)
-        self.set_x(x_start + col_w[0] + col_w[1] + col_w[2])
-        self.set_font("Helvetica", "B", 11)
-        part_no = item.get("artigo_num", "")
-        self.cell(col_w[3], line_height, f"KTB Part No.: ", ln=0)
-        self.set_font("Helvetica", "", 11)
-        self.cell(0, line_height, part_no, ln=1)
 
     def add_notes(self):
         self.ln(4)
@@ -1459,27 +1481,49 @@ class ClientQuotationPDF(FPDF):
         return self.output(dest='S').encode('latin-1')
 # ========================== FUNÇÕES DE GESTÃO DE PDFs ==========================
 
-def gerar_e_armazenar_pdf(rfq_id, fornecedor, data, artigos, referencia=""):
+def gerar_e_armazenar_pdf(rfq_id, fornecedor, data, artigos):
     """Gerar e armazenar PDF de pedido de cotação"""
     try:
         config = load_pdf_config("pedido")
+
+        empresa = obter_config_empresa()
+        if empresa:
+            linhas = [empresa.get("nome") or "", empresa.get("morada") or ""]
+            if empresa.get("nif"):
+                linhas.append(f"NIF: {empresa['nif']}")
+            if empresa.get("iban"):
+                linhas.append(f"IBAN: {empresa['iban']}")
+                config["bank_details"] = [{"IBAN / Account No.": empresa["iban"]}]
+            config["company_lines"] = [l for l in linhas if l]
+
+        conn = obter_conexao()
+        c = conn.cursor()
+        c.execute(
+            """SELECT processo.numero FROM rfq JOIN processo ON rfq.processo_id = processo.id
+                   WHERE rfq.id = ?""",
+            (rfq_id,),
+        )
+        row = c.fetchone()
+        numero_processo = row[0] if row else ""
+
         pdf_generator = InquiryPDF(config)
         pdf_bytes = pdf_generator.gerar(
             fornecedor,
             data.strftime("%Y-%m-%d"),
             artigos,
-            referencia,
+            numero_processo,
         )
-        
-        conn = obter_conexao()
-        c = conn.cursor()
-        c.execute("""
+
+        c.execute(
+            """
             INSERT OR REPLACE INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes)
             VALUES (?, ?, ?, ?)
-        """, (str(rfq_id), "pedido", pdf_bytes, len(pdf_bytes)))
+        """,
+            (str(rfq_id), "pedido", pdf_bytes, len(pdf_bytes)),
+        )
         conn.commit()
         conn.close()
-        
+
         return pdf_bytes
     except Exception as e:
         st.error(f"Erro ao gerar PDF: {str(e)}")
@@ -1527,6 +1571,9 @@ def gerar_pdf_cliente(rfq_id):
 
         # 3. Gerar PDF
         config = load_pdf_config("cliente")
+        empresa = obter_config_empresa()
+        if empresa:
+            config["company"] = empresa
         pdf_cliente = ClientQuotationPDF(config)
         pdf_bytes = pdf_cliente.gerar(
             rfq_info={
@@ -2661,13 +2708,14 @@ elif menu_option == "⚙️ Configurações":
         st.error("Sem permissão para aceder a esta área")
     else:
         st.title("⚙️ Configurações do Sistema")
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
             "Fornecedores",
             "Utilizadores",
             "Marcas e Margens",
             "Email",
             "Backup",
             "Layout PDF",
+            "Dados da Empresa",
         ])
 
 
@@ -3014,6 +3062,32 @@ elif menu_option == "⚙️ Configurações":
         st.caption(
             "Altere textos, tamanhos de letra e posições editando o JSON acima."
         )
+
+    with tab7:
+        st.subheader("Dados da Empresa")
+        conn = obter_conexao()
+        c = conn.cursor()
+        c.execute(
+            "SELECT nome, morada, nif, iban FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
+        )
+        dados = c.fetchone()
+        conn.close()
+        with st.form("empresa_form"):
+            nome_emp = st.text_input("Nome", dados[0] if dados else "")
+            morada_emp = st.text_area("Morada", dados[1] if dados else "")
+            nif_emp = st.text_input("NIF", dados[2] if dados else "")
+            iban_emp = st.text_input("IBAN", dados[3] if dados else "")
+            if st.form_submit_button("💾 Guardar"):
+                conn = obter_conexao()
+                c = conn.cursor()
+                c.execute("DELETE FROM configuracao_empresa")
+                c.execute(
+                    "INSERT INTO configuracao_empresa (nome, morada, nif, iban) VALUES (?, ?, ?, ?)",
+                    (nome_emp, morada_emp, nif_emp, iban_emp),
+                )
+                conn.commit()
+                conn.close()
+                st.success("Dados da empresa guardados!")
 
 # Footer
 st.markdown("---")
