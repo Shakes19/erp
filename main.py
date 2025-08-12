@@ -94,10 +94,22 @@ def criar_base_dados_completa():
         )
         """)
 
+        # Tabela de processos
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS processo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero TEXT NOT NULL UNIQUE,
+            descricao TEXT,
+            data_abertura TEXT DEFAULT CURRENT_TIMESTAMP,
+            estado TEXT DEFAULT 'ativo'
+        )
+        """)
+
         # Tabela RFQ (Request for Quotation)
         c.execute("""
         CREATE TABLE IF NOT EXISTS rfq (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            processo_id INTEGER,
             fornecedor_id INTEGER NOT NULL,
             data TEXT NOT NULL,
             estado TEXT DEFAULT 'pendente',
@@ -111,14 +123,18 @@ def criar_base_dados_completa():
             data_atualizacao TEXT DEFAULT CURRENT_TIMESTAMP,
             utilizador_id INTEGER,
             FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
-            FOREIGN KEY (utilizador_id) REFERENCES utilizador(id) ON DELETE SET NULL
+            FOREIGN KEY (utilizador_id) REFERENCES utilizador(id) ON DELETE SET NULL,
+            FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE SET NULL
         )
         """)
 
-        # Garantir que coluna utilizador_id existe na tabela rfq
+        # Garantir que colunas adicionais existem na tabela rfq
         c.execute("PRAGMA table_info(rfq)")
-        if "utilizador_id" not in [row[1] for row in c.fetchall()]:
+        rfq_columns = [row[1] for row in c.fetchall()]
+        if "utilizador_id" not in rfq_columns:
             c.execute("ALTER TABLE rfq ADD COLUMN utilizador_id INTEGER")
+        if "processo_id" not in rfq_columns:
+            c.execute("ALTER TABLE rfq ADD COLUMN processo_id INTEGER")
 
         # Tabela de artigos
         c.execute("""
