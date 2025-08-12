@@ -1677,12 +1677,14 @@ def exibir_pdf(label, data_pdf):
         st.warning("PDF não disponível")
         return
     b64 = base64.b64encode(data_pdf).decode()
-    pdf_html = f"""
-        <iframe src='data:application/pdf;base64,{b64}' width='100%' height='500' style='border:none;'></iframe>
-    """
+    pdf_html = (
+        f"<iframe src='data:application/pdf;base64,{b64}' "
+        "width='100%' height='500' style='border:none;'></iframe>"
+    )
 
+    # Usar markdown com unsafe_allow_html para evitar sandbox do st.components
     with st.expander(label):
-        st.components.v1.html(pdf_html, height=500)
+        st.markdown(pdf_html, unsafe_allow_html=True)
 
 
 def verificar_pdfs(rfq_id):
