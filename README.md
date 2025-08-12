@@ -48,6 +48,7 @@ Editar
   - Gestão de fornecedores, marcas e margens
   - Configuração de e-mail para envio automático
   - Backup da base de dados
+  - Agendamento de backup diário automático
 
 ---
 
@@ -116,6 +117,16 @@ A base de dados (cotacoes.db) é criada automaticamente ao iniciar a aplicação
 As configurações de e-mail devem ser definidas em EMAIL_CONFIG no main.py ou diretamente na interface em "Configurações > Email".
 
 Para envio de e-mails via Gmail, é necessário gerar uma palavra-passe de aplicação na conta Google.
+
+### ⏰ Backup automático diário
+
+Executa o agendador para criar uma cópia diária da base de dados:
+
+```bash
+python backup_scheduler.py
+```
+
+Os ficheiros de backup são guardados na pasta `backups/` com a data no nome.
 
 📜 Licença
 Projeto interno da KTB Portugal – uso restrito.
