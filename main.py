@@ -33,6 +33,17 @@ def load_pdf_config(tipo):
     except Exception:
         return {}
 
+def save_pdf_config(tipo, config):
+    """Guarda configurações de layout no ficheiro pdf_layout.json"""
+    try:
+        with open('pdf_layout.json', 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+    data[tipo] = config
+    with open('pdf_layout.json', 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
 
 st.set_page_config(
     page_title="ERP KTB Portugal",
@@ -2535,12 +2546,13 @@ elif menu_option == "⚙️ Configurações":
         st.error("Sem permissão para aceder a esta área")
     else:
         st.title("⚙️ Configurações do Sistema")
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "Fornecedores",
             "Utilizadores",
             "Marcas e Margens",
             "Email",
             "Backup",
+            "Layout PDF",
         ])
 
 
@@ -2855,10 +2867,10 @@ elif menu_option == "⚙️ Configurações":
                 temp_path = "temp_restore.db"
                 with open(temp_path, 'wb') as f:
                     f.write(uploaded_backup.getvalue())
-                
+
                 # Fazer backup atual antes de restaurar
                 backup_database("backup_antes_restauro.db")
-                
+
                 # Restaurar
                 try:
                     shutil.copy2(temp_path, DB_PATH)
@@ -2867,6 +2879,26 @@ elif menu_option == "⚙️ Configurações":
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao restaurar: {e}")
+
+    with tab6:
+        st.subheader("Layout dos PDFs")
+        tipo_layout = st.selectbox("Tipo de PDF", ["pedido", "cliente"])
+        config_atual = load_pdf_config(tipo_layout)
+        config_texto = st.text_area(
+            "Configuração (JSON)",
+            json.dumps(config_atual, ensure_ascii=False, indent=2),
+            height=400,
+        )
+        if st.button("💾 Guardar Layout"):
+            try:
+                nova_config = json.loads(config_texto)
+                save_pdf_config(tipo_layout, nova_config)
+                st.success("Layout atualizado com sucesso!")
+            except json.JSONDecodeError as e:
+                st.error(f"Erro no JSON: {e}")
+        st.caption(
+            "Altere textos, tamanhos de letra e posições editando o JSON acima."
+        )
 
 # Footer
 st.markdown("---")

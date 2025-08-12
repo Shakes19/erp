@@ -43,7 +43,7 @@ Editar
   - Todos os utilizadores podem visualizar
   - Apenas administradores podem substituir os ficheiros
 - **Layout de PDF personalizável**
-  - Ajuste textos, fontes e posicionamentos editando `pdf_layout.json`
+  - Ajuste textos, fontes e posicionamentos através de `Configurações > Layout PDF`
 - **Configurações**
   - Gestão de fornecedores, marcas e margens
   - Configuração de e-mail para envio automático
@@ -106,9 +106,10 @@ pip install streamlit fpdf
 
 ### 📝 Personalização de Layout dos PDFs
 
-O ficheiro `pdf_layout.json` controla o layout dos PDFs de pedido e cliente.
-Altere textos, tamanhos de letra, cabeçalhos ou larguras das colunas editando
-este ficheiro e reinicie a aplicação para aplicar as mudanças.
+O layout dos PDFs de pedido e cliente é definido em `pdf_layout.json` e pode ser
+ajustado diretamente pela aplicação em **Configurações > Layout PDF**.
+Altere textos, tamanhos de letra, cabeçalhos ou posições e as mudanças são
+aplicadas imediatamente.
 📌 Notas
 A base de dados (cotacoes.db) é criada automaticamente ao iniciar a aplicação se não existir.
 
