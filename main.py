@@ -1672,18 +1672,23 @@ def obter_pdf_da_db(rfq_id, tipo_pdf="pedido"):
 
 
 def exibir_pdf(label, data_pdf):
-    """Mostra PDF diretamente na página"""
+    """Mostra PDF usando PDF.js viewer"""
     if not data_pdf:
         st.warning("PDF não disponível")
         return
+    
     b64 = base64.b64encode(data_pdf).decode()
-    pdf_html = (
-        f"<iframe src='data:application/pdf;base64,{b64}' "
-        "width='100%' height='500' style='border:none;'></iframe>"
-    )
-
-    # Usar markdown com unsafe_allow_html para evitar sandbox do st.components
+    
     with st.expander(label):
+        # Usando PDF.js viewer público do Mozilla
+        pdf_viewer_url = f"https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}"
+        
+        pdf_html = f"""
+        <iframe src="{pdf_viewer_url}" 
+                width="100%" height="600" 
+                style="border:none;">
+        </iframe>
+        """
         st.markdown(pdf_html, unsafe_allow_html=True)
 
 
