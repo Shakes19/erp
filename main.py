@@ -225,9 +225,18 @@ def criar_base_dados_completa():
             nome TEXT,
             morada TEXT,
             nif TEXT,
-            iban TEXT
+            iban TEXT,
+            telefone TEXT,
+            email TEXT,
+            website TEXT
         )
         """)
+
+        c.execute("PRAGMA table_info(configuracao_empresa)")
+        cols = [row[1] for row in c.fetchall()]
+        for col in ["telefone", "email", "website"]:
+            if col not in cols:
+                c.execute(f"ALTER TABLE configuracao_empresa ADD COLUMN {col} TEXT")
 
         # Tabela de utilizadores do sistema
         c.execute("""
@@ -358,12 +367,20 @@ def obter_config_empresa():
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
-        "SELECT nome, morada, nif, iban FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
+        "SELECT nome, morada, nif, iban, telefone, email, website FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
     )
     row = c.fetchone()
     conn.close()
     if row:
-        return {"nome": row[0], "morada": row[1], "nif": row[2], "iban": row[3]}
+        return {
+            "nome": row[0],
+            "morada": row[1],
+            "nif": row[2],
+            "iban": row[3],
+            "telefone": row[4],
+            "email": row[5],
+            "website": row[6],
+        }
     return None
 
 # ========================== FUNÇÕES DE GESTÃO DE FORNECEDORES ==========================
@@ -1155,38 +1172,44 @@ class InquiryPDF(FPDF):
     # ------------------------------------------------------------------
     def header(self):
         """Cabeçalho com duas colunas e grelha de metadados"""
-        logo_path = self.cfg.get("logo_path", "logo.jpeg")
-        # Bloco do destinatário
-        self.set_xy(15, 27)  # ~12 mm abaixo do topo
+        header_cfg = self.cfg.get("header", {})
+        logo_cfg = header_cfg.get("logo", {})
+        logo_path = logo_cfg.get("path", self.cfg.get("logo_path", "logo.jpeg"))
+
+        # Grelha de metadados no lado esquerdo
+        meta = self.recipient.get("metadata", {})
+        meta.setdefault("Page", str(self.page_no()))
+        start_y = 15
+        for label, value in meta.items():
+            self.set_xy(15, start_y)
+            self.set_font("Helvetica", "B", 10)
+            self.cell(25, 5, f"{label}:")
+            self.set_font("Helvetica", "", 10)
+            self.cell(45, 5, value, ln=1)
+            start_y += 5
+
+        # Bloco do destinatário abaixo dos metadados
+        self.set_xy(15, start_y + 5)
         recip = self.recipient.get("address", [])
         self.set_font("Helvetica", "", 10)
         for line in recip:
             self.cell(80, 5, line, ln=1)
 
-        # Bloco da empresa (logo + contactos)
+        # Bloco da empresa (logo + contactos) no lado direito
         if os.path.exists(logo_path):
-            self.image(logo_path, self.w - 15 - 70, 15, 70)  # largura 60-80 mm
+            self.image(
+                logo_path,
+                logo_cfg.get("x", self.w - 15 - 70),
+                logo_cfg.get("y", 15),
+                logo_cfg.get("w", 70),
+            )
         company_lines = self.cfg.get(
             "company_lines",
             ["KTB Portugal, Lda.", "Rua Exemplo 123", "4455-123 Porto", "Portugal"],
         )
         self.set_xy(self.w - 15 - 70, 45)
         for line in company_lines:
-            self.cell(70, 4, line, ln=1, align="R")
-        y_after_company = self.get_y()
-
-        # Grelha de metadados
-        meta = self.recipient.get("metadata", {})
-        meta.setdefault("Page", str(self.page_no()))
-        start_y = y_after_company + 2
-        self.set_xy(self.w - 15 - 70, start_y)
-        for label, value in meta.items():
-            self.set_xy(self.w - 15 - 70, start_y)
-            self.set_font("Helvetica", "B", 10)
-            self.cell(25, 5, f"{label}:")
-            self.set_font("Helvetica", "", 10)
-            self.cell(45, 5, value, ln=1)
-            start_y += 5
+            self.cell(70, 4, line, ln=1, align="L")
 
         # Ajustar posição para início do corpo
         self.set_y(70)
@@ -1256,7 +1279,7 @@ class InquiryPDF(FPDF):
     def table_header(self):
         col_w = self._table_col_widths()
         self.set_font("Helvetica", "B", 11)
-        headers = ["Pos.", "Article No.", "Quantity", "Unit", "Item"]
+        headers = ["Pos.", "Article No.", "Qty", "Unit", "Item"]
         aligns = ["C", "C", "C", "C", "L"]
         for w, h, a in zip(col_w, headers, aligns):
             self.cell(w, 8, h, border=1, align=a)
@@ -1489,12 +1512,17 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor, data, artigos):
         empresa = obter_config_empresa()
         if empresa:
             linhas = [empresa.get("nome") or "", empresa.get("morada") or ""]
-            if empresa.get("nif"):
-                linhas.append(f"NIF: {empresa['nif']}")
-            if empresa.get("iban"):
-                linhas.append(f"IBAN: {empresa['iban']}")
-                config["bank_details"] = [{"IBAN / Account No.": empresa["iban"]}]
+            if empresa.get("telefone"):
+                linhas.append(f"Tel: {empresa['telefone']}")
+            if empresa.get("email"):
+                linhas.append(empresa["email"])
+            if empresa.get("website"):
+                linhas.append(empresa["website"])
             config["company_lines"] = [l for l in linhas if l]
+            if empresa.get("iban"):
+                config["bank_details"] = [{"IBAN / Account No.": empresa["iban"]}]
+            if empresa.get("nif"):
+                config["legal_info"] = [f"NIF: {empresa['nif']}"]
 
         conn = obter_conexao()
         c = conn.cursor()
@@ -3068,7 +3096,7 @@ elif menu_option == "⚙️ Configurações":
         conn = obter_conexao()
         c = conn.cursor()
         c.execute(
-            "SELECT nome, morada, nif, iban FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
+            "SELECT nome, morada, nif, iban, telefone, email, website FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
         )
         dados = c.fetchone()
         conn.close()
@@ -3077,13 +3105,16 @@ elif menu_option == "⚙️ Configurações":
             morada_emp = st.text_area("Morada", dados[1] if dados else "")
             nif_emp = st.text_input("NIF", dados[2] if dados else "")
             iban_emp = st.text_input("IBAN", dados[3] if dados else "")
+            telefone_emp = st.text_input("Telefone", dados[4] if dados else "")
+            email_emp = st.text_input("Email", dados[5] if dados else "")
+            website_emp = st.text_input("Website", dados[6] if dados else "")
             if st.form_submit_button("💾 Guardar"):
                 conn = obter_conexao()
                 c = conn.cursor()
                 c.execute("DELETE FROM configuracao_empresa")
                 c.execute(
-                    "INSERT INTO configuracao_empresa (nome, morada, nif, iban) VALUES (?, ?, ?, ?)",
-                    (nome_emp, morada_emp, nif_emp, iban_emp),
+                    "INSERT INTO configuracao_empresa (nome, morada, nif, iban, telefone, email, website) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (nome_emp, morada_emp, nif_emp, iban_emp, telefone_emp, email_emp, website_emp),
                 )
                 conn.commit()
                 conn.close()
