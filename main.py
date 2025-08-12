@@ -17,12 +17,10 @@ from email import encoders
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
 DB_PATH = "cotacoes.db"
 
-# Configurações de Email (devem ser configuradas com valores reais)
+# Configurações de Email (servidor e porta padrão)
 EMAIL_CONFIG = {
     'smtp_server': 'smtp-mail.outlook.com',
-    'smtp_port': 587,
-    'email_user': 'GRINYTUI@hotmail.com',
-    'email_password': 'ricardo19985'
+    'smtp_port': 587
 }
 
 
@@ -922,12 +920,12 @@ def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
 
         # Credenciais do utilizador atual
         current_user = obter_utilizador_por_id(st.session_state.get("user_id"))
-        if current_user:
+        if current_user and current_user[4] and current_user[6]:
             email_user = current_user[4]
             email_password = current_user[6]
         else:
-            email_user = EMAIL_CONFIG['email_user']
-            email_password = EMAIL_CONFIG['email_password']
+            st.error("Configure o seu email e password no perfil antes de enviar emails.")
+            return False
 
         print(f"🔧 Configurações SMTP: {smtp_server}:{smtp_port}")
         
@@ -1018,12 +1016,12 @@ def enviar_email_pedido_fornecedor(rfq_id):
             smtp_port = EMAIL_CONFIG['smtp_port']
 
         current_user = obter_utilizador_por_id(st.session_state.get("user_id"))
-        if current_user:
+        if current_user and current_user[4] and current_user[6]:
             email_user = current_user[4]
             email_password = current_user[6]
         else:
-            email_user = EMAIL_CONFIG['email_user']
-            email_password = EMAIL_CONFIG['email_password']
+            st.error("Configure o seu email e password no perfil antes de enviar emails.")
+            return False
 
         # Construir email
         msg = MIMEMultipart()
@@ -2226,7 +2224,7 @@ elif menu_option == "📩 Responder Cotações":
 elif menu_option == "📊 Relatórios":
     st.title("📊 Relatórios e Análises")
     
-    tab1, tab2 = st.tabs(["Estatísticas Gerais", "Por Fornecedor"])
+    tab1, tab2, tab3 = st.tabs(["Estatísticas Gerais", "Por Fornecedor", "Por Utilizador"])
     
     with tab1:
         st.subheader("Estatísticas Gerais")
@@ -2314,6 +2312,68 @@ elif menu_option == "📊 Relatórios":
                 conn.close()
         else:
             st.info("Nenhum fornecedor registado")
+
+    with tab3:
+        st.subheader("Análise por Utilizador")
+
+        utilizadores = listar_utilizadores()
+
+        if utilizadores:
+            user_sel = st.selectbox(
+                "Selecionar Utilizador",
+                options=utilizadores,
+                format_func=lambda x: x[1],
+            )
+
+            if user_sel:
+                conn = obter_conexao()
+                c = conn.cursor()
+
+                c.execute(
+                    """
+                    SELECT COUNT(*) as total,
+                           SUM(CASE WHEN estado = 'respondido' THEN 1 ELSE 0 END) as respondidas,
+                           SUM(CASE WHEN estado = 'pendente' THEN 1 ELSE 0 END) as pendentes
+                    FROM rfq
+                    WHERE utilizador_id = ?
+                    """,
+                    (user_sel[0],),
+                )
+
+                stats_user = c.fetchone()
+
+                if stats_user:
+                    col1, col2, col3 = st.columns(3)
+
+                    with col1:
+                        st.metric("Total Cotações", stats_user[0])
+                    with col2:
+                        st.metric("Respondidas", stats_user[1])
+                    with col3:
+                        st.metric("Pendentes", stats_user[2])
+
+                    st.markdown("---")
+                    st.subheader("Processos do Utilizador")
+
+                    cotacoes_user = obter_todas_cotacoes(utilizador_id=user_sel[0])
+                    if cotacoes_user:
+                        df = [
+                            {
+                                "ID": c["id"],
+                                "Fornecedor": c["fornecedor"],
+                                "Data": c["data"],
+                                "Estado": c["estado"],
+                                "Referência": c["referencia"],
+                            }
+                            for c in cotacoes_user
+                        ]
+                        st.dataframe(df)
+                    else:
+                        st.info("Nenhuma cotação associada")
+
+                conn.close()
+        else:
+            st.info("Nenhum utilizador registado")
 
 elif menu_option == "👤 Perfil":
     st.title("👤 Meu Perfil")
@@ -2631,34 +2691,28 @@ elif menu_option == "⚙️ Configurações":
                 "Porta SMTP",
                 value=config_atual[2] if config_atual else 587
             )
-            email_user = st.text_input(
-                "Email",
-                value=config_atual[3] if config_atual else ""
-            )
-            email_password = st.text_input(
-                "Password",
-                type="password",
-                value=config_atual[4] if config_atual else ""
-            )
-            
+
             if st.form_submit_button("💾 Guardar Configuração"):
                 conn = obter_conexao()
                 c = conn.cursor()
-                
+
                 # Desativar configurações anteriores
                 c.execute("UPDATE configuracao_email SET ativo = FALSE")
-                
+
                 # Inserir nova configuração
-                c.execute("""
-                    INSERT INTO configuracao_email (smtp_server, smtp_port, email_user, email_password, ativo)
-                    VALUES (?, ?, ?, ?, TRUE)
-                """, (smtp_server, smtp_port, email_user, email_password))
-                
+                c.execute(
+                    """
+                    INSERT INTO configuracao_email (smtp_server, smtp_port, ativo)
+                    VALUES (?, ?, TRUE)
+                    """,
+                    (smtp_server, smtp_port),
+                )
+
                 conn.commit()
                 conn.close()
-                
+
                 st.success("Configuração de email guardada!")
-        
+
         st.info("Nota: Para Gmail, use uma 'App Password' em vez da password normal")
     
     with tab5:
