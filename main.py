@@ -627,7 +627,7 @@ def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
 
     try:
         utilizador_id = st.session_state.get("user_id")
-        processo_id, _ = criar_processo()
+        processo_id, numero_processo = criar_processo()
         c.execute("""
             INSERT INTO rfq (processo_id, fornecedor_id, data, referencia,
                            nome_solicitante, email_solicitante, estado, utilizador_id)
@@ -651,13 +651,11 @@ def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
         conn.commit()
 
         # Gerar PDF
-        c.execute("SELECT nome FROM fornecedor WHERE id = ?", (fornecedor_id,))
-        nome_fornecedor = c.fetchone()[0]
-        gerar_e_armazenar_pdf(rfq_id, nome_fornecedor, data, artigos)
+        gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos)
         # Enviar pedido por email ao fornecedor
         enviar_email_pedido_fornecedor(rfq_id)
 
-        return rfq_id, referencia
+        return rfq_id, numero_processo
     except Exception as e:
         conn.rollback()
         st.error(f"Erro ao criar RFQ: {str(e)}")
@@ -672,11 +670,12 @@ def obter_todas_cotacoes(filtro_referencia="", estado=None, fornecedor_id=None, 
         c = conn.cursor()
         
         query = """
-            SELECT rfq.id, rfq.data, fornecedor.nome, rfq.estado, rfq.referencia,
+            SELECT rfq.id, rfq.data, fornecedor.nome, rfq.estado, processo.numero, rfq.referencia,
                    COUNT(artigo.id) as num_artigos, rfq.nome_solicitante, rfq.email_solicitante,
                    u.nome
             FROM rfq
             JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id
+            JOIN processo ON rfq.processo_id = processo.id
             LEFT JOIN utilizador u ON rfq.utilizador_id = u.id
             LEFT JOIN artigo ON rfq.id = artigo.rfq_id
         """
@@ -714,11 +713,12 @@ def obter_todas_cotacoes(filtro_referencia="", estado=None, fornecedor_id=None, 
             "data": row[1],
             "fornecedor": row[2],
             "estado": row[3],
-            "referencia": row[4],
-            "num_artigos": row[5],
-            "nome_solicitante": row[6] if row[6] else "",
-            "email_solicitante": row[7] if row[7] else "",
-            "criador": row[8] if row[8] else ""
+            "processo": row[4],
+            "referencia": row[5],
+            "num_artigos": row[6],
+            "nome_solicitante": row[7] if row[7] else "",
+            "email_solicitante": row[8] if row[8] else "",
+            "criador": row[9] if row[9] else ""
         } for row in resultados]
         
     except Exception as e:
@@ -1208,8 +1208,7 @@ class InquiryPDF(FPDF):
             ["KTB Portugal, Lda.", "Rua Exemplo 123", "4455-123 Porto", "Portugal"],
         )
         self.set_xy(self.w - 15 - 70, 45)
-        for line in company_lines:
-            self.cell(70, 4, line, ln=1, align="R")
+        self.multi_cell(70, 4, "\n".join(company_lines), align="R")
 
         # Ajustar posição para início do corpo
         self.set_y(70)
@@ -1320,8 +1319,17 @@ class InquiryPDF(FPDF):
 
     def gerar(self, fornecedor, data, artigos, referencia="", contacto=""):
         """Gera o PDF e devolve bytes"""
+        addr_lines = [fornecedor.get("nome", "")]
+        if fornecedor.get("morada"):
+            addr_lines.extend(fornecedor["morada"].splitlines())
+        if fornecedor.get("email"):
+            addr_lines.append(fornecedor["email"])
+        if fornecedor.get("telefone"):
+            addr_lines.append(fornecedor["telefone"])
+        if fornecedor.get("nif"):
+            addr_lines.append(f"NIF: {fornecedor['nif']}")
         self.recipient = {
-            "address": [fornecedor],
+            "address": [l for l in addr_lines if l],
             "metadata": {
                 "Date": data,
                 "Contact": contacto,
@@ -1492,7 +1500,7 @@ class ClientQuotationPDF(FPDF):
         return self.output(dest='S').encode('latin-1')
 # ========================== FUNÇÕES DE GESTÃO DE PDFs ==========================
 
-def gerar_e_armazenar_pdf(rfq_id, fornecedor, data, artigos):
+def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
     """Gerar e armazenar PDF de pedido de cotação"""
     try:
         config = load_pdf_config("pedido")
@@ -1500,6 +1508,8 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor, data, artigos):
         empresa = obter_config_empresa()
         conn = obter_conexao()
         c = conn.cursor()
+
+        # Dados do utilizador que criou a RFQ
         c.execute(
             """
             SELECT u.nome, u.email
@@ -1512,6 +1522,7 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor, data, artigos):
         user_row = c.fetchone()
         nome_user = user_row[0] if user_row and user_row[0] else ""
         email_user = user_row[1] if user_row and user_row[1] else ""
+
         if empresa:
             linhas = [empresa.get("nome") or "", empresa.get("morada") or ""]
             if empresa.get("telefone"):
@@ -1527,6 +1538,21 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor, data, artigos):
                 config["bank_details"] = [{"IBAN / Account No.": empresa["iban"]}]
             if empresa.get("nif"):
                 config["legal_info"] = [f"NIF: {empresa['nif']}"]
+
+        # Dados do fornecedor
+        c.execute(
+            "SELECT nome, email, telefone, morada, nif FROM fornecedor WHERE id = ?",
+            (fornecedor_id,),
+        )
+        forn_row = c.fetchone()
+        fornecedor = {
+            "nome": forn_row[0] if forn_row else "",
+            "email": forn_row[1] if forn_row else "",
+            "telefone": forn_row[2] if forn_row else "",
+            "morada": forn_row[3] if forn_row else "",
+            "nif": forn_row[4] if forn_row else "",
+        }
+
         c.execute(
             """SELECT processo.numero FROM rfq JOIN processo ON rfq.processo_id = processo.id
                    WHERE rfq.id = ?""",
@@ -1947,7 +1973,7 @@ if menu_option == "🏠 Dashboard":
         for cotacao in cotacoes_recentes:
             col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
             with col1:
-                st.write(f"**#{cotacao['id']}** - {cotacao['fornecedor']}")
+                st.write(f"**{cotacao['processo']}** - {cotacao['fornecedor']}")
             with col2:
                 st.write(f"Ref: {cotacao['referencia']}")
             with col3:
@@ -2082,14 +2108,16 @@ elif menu_option == "📝 Nova Cotação":
             artigos_validos = [a for a in st.session_state.artigos if a['descricao'].strip()]
 
             if artigos_validos and fornecedor_id:
-                rfq_id, referencia = criar_rfq(
+                rfq_id, numero_processo = criar_rfq(
                     fornecedor_id, data, artigos_validos, referencia_input,
                     nome_solicitante,
                     email_solicitante
                 )
 
                 if rfq_id:
-                    st.success(f"✅ Cotação #{rfq_id} (Ref: {referencia}) criada com sucesso!")
+                    st.success(
+                        f"✅ Cotação {numero_processo} (Ref: {referencia_input}) criada com sucesso!"
+                    )
                     # Guardar PDF do cliente (upload) se existir
                     if upload_pedido_cliente is not None:
                         guardar_pdf_upload(
@@ -2142,7 +2170,7 @@ elif menu_option == "📩 Responder Cotações":
             unsafe_allow_html=True,
         )
         detalhes = obter_detalhes_cotacao(cotacao['id'])
-        st.info(f"**Respondendo Cotação #{cotacao['id']}**")
+        st.info(f"**Respondendo Cotação {cotacao['processo']}**")
 
         with st.form(f"resposta_form_{cotacao['id']}"):
             upload_resposta_forn = st.file_uploader(
@@ -2287,7 +2315,7 @@ elif menu_option == "📩 Responder Cotações":
         
         if cotacoes_pendentes:
             for cotacao in cotacoes_pendentes:
-                with st.expander(f"#{cotacao['id']} - {cotacao['fornecedor']} - Ref: {cotacao['referencia']}", expanded=False):
+                with st.expander(f"{cotacao['processo']} - {cotacao['fornecedor']} - Ref: {cotacao['referencia']}", expanded=False):
                     # Mostrar informações da cotação
                     col1, col2 = st.columns([3, 1])
 
@@ -2313,13 +2341,13 @@ elif menu_option == "📩 Responder Cotações":
                                 rotulo = f"{tipo} - {nome if nome else 'ficheiro.pdf'}"
                                 col_anexo_dl, col_anexo_view = st.columns([1, 1])
                                 with col_anexo_dl:
-                                    st.download_button(
-                                        label=f"⬇️ {rotulo}",
-                                        data=data_pdf,
-                                        file_name=nome if nome else f"{tipo}_{cotacao['id']}.pdf",
-                                        mime="application/pdf",
-                                        key=f"anexo_{cotacao['id']}_{tipo}"
-                                    )
+                                      st.download_button(
+                                          label=f"⬇️ {rotulo}",
+                                          data=data_pdf,
+                                          file_name=nome if nome else f"{tipo}_{cotacao['processo']}.pdf",
+                                          mime="application/pdf",
+                                          key=f"anexo_{cotacao['id']}_{tipo}"
+                                      )
                                 with col_anexo_view:
                                     exibir_pdf(f"👁️ {rotulo}", data_pdf)
                         st.write(f"**Solicitante:** {cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else 'N/A'}")
@@ -2333,13 +2361,13 @@ elif menu_option == "📩 Responder Cotações":
                         if pdf_pedido:
                             col_pdf_dl, col_pdf_view = st.columns([1, 1])
                             with col_pdf_dl:
-                                st.download_button(
-                                    "📄 PDF",
-                                    data=pdf_pedido,
-                                    file_name=f"pedido_{cotacao['id']}.pdf",
-                                    mime="application/pdf",
-                                    key=f"pdf_pend_{cotacao['id']}"
-                                )
+                                  st.download_button(
+                                      "📄 PDF",
+                                      data=pdf_pedido,
+                                      file_name=f"pedido_{cotacao['processo']}.pdf",
+                                      mime="application/pdf",
+                                      key=f"pdf_pend_{cotacao['id']}"
+                                  )
                             with col_pdf_view:
                                 exibir_pdf("👁️ PDF", pdf_pedido)
 
@@ -2382,7 +2410,7 @@ elif menu_option == "📩 Responder Cotações":
         
         if cotacoes_respondidas:
             for cotacao in cotacoes_respondidas:
-                with st.expander(f"#{cotacao['id']} - {cotacao['fornecedor']} - Ref: {cotacao['referencia']}", expanded=False):
+                with st.expander(f"{cotacao['processo']} - {cotacao['fornecedor']} - Ref: {cotacao['referencia']}", expanded=False):
                     # Detalhes da cotação
                     detalhes = obter_detalhes_cotacao(cotacao['id'])
                     respostas = obter_respostas_cotacao(cotacao['id'])
@@ -2420,13 +2448,13 @@ elif menu_option == "📩 Responder Cotações":
                                 rotulo = f"{tipo} - {nome if nome else 'ficheiro.pdf'}"
                                 col_resp_dl, col_resp_view = st.columns([1, 1])
                                 with col_resp_dl:
-                                    st.download_button(
-                                        label=f"⬇️ {rotulo}",
-                                        data=data_pdf,
-                                        file_name=nome if nome else f"{tipo}_{cotacao['id']}.pdf",
-                                        mime="application/pdf",
-                                        key=f"anexo_resp_{cotacao['id']}_{tipo}"
-                                    )
+                                      st.download_button(
+                                          label=f"⬇️ {rotulo}",
+                                          data=data_pdf,
+                                          file_name=nome if nome else f"{tipo}_{cotacao['processo']}.pdf",
+                                          mime="application/pdf",
+                                          key=f"anexo_resp_{cotacao['id']}_{tipo}"
+                                      )
                                 with col_resp_view:
                                     exibir_pdf(f"👁️ {rotulo}", data_pdf)
                         # PDF interno
@@ -2434,13 +2462,13 @@ elif menu_option == "📩 Responder Cotações":
                         if pdf_interno:
                             col_int_dl, col_int_view = st.columns([1, 1])
                             with col_int_dl:
-                                st.download_button(
-                                    "📄 PDF Interno",
-                                    data=pdf_interno,
-                                    file_name=f"interno_{cotacao['id']}.pdf",
-                                    mime="application/pdf",
-                                    key=f"pdf_int_{cotacao['id']}"
-                                )
+                                  st.download_button(
+                                      "📄 PDF Interno",
+                                      data=pdf_interno,
+                                      file_name=f"interno_{cotacao['processo']}.pdf",
+                                      mime="application/pdf",
+                                      key=f"pdf_int_{cotacao['id']}"
+                                  )
                             with col_int_view:
                                 exibir_pdf("👁️ PDF Interno", pdf_interno)
 
@@ -2449,13 +2477,13 @@ elif menu_option == "📩 Responder Cotações":
                         if pdf_cliente:
                             col_cli_dl, col_cli_view = st.columns([1, 1])
                             with col_cli_dl:
-                                st.download_button(
-                                    "💰 PDF Cliente",
-                                    data=pdf_cliente,
-                                    file_name=f"cliente_{cotacao['id']}.pdf",
-                                    mime="application/pdf",
-                                    key=f"pdf_cli_{cotacao['id']}"
-                                )
+                                  st.download_button(
+                                      "💰 PDF Cliente",
+                                      data=pdf_cliente,
+                                      file_name=f"cliente_{cotacao['processo']}.pdf",
+                                      mime="application/pdf",
+                                      key=f"pdf_cli_{cotacao['id']}"
+                                  )
                             with col_cli_view:
                                 exibir_pdf("👁️ PDF Cliente", pdf_cliente)
                         
@@ -2640,7 +2668,7 @@ elif menu_option == "📊 Relatórios":
                     if cotacoes_user:
                         df = [
                             {
-                                "ID": c["id"],
+                                "Processo": c["processo"],
                                 "Fornecedor": c["fornecedor"],
                                 "Data": c["data"],
                                 "Estado": c["estado"],
@@ -2664,7 +2692,7 @@ elif menu_option == "📄 PDFs":
         cot_sel = st.selectbox(
             "Selecionar Cotação",
             options=cotacoes,
-            format_func=lambda c: f"#{c['id']} - {c['referencia']}"
+            format_func=lambda c: f"{c['processo']} - {c['referencia']}"
         )
         tipo_pdf = st.selectbox("Tipo de PDF", ["pedido", "cliente"], key="tipo_pdf_gest")
         pdf_atual = obter_pdf_da_db(cot_sel["id"], tipo_pdf)
@@ -3080,6 +3108,7 @@ elif menu_option == "⚙️ Configurações":
             "Configuração (JSON)",
             json.dumps(config_atual, ensure_ascii=False, indent=2),
             height=400,
+            key=f"layout_{tipo_layout}"
         )
         if st.button("💾 Guardar Layout"):
             try:
