@@ -1149,32 +1149,39 @@ class QuotationPDF(FPDF):
         row_size = table_cfg.get("row_font_size", 9)
         self.set_font(row_font, "", row_size)
         
+        # Preparar descrição com máximo de 10 linhas
+        desc = artigo['descricao']
+        lines = self.split_text(desc, 45)
+        max_lines = 10
+        lines = lines[:max_lines]
+
+        # Primeira linha com dados do item
         self.cell(widths[0], 8, str(idx), border=1, align='C')
         self.cell(widths[1], 8, artigo.get('artigo_num', '')[:15], border=1)
-        
-        # Descrição com quebra de linha se necessário
-        desc = artigo['descricao']
-        if len(desc) > 45:
-            lines = self.split_text(desc, 45)
-            self.cell(widths[2], 8, lines[0], border=1)
-            self.cell(widths[3], 8, str(artigo['quantidade']), border=1, align='C')
-            self.cell(widths[4], 8, artigo['unidade'], border=1)
-            self.cell(widths[5], 8, "_______", border=1, align='C')  # Campo vazio para preço
+        self.cell(widths[2], 8, lines[0] if lines else '', border=1)
+        self.cell(widths[3], 8, str(artigo['quantidade']), border=1, align='C')
+        self.cell(widths[4], 8, artigo['unidade'], border=1)
+        self.cell(widths[5], 8, "_______", border=1, align='C')  # Campo vazio para preço
+        self.ln()
+
+        # Linhas adicionais para descrições longas
+        for line in lines[1:]:
+            self.cell(widths[0], 8, "", border=1)
+            self.cell(widths[1], 8, "", border=1)
+            self.cell(widths[2], 8, line, border=1)
+            self.cell(widths[3], 8, "", border=1)
+            self.cell(widths[4], 8, "", border=1)
+            self.cell(widths[5], 8, "", border=1)
             self.ln()
-            
-            for line in lines[1:]:
-                self.cell(widths[0], 8, "", border=1)
-                self.cell(widths[1], 8, "", border=1)
-                self.cell(widths[2], 8, line, border=1)
-                self.cell(widths[3], 8, "", border=1)
-                self.cell(widths[4], 8, "", border=1)
-                self.cell(widths[5], 8, "", border=1)
-                self.ln()
-        else:
-            self.cell(widths[2], 8, desc, border=1)
-            self.cell(widths[3], 8, str(artigo['quantidade']), border=1, align='C')
-            self.cell(widths[4], 8, artigo['unidade'], border=1)
-            self.cell(widths[5], 8, "_______", border=1, align='C')  # Campo vazio para preço
+
+        # Linhas vazias para garantir espaço para 10 linhas
+        for _ in range(max_lines - len(lines)):
+            self.cell(widths[0], 8, "", border=1)
+            self.cell(widths[1], 8, "", border=1)
+            self.cell(widths[2], 8, "", border=1)
+            self.cell(widths[3], 8, "", border=1)
+            self.cell(widths[4], 8, "", border=1)
+            self.cell(widths[5], 8, "", border=1)
             self.ln()
 
     def split_text(self, text, max_length):
@@ -1233,7 +1240,7 @@ class ClientQuotationPDF(FPDF):
         font = header_cfg.get("font", "Arial")
         style = header_cfg.get("font_style", "B")
         size = header_cfg.get("font_size", 16)
-        title = header_cfg.get("title", "ORÇAMENTO")
+        title = header_cfg.get("title", "QUOTATION")
         line_height = header_cfg.get("line_height", 10)
         self.set_font(font, style, size)
         self.cell(0, line_height, title, ln=True, align='C')
@@ -1244,17 +1251,17 @@ class ClientQuotationPDF(FPDF):
         font = body_cfg.get("font", "Arial")
         size = body_cfg.get("font_size", 12)
         self.set_font(font, "", size)
-        self.cell(0, 8, f"Data: {rfq_info['data']}", ln=True)
-        self.cell(0, 8, f"Referência: {rfq_info['referencia']}", ln=True)
+        self.cell(0, 8, f"Date: {rfq_info['data']}", ln=True)
+        self.cell(0, 8, f"Reference: {rfq_info['referencia']}", ln=True)
         if solicitante_info.get('nome'):
-            self.cell(0, 8, f"Para: {solicitante_info['nome']}", ln=True)
+            self.cell(0, 8, f"To: {solicitante_info['nome']}", ln=True)
         if solicitante_info.get('email'):
             self.cell(0, 8, f"Email: {solicitante_info['email']}", ln=True)
         self.ln(5)
 
     def add_table_header(self):
         table_cfg = self.cfg.get("table", {})
-        headers = table_cfg.get("headers", ["#", "Art. Nº", "Descrição", "Qtd", "P.Unit.", "Total", "HS Code", "Origem", "Prazo", "Peso"])
+        headers = table_cfg.get("headers", ["#", "Item No.", "Description", "Qty", "Unit Price", "Total", "HS Code", "Origin", "Lead Time", "Weight"])
         widths = table_cfg.get("widths", [8, 18, 55, 12, 18, 20, 18, 15, 12, 14])
         font = table_cfg.get("font", "Arial")
         style = table_cfg.get("font_style", "B")
@@ -1286,47 +1293,45 @@ class ClientQuotationPDF(FPDF):
         row_font = table_cfg.get("font", "Arial")
         row_size = table_cfg.get("row_font_size", 8)
         self.set_font(row_font, "", row_size)
-        
+
         preco_venda = float(item['preco_venda'])
         quantidade = int(item['quantidade_final'])
         total = preco_venda * quantidade
-        
-        # Primeira linha sempre
+
+        # Descrição com máximo de 10 linhas
+        desc = item['descricao']
+        lines = self.split_text(desc, 30)
+        max_lines = 10
+        lines = lines[:max_lines]
+
+        # Primeira linha com dados
         self.cell(widths[0], 6, str(idx), border=1, align='C')
         self.cell(widths[1], 6, (item.get('artigo_num') or '')[:10], border=1)
-        
-        desc = item['descricao']
-        if len(desc) > 30:
-            lines = self.split_text(desc, 30)
-            self.cell(widths[2], 6, lines[0], border=1)
-            self.cell(widths[3], 6, str(quantidade), border=1, align='C')
-            self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=1, align='R')
-            self.cell(widths[5], 6, f"EUR {total:.2f}", border=1, align='R')
-            self.cell(widths[6], 6, (item.get('hs_code') or '')[:10], border=1, align='C')
-            self.cell(widths[7], 6, (item.get('pais_origem') or '')[:8], border=1, align='C')
-            self.cell(widths[8], 6, f"{item.get('prazo_entrega', 30)}d", border=1, align='C')
-            self.cell(widths[9], 6, f"{(item.get('peso') or 0):.1f}kg", border=1, align='C')
+        self.cell(widths[2], 6, lines[0] if lines else '', border=1)
+        self.cell(widths[3], 6, str(quantidade), border=1, align='C')
+        self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=1, align='R')
+        self.cell(widths[5], 6, f"EUR {total:.2f}", border=1, align='R')
+        self.cell(widths[6], 6, (item.get('hs_code') or '')[:10], border=1, align='C')
+        self.cell(widths[7], 6, (item.get('pais_origem') or '')[:8], border=1, align='C')
+        self.cell(widths[8], 6, f"{item.get('prazo_entrega', 30)}d", border=1, align='C')
+        self.cell(widths[9], 6, f"{(item.get('peso') or 0):.1f}kg", border=1, align='C')
+        self.ln()
+
+        # Linhas adicionais para descrições longas
+        for line in lines[1:]:
+            self.cell(widths[0], 6, "", border=1)
+            self.cell(widths[1], 6, "", border=1)
+            self.cell(widths[2], 6, line, border=1)
+            for j in range(3, 10):
+                self.cell(widths[j], 6, "", border=1)
             self.ln()
-            
-            # Linhas adicionais para descrição longa
-            for line in lines[1:]:
-                self.cell(widths[0], 6, "", border=1)
-                self.cell(widths[1], 6, "", border=1)
-                self.cell(widths[2], 6, line, border=1)
-                for j in range(3, 10):
-                    self.cell(widths[j], 6, "", border=1)
-                self.ln()
-        else:
-            self.cell(widths[2], 6, desc, border=1)
-            self.cell(widths[3], 6, str(quantidade), border=1, align='C')
-            self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=1, align='R')
-            self.cell(widths[5], 6, f"EUR {total:.2f}", border=1, align='R')
-            self.cell(widths[6], 6, (item.get('hs_code') or '')[:10], border=1, align='C')
-            self.cell(widths[7], 6, (item.get('pais_origem') or '')[:8], border=1, align='C')
-            self.cell(widths[8], 6, f"{item.get('prazo_entrega', 30)}d", border=1, align='C')
-            self.cell(widths[9], 6, f"{(item.get('peso') or 0):.1f}kg", border=1, align='C')
+
+        # Linhas vazias para completar 10 linhas
+        for _ in range(max_lines - len(lines)):
+            for w in widths:
+                self.cell(w, 6, "", border=1)
             self.ln()
-        
+
         return total
 
     def add_total(self, total_geral, peso_total):
@@ -1341,13 +1346,13 @@ class ClientQuotationPDF(FPDF):
         self.set_font(font, style, size)
         self.cell(label_w, 8, "TOTAL:", border=1, align='R')
         self.cell(total_w, 8, f"EUR {total_geral:.2f}", border=1, align='C')
-        self.cell(extra_w, 8, f"Peso Total: {peso_total:.1f}kg", border=1, align='C')
+        self.cell(extra_w, 8, f"Total Weight: {peso_total:.1f}kg", border=1, align='C')
         self.ln(10)
 
         conditions = self.cfg.get("conditions", [
-            "Validade da proposta: 30 dias",
-            "Preços não incluem IVA",
-            "Condições de pagamento: A combinar",
+            "Proposal validity: 30 days",
+            "Prices do not include VAT",
+            "Payment terms: To be agreed",
         ])
         self.set_font(font, "", size - 1)
         for cond in conditions:
