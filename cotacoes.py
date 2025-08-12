@@ -92,5 +92,5 @@ if processos and fornecedores:
 
     else:
         st.warning("Este fornecedor ainda não tem um RFQ associado a este processo.")
-else:␊
-    st.info("Adiciona primeiro processos e fornecedores no sistema."))
+else:
+    st.info("Adiciona primeiro processos e fornecedores no sistema.")
