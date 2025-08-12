@@ -89,9 +89,16 @@ def criar_base_dados_completa():
             empresa_solicitante TEXT,
             data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
             data_atualizacao TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE
+            utilizador_id INTEGER,
+            FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
+            FOREIGN KEY (utilizador_id) REFERENCES utilizador(id) ON DELETE SET NULL
         )
         """)
+
+        # Garantir que coluna utilizador_id existe na tabela rfq
+        c.execute("PRAGMA table_info(rfq)")
+        if "utilizador_id" not in [row[1] for row in c.fetchall()]:
+            c.execute("ALTER TABLE rfq ADD COLUMN utilizador_id INTEGER")
 
         # Tabela de artigos
         c.execute("""
@@ -534,19 +541,20 @@ def eliminar_utilizador(user_id):
 
 # ========================== FUNÇÕES DE GESTÃO DE RFQs ==========================
 
-def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="", 
+def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
               email_solicitante="", observacoes=""):
     """Criar nova RFQ"""
     conn = obter_conexao()
     c = conn.cursor()
     
     try:
+        utilizador_id = st.session_state.get("user_id")
         c.execute("""
-            INSERT INTO rfq (fornecedor_id, data, referencia, 
-                           nome_solicitante, email_solicitante, observacoes, estado)
-            VALUES (?, ?, ?, ?, ?, ?, 'pendente')
-        """, (fornecedor_id, data.isoformat(), referencia, 
-              nome_solicitante, email_solicitante, observacoes))
+            INSERT INTO rfq (fornecedor_id, data, referencia,
+                           nome_solicitante, email_solicitante, observacoes, estado, utilizador_id)
+            VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
+        """, (fornecedor_id, data.isoformat(), referencia,
+              nome_solicitante, email_solicitante, observacoes, utilizador_id))
         
         rfq_id = c.lastrowid
 
@@ -578,7 +586,7 @@ def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
     finally:
         conn.close()
 
-def obter_todas_cotacoes(filtro_referencia="", estado=None):
+def obter_todas_cotacoes(filtro_referencia="", estado=None, fornecedor_id=None, utilizador_id=None):
     """Obter todas as cotações com filtros opcionais"""
     try:
         conn = obter_conexao()
@@ -586,9 +594,11 @@ def obter_todas_cotacoes(filtro_referencia="", estado=None):
         
         query = """
             SELECT rfq.id, rfq.data, fornecedor.nome, rfq.estado, rfq.referencia,
-                   COUNT(artigo.id) as num_artigos, rfq.nome_solicitante, rfq.email_solicitante
+                   COUNT(artigo.id) as num_artigos, rfq.nome_solicitante, rfq.email_solicitante,
+                   u.nome
             FROM rfq
             JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id
+            LEFT JOIN utilizador u ON rfq.utilizador_id = u.id
             LEFT JOIN artigo ON rfq.id = artigo.rfq_id
         """
         
@@ -602,6 +612,14 @@ def obter_todas_cotacoes(filtro_referencia="", estado=None):
         if estado:
             conditions.append("rfq.estado = ?")
             params.append(estado)
+
+        if fornecedor_id:
+            conditions.append("rfq.fornecedor_id = ?")
+            params.append(fornecedor_id)
+
+        if utilizador_id:
+            conditions.append("rfq.utilizador_id = ?")
+            params.append(utilizador_id)
         
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
@@ -620,7 +638,8 @@ def obter_todas_cotacoes(filtro_referencia="", estado=None):
             "referencia": row[4],
             "num_artigos": row[5],
             "nome_solicitante": row[6] if row[6] else "",
-            "email_solicitante": row[7] if row[7] else ""
+            "email_solicitante": row[7] if row[7] else "",
+            "criador": row[8] if row[8] else ""
         } for row in resultados]
         
     except Exception as e:
@@ -671,7 +690,8 @@ def obter_detalhes_cotacao(rfq_id):
             "observacoes": info[5] if info[5] else "",
             "nome_solicitante": info[6] if info[6] else "",
             "email_solicitante": info[7] if info[7] else "",
-            "fornecedor": info[12],
+            "fornecedor": info[13],
+            "utilizador_id": info[12],
             "artigos": artigos
         }
         
@@ -1338,7 +1358,7 @@ def gerar_pdf_cliente(rfq_id):
             rfq_info={
                 'data': rfq_data[2],
                 'referencia': rfq_data[4],
-                'fornecedor': rfq_data[12]
+                'fornecedor': rfq_data[13]
             },
             solicitante_info={
                 'nome': rfq_data[6] or '',
@@ -1966,20 +1986,33 @@ elif menu_option == "📩 Responder Cotações":
     
     # Tabs para pendentes e respondidas
     tab1, tab2 = st.tabs(["Pendentes", "Respondidas"])
-    
+
     with tab1:
         # Filtros
-        col1, col2, col3 = st.columns([3, 2, 1])
+        col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
         with col1:
             filtro_ref_pend = st.text_input("🔍 Pesquisar por referência", placeholder="Referência...", key="filtro_pend")
         with col2:
-            st.write("")  # Espaço
+            fornecedores = listar_fornecedores()
+            opcoes_forn = {"Todos": None}
+            opcoes_forn.update({f[1]: f[0] for f in fornecedores})
+            fornecedor_sel_pend = st.selectbox("Fornecedor", list(opcoes_forn.keys()), key="fornecedor_pend")
         with col3:
+            utilizadores = listar_utilizadores()
+            opcoes_user = {"Todos": None}
+            opcoes_user.update({(u[2] or u[1]): u[0] for u in utilizadores})
+            utilizador_sel_pend = st.selectbox("Utilizador", list(opcoes_user.keys()), key="utilizador_pend")
+        with col4:
             if st.button("🔄 Atualizar", key="refresh_pend"):
                 st.rerun()
-        
+
+        fornecedor_id_pend = opcoes_forn[fornecedor_sel_pend]
+        utilizador_id_pend = opcoes_user[utilizador_sel_pend]
+
         # Obter cotações pendentes
-        cotacoes_pendentes = obter_todas_cotacoes(filtro_ref_pend, "pendente")
+        cotacoes_pendentes = obter_todas_cotacoes(
+            filtro_ref_pend, "pendente", fornecedor_id_pend, utilizador_id_pend
+        )
         
         if cotacoes_pendentes:
             for cotacao in cotacoes_pendentes:
@@ -2012,6 +2045,7 @@ elif menu_option == "📩 Responder Cotações":
                                     exibir_pdf(f"👁️ {rotulo}", data_pdf)
                         st.write(f"**Solicitante:** {cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else 'N/A'}")
                         st.write(f"**Email:** {cotacao['email_solicitante'] if cotacao['email_solicitante'] else 'N/A'}")
+                        st.write(f"**Criado por:** {cotacao['criador'] if cotacao['criador'] else 'N/A'}")
                         st.write(f"**Artigos:** {cotacao['num_artigos']}")
 
                     with col2:
@@ -2042,17 +2076,30 @@ elif menu_option == "📩 Responder Cotações":
     
     with tab2:
         # Filtros
-        col1, col2, col3 = st.columns([3, 2, 1])
+        col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
         with col1:
             filtro_ref_resp = st.text_input("🔍 Pesquisar por referência", placeholder="Referência...", key="filtro_resp")
         with col2:
-            st.write("")
+            fornecedores = listar_fornecedores()
+            opcoes_forn = {"Todos": None}
+            opcoes_forn.update({f[1]: f[0] for f in fornecedores})
+            fornecedor_sel_resp = st.selectbox("Fornecedor", list(opcoes_forn.keys()), key="fornecedor_resp")
         with col3:
+            utilizadores = listar_utilizadores()
+            opcoes_user = {"Todos": None}
+            opcoes_user.update({(u[2] or u[1]): u[0] for u in utilizadores})
+            utilizador_sel_resp = st.selectbox("Utilizador", list(opcoes_user.keys()), key="utilizador_resp")
+        with col4:
             if st.button("🔄 Atualizar", key="refresh_resp"):
                 st.rerun()
-        
+
+        fornecedor_id_resp = opcoes_forn[fornecedor_sel_resp]
+        utilizador_id_resp = opcoes_user[utilizador_sel_resp]
+
         # Obter cotações respondidas
-        cotacoes_respondidas = obter_todas_cotacoes(filtro_ref_resp, "respondido")
+        cotacoes_respondidas = obter_todas_cotacoes(
+            filtro_ref_resp, "respondido", fornecedor_id_resp, utilizador_id_resp
+        )
         
         if cotacoes_respondidas:
             for cotacao in cotacoes_respondidas:
@@ -2067,6 +2114,7 @@ elif menu_option == "📩 Responder Cotações":
                         st.write(f"**Data:** {cotacao['data']}")
                         st.write(f"**Solicitante:** {cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else 'N/A'}")
                         st.write(f"**Email:** {cotacao['email_solicitante'] if cotacao['email_solicitante'] else 'N/A'}")
+                        st.write(f"**Criado por:** {cotacao['criador'] if cotacao['criador'] else 'N/A'}")
                         st.write(f"**Artigos:** {cotacao['num_artigos']}")
                         
                         if respostas:
@@ -2271,28 +2319,48 @@ elif menu_option == "👤 Perfil":
     st.title("👤 Meu Perfil")
     user = obter_utilizador_por_id(st.session_state.get("user_id"))
     if user:
-        st.text_input("Email", value=user[4], disabled=True)
-        with st.form("perfil_form"):
-            nova_pw = st.text_input("Nova Password", type="password")
-            confirmar_pw = st.text_input("Confirmar Password", type="password")
-            email_pw = st.text_input("Password do Email", type="password")
-            sub = st.form_submit_button("Atualizar Dados")
-        if sub:
-            if nova_pw and nova_pw != confirmar_pw:
-                st.error("Passwords não coincidem")
-            else:
+        tab_email, tab_senha = st.tabs(["Email", "Password do Sistema"])
+
+        with tab_email:
+            with st.form("email_form"):
+                novo_email = st.text_input("Email", value=user[4])
+                email_pw = st.text_input("Password do Email", type="password")
+                sub_email = st.form_submit_button("Atualizar Email")
+            if sub_email:
                 if atualizar_utilizador(
                     user[0],
                     user[1],
                     user[3],
-                    user[4],
+                    novo_email,
                     user[5],
-                    nova_pw or None,
+                    None,
                     email_pw or None,
                 ):
-                    st.success("Dados atualizados com sucesso!")
+                    st.success("Email atualizado com sucesso!")
                 else:
-                    st.error("Erro ao atualizar dados")
+                    st.error("Erro ao atualizar email")
+
+        with tab_senha:
+            with st.form("senha_form"):
+                nova_pw = st.text_input("Nova Password", type="password")
+                confirmar_pw = st.text_input("Confirmar Password", type="password")
+                sub_pw = st.form_submit_button("Alterar Password")
+            if sub_pw:
+                if not nova_pw or nova_pw != confirmar_pw:
+                    st.error("Passwords não coincidem")
+                else:
+                    if atualizar_utilizador(
+                        user[0],
+                        user[1],
+                        user[3],
+                        user[4],
+                        user[5],
+                        nova_pw,
+                        None,
+                    ):
+                        st.success("Password atualizada com sucesso!")
+                    else:
+                        st.error("Erro ao atualizar password")
     else:
         st.error("Utilizador não encontrado")
 
