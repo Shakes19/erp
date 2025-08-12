@@ -22,7 +22,7 @@
   },
   "cliente": {
     "header": {
-      "title": "ORÇAMENTO",
+      "title": "QUOTATION",
       "font": "Arial",
       "font_style": "B",
       "font_size": 16,
@@ -32,7 +32,7 @@
     },
     "body": {"font": "Arial", "font_size": 12},
     "table": {
-      "headers": ["#", "Art. Nº", "Descrição", "Qtd", "P.Unit.", "Total", "HS Code", "Origem", "Prazo", "Peso"],
+      "headers": ["#", "Item No.", "Description", "Qty", "Unit Price", "Total", "HS Code", "Origin", "Lead Time", "Weight"],
       "widths": [8, 18, 55, 12, 18, 20, 18, 15, 12, 14],
       "font": "Arial",
       "font_style": "B",
@@ -48,9 +48,9 @@
       "extra_width": 39
     },
     "conditions": [
-      "Validade da proposta: 30 dias",
-      "Preços não incluem IVA",
-      "Condições de pagamento: A acordar"
+      "Proposal validity: 30 days",
+      "Prices do not include VAT",
+      "Payment terms: To be agreed"
     ]
   }
 }
