@@ -1847,7 +1847,12 @@ elif menu_option == "📝 Nova Cotação":
                     )
 
                 with col_del:
-                    if st.form_submit_button("🗑️", key=f"del_artigo_{i}"):
+                    # st.form_submit_button does not accept a "key" argument in some
+                    # Streamlit versions. To keep the delete buttons distinct without
+                    # visible numbering, append invisible zero‑width characters so each
+                    # label remains unique while displaying only the trash icon.
+                    delete_label = "🗑️" + "\u200B" * i
+                    if st.form_submit_button(delete_label):
                         remover_indice = i - 1
 
         col1, col2, col3 = st.columns(3)
