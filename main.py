@@ -561,21 +561,21 @@ def eliminar_utilizador(user_id):
 
 # ========================== FUNÇÕES DE GESTÃO DE RFQs ==========================
 
-def criar_rfq(fornecedor_id, data, artigos, nome_solicitante="",
-              email_solicitante="", observacoes=""):
+def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
+              email_solicitante=""):
     """Criar nova RFQ"""
     conn = obter_conexao()
     c = conn.cursor()
 
     try:
         utilizador_id = st.session_state.get("user_id")
-        processo_id, referencia = criar_processo()
+        processo_id, _ = criar_processo()
         c.execute("""
             INSERT INTO rfq (processo_id, fornecedor_id, data, referencia,
-                           nome_solicitante, email_solicitante, observacoes, estado, utilizador_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'pendente', ?)
+                           nome_solicitante, email_solicitante, estado, utilizador_id)
+            VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
         """, (processo_id, fornecedor_id, data.isoformat(), referencia,
-              nome_solicitante, email_solicitante, observacoes, utilizador_id))
+              nome_solicitante, email_solicitante, utilizador_id))
 
         rfq_id = c.lastrowid
 
@@ -583,15 +583,15 @@ def criar_rfq(fornecedor_id, data, artigos, nome_solicitante="",
         for ordem, art in enumerate(artigos, 1):
             if art.get("descricao", "").strip():
                 c.execute("""
-                    INSERT INTO artigo (rfq_id, artigo_num, descricao, quantidade, 
+                    INSERT INTO artigo (rfq_id, artigo_num, descricao, quantidade,
                                       unidade, especificacoes, marca, ordem)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (rfq_id, art.get("artigo_num", ""), art["descricao"], 
+                """, (rfq_id, art.get("artigo_num", ""), art["descricao"],
                       art.get("quantidade", 1), art.get("unidade", "Peças"),
                       art.get("especificacoes", ""), art.get("marca", ""), ordem))
-        
+
         conn.commit()
-        
+
         # Gerar PDF
         c.execute("SELECT nome FROM fornecedor WHERE id = ?", (fornecedor_id,))
         nome_fornecedor = c.fetchone()[0]
@@ -1811,9 +1811,9 @@ elif menu_option == "📝 Nova Cotação":
         with col2:
             email_solicitante = st.text_input("Email do solicitante")
 
-        col_obs, col_pdf = st.columns(2)
-        with col_obs:
-            observacoes = st.text_area("Observações", height=100)
+        col_ref, col_pdf = st.columns(2)
+        with col_ref:
+            referencia_input = st.text_input("Referência *")
         with col_pdf:
             upload_pedido_cliente = st.file_uploader(
                 "📎 Pedido do cliente (PDF)",
@@ -1823,9 +1823,10 @@ elif menu_option == "📝 Nova Cotação":
 
         st.markdown("### 📦 Artigos")
 
+        remover_indice = None
         for i, artigo in enumerate(st.session_state.artigos, 1):
             with st.expander(f"Artigo {i}", expanded=(i == 1)):
-                col1, col2, col3 = st.columns([1, 3, 1])
+                col1, col2, col3, col_del = st.columns([1, 3, 1, 0.5])
 
                 with col1:
                     artigo['artigo_num'] = st.text_input("Nº Artigo", value=artigo['artigo_num'], key=f"art_num_{i}")
@@ -1845,6 +1846,10 @@ elif menu_option == "📝 Nova Cotação":
                         key=f"unidade_{i}"
                     )
 
+                with col_del:
+                    if st.form_submit_button("🗑️", key=f"del_artigo_{i}"):
+                        remover_indice = i - 1
+
         col1, col2, col3 = st.columns(3)
 
         with col1:
@@ -1857,6 +1862,18 @@ elif menu_option == "📝 Nova Cotação":
             limpar_form = st.form_submit_button("🗑️ Limpar Formulário")
     
     # Processar ações
+    if remover_indice is not None:
+        del st.session_state.artigos[remover_indice]
+        if not st.session_state.artigos:
+            st.session_state.artigos = [{
+                "artigo_num": "",
+                "descricao": "",
+                "quantidade": 1,
+                "unidade": "Peças",
+                "marca": ""
+            }]
+        st.rerun()
+
     if adicionar_artigo:
         st.session_state.artigos.append({
             "artigo_num": "",
@@ -1866,7 +1883,7 @@ elif menu_option == "📝 Nova Cotação":
             "marca": ""
         })
         st.rerun()
-    
+
     if limpar_form:
         st.session_state.artigos = [{
             "artigo_num": "",
@@ -1876,20 +1893,22 @@ elif menu_option == "📝 Nova Cotação":
             "marca": ""
         }]
         st.rerun()
-    
+
     if criar_cotacao:
         # Validar campos obrigatórios
         if not marca_selecionada or not fornecedor_id_selecionado:
             st.error("Por favor, selecione uma marca válida")
+        elif not referencia_input.strip():
+            st.error("Por favor, indique uma referência")
         else:
             fornecedor_id = fornecedor_id_selecionado
             artigos_validos = [a for a in st.session_state.artigos if a['descricao'].strip()]
 
             if artigos_validos and fornecedor_id:
                 rfq_id, referencia = criar_rfq(
-                    fornecedor_id, data, artigos_validos,
+                    fornecedor_id, data, artigos_validos, referencia_input,
                     nome_solicitante,
-                    email_solicitante, observacoes
+                    email_solicitante
                 )
 
                 if rfq_id:
