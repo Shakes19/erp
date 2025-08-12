@@ -2447,31 +2447,53 @@ elif menu_option == "📊 Relatórios":
             st.info("Nenhum utilizador registado")
 
 elif menu_option == "📄 PDFs":
-    st.title("📄 Gestão de PDFs")
+    st.title("📄 PDFs")
 
-    cotacoes = obter_todas_cotacoes()
-    if cotacoes:
-        cot_sel = st.selectbox(
-            "Selecionar Cotação",
-            options=cotacoes,
-            format_func=lambda c: f"#{c['id']} - {c['referencia']}"
-        )
-        tipo_pdf = st.selectbox("Tipo de PDF", ["pedido", "cliente"], key="tipo_pdf_gest")
-        pdf_atual = obter_pdf_da_db(cot_sel["id"], tipo_pdf)
-        if pdf_atual:
-            exibir_pdf("PDF Atual", pdf_atual)
-        else:
-            st.info("PDF não encontrado")
+    tab_gestao, tab_layout = st.tabs(["Gestão de PDF", "Layout PDF"])
 
-        if st.session_state.get("role") == "admin":
+    with tab_gestao:
+        cotacoes = obter_todas_cotacoes()
+        if cotacoes:
+            cot_sel = st.selectbox(
+                "Selecionar Cotação",
+                options=cotacoes,
+                format_func=lambda c: f"#{c['id']} - {c['referencia']}"
+            )
+            tipo_pdf = st.selectbox("Tipo de PDF", ["pedido", "cliente"], key="tipo_pdf_gest")
+            pdf_atual = obter_pdf_da_db(cot_sel["id"], tipo_pdf)
+            if pdf_atual:
+                exibir_pdf("PDF Atual", pdf_atual)
+            else:
+                st.info("PDF não encontrado")
+
             novo_pdf = st.file_uploader("Substituir PDF", type=["pdf"], key="upload_pdf_gest")
             if novo_pdf and st.button("💾 Guardar PDF"):
                 if guardar_pdf_upload(cot_sel["id"], tipo_pdf, novo_pdf.name, novo_pdf.getvalue()):
                     st.success("PDF atualizado com sucesso!")
         else:
-            st.info("Apenas administradores podem atualizar o PDF.")
-    else:
-        st.info("Nenhuma cotação disponível")
+            st.info("Nenhuma cotação disponível")
+
+    with tab_layout:
+        st.subheader("Configurar Layout do PDF")
+        try:
+            with open('pdf_layout.json', 'r', encoding='utf-8') as f:
+                layout_atual = f.read()
+        except Exception:
+            layout_atual = "{}"
+
+        if st.session_state.get("role") == "admin":
+            layout_edit = st.text_area("Editar layout (JSON)", layout_atual, height=400)
+            if st.button("💾 Guardar Layout"):
+                try:
+                    json.loads(layout_edit)
+                    with open('pdf_layout.json', 'w', encoding='utf-8') as f:
+                        f.write(layout_edit)
+                    st.success("Layout atualizado com sucesso!")
+                except Exception as e:
+                    st.error(f"Erro ao guardar layout: {e}")
+        else:
+            st.info("Apenas administradores podem alterar o layout do PDF.")
+            st.code(layout_atual, language='json')
 
 elif menu_option == "👤 Perfil":
     st.title("👤 Meu Perfil")
