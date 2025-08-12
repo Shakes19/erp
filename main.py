@@ -1115,118 +1115,193 @@ def guardar_pdf_upload(rfq_id, tipo_pdf, nome_ficheiro, bytes_):
 
 # ========================== CLASSES PDF ==========================
 
-class QuotationPDF(FPDF):
-    """PDF para pedido de cotação ao fornecedor (sem marca)"""
+class InquiryPDF(FPDF):
+    """Gera PDF de pedido de cotação seguindo layout profissional"""
+
     def __init__(self, config=None):
-        super().__init__()
+        super().__init__(orientation="P", unit="mm", format="A4")
         self.cfg = config or {}
+        self.set_margins(15, 15, 15)
+        self.set_auto_page_break(auto=True, margin=18)
+        self.recipient = {}
 
+    # ------------------------------------------------------------------
+    #  Header e Footer
+    # ------------------------------------------------------------------
     def header(self):
-        header_cfg = self.cfg.get("header", {})
-        logo_cfg = header_cfg.get("logo", {})
-        try:
-            path = logo_cfg.get("path", "logo.jpeg")
-            if os.path.exists(path):
-                self.image(path, logo_cfg.get("x", 160), logo_cfg.get("y", 10), logo_cfg.get("w", 40))
-        except Exception:
-            pass
-        font = header_cfg.get("font", "Arial")
-        style = header_cfg.get("font_style", "B")
-        size = header_cfg.get("font_size", 16)
-        title = header_cfg.get("title", "PEDIDO DE COTAÇÃO")
-        line_height = header_cfg.get("line_height", 10)
-        self.set_font(font, style, size)
-        self.cell(0, line_height, title, ln=True, align='C')
-        self.ln(header_cfg.get("spacing", 5))
+        """Cabeçalho com duas colunas e grelha de metadados"""
+        logo_path = self.cfg.get("logo_path", "logo.jpeg")
+        # Bloco do destinatário
+        self.set_xy(15, 27)  # ~12 mm abaixo do topo
+        recip = self.recipient.get("address", [])
+        self.set_font("Helvetica", "", 10)
+        for line in recip:
+            self.cell(80, 5, line, ln=1)
 
-    def add_info(self, fornecedor, data, referencia=""):
-        body_cfg = self.cfg.get("body", {})
-        font = body_cfg.get("font", "Arial")
-        size = body_cfg.get("font_size", 12)
-        self.set_font(font, "", size)
-        self.cell(0, 10, f"Data: {data}", ln=True)
-        self.cell(0, 10, f"Fornecedor: {fornecedor}", ln=True)
-        if referencia:
-            self.cell(0, 10, f"Referência: {referencia}", ln=True)
-        self.ln(8)
+        # Bloco da empresa (logo + contactos)
+        if os.path.exists(logo_path):
+            self.image(logo_path, self.w - 15 - 70, 15, 70)  # largura 60-80 mm
+        company_lines = self.cfg.get(
+            "company_lines",
+            ["KTB Portugal, Lda.", "Rua Exemplo 123", "4455-123 Porto", "Portugal"],
+        )
+        self.set_xy(self.w - 15 - 70, 45)
+        for line in company_lines:
+            self.cell(70, 4, line, ln=1, align="R")
 
-    def add_table_header(self):
-        table_cfg = self.cfg.get("table", {})
-        headers = table_cfg.get("headers", ["#", "Art. Nº", "Descrição", "Qtd", "Unidade"])
-        widths = table_cfg.get("widths", [10, 25, 110, 20, 25])
-        font = table_cfg.get("font", "Arial")
-        style = table_cfg.get("font_style", "B")
-        size = table_cfg.get("font_size", 10)
-        self.set_font(font, style, size)
-        for i in range(len(headers)):
-            self.cell(widths[i], 8, headers[i], border=1, align='C')
+        # Grelha de metadados
+        meta = self.recipient.get("metadata", {})
+        meta.setdefault("Page", str(self.page_no()))
+        start_y = 45
+        self.set_xy(self.w - 15 - 70, start_y)
+        for label, value in meta.items():
+            self.set_xy(self.w - 15 - 70, start_y)
+            self.set_font("Helvetica", "B", 10)
+            self.cell(25, 5, f"{label}:")
+            self.set_font("Helvetica", "", 10)
+            self.cell(45, 5, value, ln=1)
+            start_y += 5
+
+        # Ajustar posição para início do corpo
+        self.set_y(70)
+
+    def footer(self):
+        """Rodapé com linha e detalhes bancários"""
+        self.set_line_width(0.2)
+        self.set_y(-18)
+        self.line(15, self.get_y(), self.w - 15, self.get_y())
+        self.ln(2)
+
+        bank_cols = self.cfg.get(
+            "bank_details",
+            [
+                {"Bank": "Bank", "SWIFT/BIC": "ABCDEF", "IBAN / Account No.": "PT50 0000 0000 0000"},
+            ],
+        )
+        legal_info = self.cfg.get(
+            "legal_info",
+            ["VAT ID: PT123", "EORI: PT123", "Registry: 123", "Managing Directors: N/A"],
+        )
+        col_w = (self.w - 30) / (len(bank_cols) + 1)
+        y = self.get_y()
+        for i, col in enumerate(bank_cols):
+            x = 15 + i * col_w
+            self.set_xy(x, y)
+            for k, v in col.items():
+                self.set_font("Helvetica", "B", 9)
+                self.cell(col_w, 4, k, ln=1)
+                self.set_font("Helvetica", "", 9)
+                self.multi_cell(col_w, 4, v)
+            y = self.get_y()
+        # Última coluna com info legal
+        self.set_xy(15 + len(bank_cols) * col_w, self.get_y())
+        self.set_font("Helvetica", "", 9)
+        self.multi_cell(col_w, 4, "\n".join(legal_info), align="R")
+
+    # ------------------------------------------------------------------
+    #  Corpo do documento
+    # ------------------------------------------------------------------
+    def _table_col_widths(self):
+        item_w = self.w - 30 - 12 - 12 - 14
+        return [12, 12, 14, item_w]
+
+    def add_title(self):
+        self.set_font("Helvetica", "B", 16)
+        self.cell(0, 8, "INQUIRY", ln=1)
+        self.ln(4)
+
+    def add_reference(self, referencia):
+        self.set_font("Helvetica", "B", 11)
+        self.cell(35, 5, "Our reference:")
+        self.set_font("Helvetica", "", 11)
+        self.cell(0, 5, referencia, ln=1)
+        self.ln(4)
+
+    def add_intro(self, nome_contacto=""):
+        self.set_font("Helvetica", "", 11)
+        if nome_contacto:
+            self.cell(0, 5, f"Dear Mr./Ms. {nome_contacto},", ln=1)
+        else:
+            self.cell(0, 5, "Dear Sir/Madam,", ln=1)
+        self.ln(4)
+        self.cell(0, 5, "Please quote us for:", ln=1)
+        self.ln(4)
+
+    def table_header(self):
+        col_w = self._table_col_widths()
+        self.set_font("Helvetica", "B", 11)
+        headers = ["Pos.", "Quantity", "Unit", "Item"]
+        aligns = ["C", "C", "C", "L"]
+        for w, h, a in zip(col_w, headers, aligns):
+            self.cell(w, 8, h, border=1, align=a)
         self.ln()
 
-    def add_table_row(self, idx, artigo):
-        table_cfg = self.cfg.get("table", {})
-        widths = table_cfg.get("widths", [10, 25, 110, 20, 25])
-        row_font = table_cfg.get("font", "Arial")
-        row_size = table_cfg.get("row_font_size", 9)
-        self.set_font(row_font, "", row_size)
-
-        desc = artigo['descricao']
-        lines = self.split_text(desc, 60)
+    def add_item(self, idx, item):
+        col_w = self._table_col_widths()
+        line_height = 5
+        # Preparar texto do item
+        item_text = item.get("descricao", "")
+        lines = item_text.split("\n")
         line_count = len(lines)
+        row_height = line_count * line_height
+        sub_height = line_height
+        # Quebra de página se necessário
+        if self.get_y() + row_height + sub_height > self.page_break_trigger:
+            self.add_page()
+            self.table_header()
 
-        for i, line in enumerate(lines):
-            if line_count == 1:
-                border = 'LTRB'
-            elif i == 0:
-                border = 'LTR'
-            elif i == line_count - 1:
-                border = 'LRB'
-            else:
-                border = 'LR'
+        x_start = self.get_x()
+        y_start = self.get_y()
+        # Desenhar células
+        for i in range(line_count):
+            border = "LR"
+            if i == 0:
+                border = "LTR"
+            if i == line_count - 1:
+                border = border.replace("R", "RB")
+            self.set_xy(x_start, y_start + i * line_height)
+            self.cell(col_w[0], line_height, str(idx) if i == 0 else "", border=border, align="C")
+            self.cell(col_w[1], line_height, str(item.get("quantidade", "")) if i == 0 else "", border=border, align="C")
+            self.cell(col_w[2], line_height, item.get("unidade", "") if i == 0 else "", border=border, align="C")
+            self.cell(col_w[3], line_height, lines[i], border=border)
 
-            self.cell(widths[0], 8, str(idx) if i == 0 else '', border=border, align='C')
-            self.cell(widths[1], 8, artigo.get('artigo_num', '')[:15] if i == 0 else '', border=border)
-            self.cell(widths[2], 8, line, border=border)
-            self.cell(widths[3], 8, str(artigo['quantidade']) if i == 0 else '', border=border, align='C')
-            self.cell(widths[4], 8, artigo['unidade'] if i == 0 else '', border=border)
-            self.ln()
+        self.set_y(y_start + row_height)
+        self.set_x(x_start + col_w[0] + col_w[1] + col_w[2])
+        self.set_font("Helvetica", "B", 11)
+        part_no = item.get("artigo_num", "")
+        self.cell(col_w[3], line_height, f"KTB Part No.: ", ln=0)
+        self.set_font("Helvetica", "", 11)
+        self.cell(0, line_height, part_no, ln=1)
 
-        # Sem linhas em branco adicionais: altura ajusta-se ao conteúdo
+    def add_notes(self):
+        self.ln(4)
+        self.set_font("Helvetica", "", 11)
+        notas = [
+            "Please offer only the original brands named in the inquiry.",
+            "Please include the following additional information in your offer:",
+            "Delivery time; Reseller / export discount.",
+        ]
+        for note in notas:
+            self.multi_cell(0, 5, note)
 
-    def split_text(self, text, max_length):
-        """Divide texto em linhas respeitando quebras de linha"""
-        lines = []
-        for part in text.split('\n'):
-            words = part.split()
-            if not words:
-                lines.append('')
-                continue
-            current_line = words[0]
-            for word in words[1:]:
-                test_line = f"{current_line} {word}"
-                if len(test_line) <= max_length:
-                    current_line = test_line
-                else:
-                    lines.append(current_line)
-                    current_line = word
-            lines.append(current_line)
-        return lines if lines else ['']
-
-    def gerar(self, fornecedor, data, artigos, referencia=""):
+    def gerar(self, fornecedor, data, artigos, referencia="", contacto=""):
+        """Gera o PDF e devolve bytes"""
+        self.recipient = {
+            "address": [fornecedor],
+            "metadata": {
+                "Date": data,
+                "Contact": contacto,
+            },
+        }
         self.add_page()
-        self.add_info(fornecedor, data, referencia)
-        self.add_table_header()
+        self.add_title()
+        self.add_reference(referencia)
+        self.add_intro(contacto)
+        self.table_header()
         for idx, art in enumerate(artigos, 1):
-            self.add_table_row(idx, art)
-
-        # Adicionar nota no final
-        note = self.cfg.get("footer_note", "Por favor, preencha os preços unitários e devolva este documento.")
-        body_cfg = self.cfg.get("body", {})
-        note_size = body_cfg.get("note_font_size", 10)
-        self.ln(10)
-        self.set_font(body_cfg.get("font", "Arial"), "I", note_size)
-        self.cell(0, 5, note, ln=True)
-
-        return self.output(dest='S').encode('latin-1')
+            self.add_item(idx, art)
+        self.add_notes()
+        return self.output(dest="S").encode("latin-1")
 
 
 class ClientQuotationPDF(FPDF):
@@ -1388,8 +1463,13 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor, data, artigos, referencia=""):
     """Gerar e armazenar PDF de pedido de cotação"""
     try:
         config = load_pdf_config("pedido")
-        pdf_generator = QuotationPDF(config)
-        pdf_bytes = pdf_generator.gerar(fornecedor, data.strftime("%Y-%m-%d"), artigos, referencia)
+        pdf_generator = InquiryPDF(config)
+        pdf_bytes = pdf_generator.gerar(
+            fornecedor,
+            data.strftime("%Y-%m-%d"),
+            artigos,
+            referencia,
+        )
         
         conn = obter_conexao()
         c = conn.cursor()
