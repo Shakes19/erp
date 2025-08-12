@@ -457,6 +457,19 @@ def obter_utilizador_por_username(username):
     return user
 
 
+def obter_utilizador_por_id(user_id):
+    """Obter utilizador pelo ID"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id, username, password, nome, email, role FROM utilizador WHERE id = ?",
+        (user_id,),
+    )
+    user = c.fetchone()
+    conn.close()
+    return user
+
+
 def inserir_utilizador(username, password, nome="", email="", role="user"):
     """Inserir novo utilizador"""
     conn = obter_conexao()
@@ -865,28 +878,34 @@ def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
             st.error("PDF não encontrado para anexar ao e-mail")
             return False
         
-        # Obter configurações de email
+        # Obter configurações de email (servidor/porta)
         conn = obter_conexao()
         c = conn.cursor()
         c.execute("""
-            SELECT smtp_server, smtp_port, email_user, email_password 
-            FROM configuracao_email 
-            WHERE ativo = TRUE 
+            SELECT smtp_server, smtp_port
+            FROM configuracao_email
+            WHERE ativo = TRUE
             LIMIT 1
         """)
         config = c.fetchone()
         conn.close()
-        
-        if not config:
-            print("⚠️ Usando configurações padrão de email")
-            config = (
-                EMAIL_CONFIG['smtp_server'],
-                EMAIL_CONFIG['smtp_port'],
-                EMAIL_CONFIG['email_user'],
-                EMAIL_CONFIG['email_password']
-            )
 
-        smtp_server, smtp_port, email_user, email_password = config
+        if config:
+            smtp_server, smtp_port = config
+        else:
+            print("⚠️ Usando configurações padrão de email")
+            smtp_server = EMAIL_CONFIG['smtp_server']
+            smtp_port = EMAIL_CONFIG['smtp_port']
+
+        # Credenciais do utilizador atual
+        current_user = obter_utilizador_por_id(st.session_state.get("user_id"))
+        if current_user:
+            email_user = current_user[4]
+            email_password = current_user[2]
+        else:
+            email_user = EMAIL_CONFIG['email_user']
+            email_password = EMAIL_CONFIG['email_password']
+
         print(f"🔧 Configurações SMTP: {smtp_server}:{smtp_port}")
         
         # Criar mensagem
@@ -965,15 +984,21 @@ def enviar_email_pedido_fornecedor(rfq_id):
         # Configuração SMTP
         conn = obter_conexao()
         c = conn.cursor()
-        c.execute("SELECT smtp_server, smtp_port, email_user, email_password FROM configuracao_email WHERE ativo = TRUE LIMIT 1")
+        c.execute("SELECT smtp_server, smtp_port FROM configuracao_email WHERE ativo = TRUE LIMIT 1")
         config = c.fetchone()
         conn.close()
 
         if config:
-            smtp_server, smtp_port, email_user, email_password = config
+            smtp_server, smtp_port = config
         else:
             smtp_server = EMAIL_CONFIG['smtp_server']
             smtp_port = EMAIL_CONFIG['smtp_port']
+
+        current_user = obter_utilizador_por_id(st.session_state.get("user_id"))
+        if current_user:
+            email_user = current_user[4]
+            email_password = current_user[2]
+        else:
             email_user = EMAIL_CONFIG['email_user']
             email_password = EMAIL_CONFIG['email_password']
 
@@ -1465,6 +1490,9 @@ if 'artigos' not in st.session_state:
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.role = None
+    st.session_state.user_id = None
+    st.session_state.username = None
+    st.session_state.user_email = None
 
 
 def login_screen():
@@ -1490,6 +1518,9 @@ def login_screen():
         if user and user[2] == password:
             st.session_state.logged_in = True
             st.session_state.role = user[5]
+            st.session_state.user_id = user[0]
+            st.session_state.username = user[1]
+            st.session_state.user_email = user[4]
             st.rerun()
         else:
             st.error("Credenciais inválidas")
@@ -1538,7 +1569,23 @@ st.markdown("""
 # Menu lateral
 with st.sidebar:
     st.title("📋 Menu Principal")
-    opcoes_menu = ["🏠 Dashboard", "📝 Nova Cotação", "📩 Responder Cotações", "📊 Relatórios"]
+    st.markdown(
+        """
+        <style>
+        .nav-link:hover {
+            color: #2e7d32 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    opcoes_menu = [
+        "🏠 Dashboard",
+        "📝 Nova Cotação",
+        "📩 Responder Cotações",
+        "📊 Relatórios",
+        "👤 Perfil",
+    ]
     if st.session_state.get("role") in ["admin", "gestor"]:
         opcoes_menu.append("⚙️ Configurações")
     menu_option = option_menu(
@@ -1575,9 +1622,12 @@ with st.sidebar:
     st.markdown("<br>", unsafe_allow_html=True)
     btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 1])
     with btn_col2:
-        if st.button("🚪 Sair", key="sidebar_logout"):
+        if st.button("Sair", icon="🚪", key="sidebar_logout"):
             st.session_state.logged_in = False
             st.session_state.role = None
+            st.session_state.user_id = None
+            st.session_state.username = None
+            st.session_state.user_email = None
             st.rerun()
 
     st.markdown("---")
@@ -1786,10 +1836,11 @@ elif menu_option == "📩 Responder Cotações":
             """
             <style>
             [data-testid="stDialog"] {
-                width: 90vw;
+                width: 100vw;
+                height: 100vh;
                 max-width: none;
-                left: 50%;
-                transform: translateX(-50%);
+                top: 0;
+                left: 0;
             }
             </style>
             """,
@@ -2211,6 +2262,26 @@ elif menu_option == "📊 Relatórios":
                 conn.close()
         else:
             st.info("Nenhum fornecedor registado")
+
+elif menu_option == "👤 Perfil":
+    st.title("👤 Meu Perfil")
+    user = obter_utilizador_por_id(st.session_state.get("user_id"))
+    if user:
+        st.text_input("Email", value=user[4], disabled=True)
+        with st.form("perfil_form"):
+            nova_pw = st.text_input("Nova Password", type="password")
+            confirmar_pw = st.text_input("Confirmar Password", type="password")
+            sub = st.form_submit_button("Atualizar Password")
+        if sub:
+            if nova_pw and nova_pw == confirmar_pw:
+                if atualizar_utilizador(user[0], user[1], user[3], user[4], user[5], nova_pw):
+                    st.success("Password atualizada com sucesso!")
+                else:
+                    st.error("Erro ao atualizar password")
+            else:
+                st.error("Passwords não coincidem ou estão vazias")
+    else:
+        st.error("Utilizador não encontrado")
 
 elif menu_option == "⚙️ Configurações":
     if st.session_state.get("role") not in ["admin", "gestor"]:
