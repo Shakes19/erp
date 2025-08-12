@@ -1501,12 +1501,17 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor, data, artigos):
         conn = obter_conexao()
         c = conn.cursor()
         c.execute(
-            "SELECT nome_solicitante, email_solicitante FROM rfq WHERE id = ?",
+            """
+            SELECT u.nome, u.email
+            FROM rfq
+            LEFT JOIN utilizador u ON rfq.utilizador_id = u.id
+            WHERE rfq.id = ?
+            """,
             (rfq_id,),
         )
-        solicitante_row = c.fetchone()
-        nome_user = solicitante_row[0] if solicitante_row and solicitante_row[0] else ""
-        email_user = solicitante_row[1] if solicitante_row and solicitante_row[1] else ""
+        user_row = c.fetchone()
+        nome_user = user_row[0] if user_row and user_row[0] else ""
+        email_user = user_row[1] if user_row and user_row[1] else ""
         if empresa:
             linhas = [empresa.get("nome") or "", empresa.get("morada") or ""]
             if empresa.get("telefone"):
