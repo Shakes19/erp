@@ -183,17 +183,23 @@ def criar_base_dados_completa():
             password TEXT NOT NULL,
             nome TEXT,
             email TEXT,
-            role TEXT NOT NULL
+            role TEXT NOT NULL,
+            email_password TEXT
         )
         """)
+
+        # Garantir que coluna email_password existe
+        c.execute("PRAGMA table_info(utilizador)")
+        if "email_password" not in [row[1] for row in c.fetchall()]:
+            c.execute("ALTER TABLE utilizador ADD COLUMN email_password TEXT")
 
         # Inserir utilizador administrador padrão se a tabela estiver vazia
         c.execute("SELECT COUNT(*) FROM utilizador")
         if c.fetchone()[0] == 0:
             c.execute(
                 """
-                INSERT INTO utilizador (username, password, nome, email, role)
-                VALUES ('admin', 'admin', 'Administrador', 'admin@example.com', 'admin')
+                INSERT INTO utilizador (username, password, nome, email, role, email_password)
+                VALUES ('admin', 'admin', 'Administrador', 'admin@example.com', 'admin', '')
                 """
             )
 
@@ -449,7 +455,7 @@ def obter_utilizador_por_username(username):
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
-        "SELECT id, username, password, nome, email, role FROM utilizador WHERE username = ?",
+        "SELECT id, username, password, nome, email, role, email_password FROM utilizador WHERE username = ?",
         (username,),
     )
     user = c.fetchone()
@@ -462,7 +468,7 @@ def obter_utilizador_por_id(user_id):
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
-        "SELECT id, username, password, nome, email, role FROM utilizador WHERE id = ?",
+        "SELECT id, username, password, nome, email, role, email_password FROM utilizador WHERE id = ?",
         (user_id,),
     )
     user = c.fetchone()
@@ -470,17 +476,17 @@ def obter_utilizador_por_id(user_id):
     return user
 
 
-def inserir_utilizador(username, password, nome="", email="", role="user"):
+def inserir_utilizador(username, password, nome="", email="", role="user", email_password=""):
     """Inserir novo utilizador"""
     conn = obter_conexao()
     c = conn.cursor()
     try:
         c.execute(
             """
-            INSERT INTO utilizador (username, password, nome, email, role)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO utilizador (username, password, nome, email, role, email_password)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (username, password, nome, email, role),
+            (username, password, nome, email, role, email_password),
         )
         conn.commit()
         return c.lastrowid
@@ -490,29 +496,26 @@ def inserir_utilizador(username, password, nome="", email="", role="user"):
         conn.close()
 
 
-def atualizar_utilizador(user_id, username, nome, email, role, password=None):
+def atualizar_utilizador(
+    user_id, username, nome, email, role, password=None, email_password=None
+):
     """Atualizar dados de um utilizador"""
     conn = obter_conexao()
     c = conn.cursor()
     try:
+        fields = ["username = ?", "nome = ?", "email = ?", "role = ?"]
+        params = [username, nome, email, role]
         if password:
-            c.execute(
-                """
-                UPDATE utilizador
-                SET username = ?, password = ?, nome = ?, email = ?, role = ?
-                WHERE id = ?
-                """,
-                (username, password, nome, email, role, user_id),
-            )
-        else:
-            c.execute(
-                """
-                UPDATE utilizador
-                SET username = ?, nome = ?, email = ?, role = ?
-                WHERE id = ?
-                """,
-                (username, nome, email, role, user_id),
-            )
+            fields.append("password = ?")
+            params.append(password)
+        if email_password:
+            fields.append("email_password = ?")
+            params.append(email_password)
+        params.append(user_id)
+        c.execute(
+            f"UPDATE utilizador SET {', '.join(fields)} WHERE id = ?",
+            params,
+        )
         conn.commit()
         return True
     finally:
@@ -901,7 +904,7 @@ def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
         current_user = obter_utilizador_por_id(st.session_state.get("user_id"))
         if current_user:
             email_user = current_user[4]
-            email_password = current_user[2]
+            email_password = current_user[6]
         else:
             email_user = EMAIL_CONFIG['email_user']
             email_password = EMAIL_CONFIG['email_password']
@@ -997,7 +1000,7 @@ def enviar_email_pedido_fornecedor(rfq_id):
         current_user = obter_utilizador_por_id(st.session_state.get("user_id"))
         if current_user:
             email_user = current_user[4]
-            email_password = current_user[2]
+            email_password = current_user[6]
         else:
             email_user = EMAIL_CONFIG['email_user']
             email_password = EMAIL_CONFIG['email_password']
@@ -1493,6 +1496,7 @@ if 'logged_in' not in st.session_state:
     st.session_state.user_id = None
     st.session_state.username = None
     st.session_state.user_email = None
+    st.session_state.user_email_pass = None
 
 
 def login_screen():
@@ -1521,6 +1525,7 @@ def login_screen():
             st.session_state.user_id = user[0]
             st.session_state.username = user[1]
             st.session_state.user_email = user[4]
+            st.session_state.user_email_pass = user[6]
             st.rerun()
         else:
             st.error("Credenciais inválidas")
@@ -1620,15 +1625,14 @@ with st.sidebar:
     st.metric("Cotações Respondidas", stats.get('rfq_respondidas', 0))
 
     st.markdown("<br>", unsafe_allow_html=True)
-    btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 1])
-    with btn_col2:
-        if st.button("Sair", icon="🚪", key="sidebar_logout"):
-            st.session_state.logged_in = False
-            st.session_state.role = None
-            st.session_state.user_id = None
-            st.session_state.username = None
-            st.session_state.user_email = None
-            st.rerun()
+    if st.button("Sair", icon="🚪", key="sidebar_logout", use_container_width=True):
+        st.session_state.logged_in = False
+        st.session_state.role = None
+        st.session_state.user_id = None
+        st.session_state.username = None
+        st.session_state.user_email = None
+        st.session_state.user_email_pass = None
+        st.rerun()
 
     st.markdown("---")
     st.markdown("""
@@ -2271,15 +2275,24 @@ elif menu_option == "👤 Perfil":
         with st.form("perfil_form"):
             nova_pw = st.text_input("Nova Password", type="password")
             confirmar_pw = st.text_input("Confirmar Password", type="password")
-            sub = st.form_submit_button("Atualizar Password")
+            email_pw = st.text_input("Password do Email", type="password")
+            sub = st.form_submit_button("Atualizar Dados")
         if sub:
-            if nova_pw and nova_pw == confirmar_pw:
-                if atualizar_utilizador(user[0], user[1], user[3], user[4], user[5], nova_pw):
-                    st.success("Password atualizada com sucesso!")
-                else:
-                    st.error("Erro ao atualizar password")
+            if nova_pw and nova_pw != confirmar_pw:
+                st.error("Passwords não coincidem")
             else:
-                st.error("Passwords não coincidem ou estão vazias")
+                if atualizar_utilizador(
+                    user[0],
+                    user[1],
+                    user[3],
+                    user[4],
+                    user[5],
+                    nova_pw or None,
+                    email_pw or None,
+                ):
+                    st.success("Dados atualizados com sucesso!")
+                else:
+                    st.error("Erro ao atualizar dados")
     else:
         st.error("Utilizador não encontrado")
 
@@ -2373,12 +2386,15 @@ elif menu_option == "⚙️ Configurações":
                     username = st.text_input("Username *")
                     nome = st.text_input("Nome")
                     email_user = st.text_input("Email")
+                    email_pass = st.text_input("Password do Email", type="password")
                     role = st.selectbox("Role", ["admin", "gestor", "user"])
                     password = st.text_input("Password *", type="password")
 
                     if st.form_submit_button("➕ Adicionar"):
                         if username and password:
-                            if inserir_utilizador(username, password, nome, email_user, role):
+                            if inserir_utilizador(
+                                username, password, nome, email_user, role, email_pass
+                            ):
                                 st.success(f"Utilizador {username} adicionado!")
                                 st.rerun()
                             else:
@@ -2396,6 +2412,9 @@ elif menu_option == "⚙️ Configurações":
                             username_edit = st.text_input("Username", user[1])
                             nome_edit = st.text_input("Nome", user[2] or "")
                             email_edit = st.text_input("Email", user[3] or "")
+                            email_pass_edit = st.text_input(
+                                "Password do Email", type="password"
+                            )
                             role_edit = st.selectbox(
                                 "Role",
                                 ["admin", "gestor", "user"],
@@ -2413,6 +2432,7 @@ elif menu_option == "⚙️ Configurações":
                                         email_edit,
                                         role_edit,
                                         password_edit or None,
+                                        email_pass_edit or None,
                                     ):
                                         st.success("Utilizador atualizado")
                                         st.rerun()
