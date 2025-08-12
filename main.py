@@ -1546,8 +1546,18 @@ with st.sidebar:
         opcoes_menu,
         default_index=0,
         styles={
-            "container": {"padding": "0", "background-color": "#0e1117"},
-            "nav-link": {"font-size": "16px", "text-align": "left", "margin": "2px", "--hover-color": "#eee"},
+            # tornar o fundo do menu transparente para coincidir com a barra lateral
+            "container": {"padding": "0", "background-color": "transparent"},
+            # ajustar o tamanho de letra e evitar quebras de linha
+            "nav-link": {
+                "font-size": "14px",
+                "text-align": "left",
+                "margin": "2px",
+                "--hover-color": "#eee",
+                "white-space": "nowrap",
+                "padding": "4px 2px",
+                "line-height": "24px",
+            },
             "nav-link-selected": {"background-color": "#d0f0c0"},
         },
     )
