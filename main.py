@@ -1541,10 +1541,7 @@ with st.sidebar:
     st.markdown(
         """
         <style>
-            .nav-link i,
-            .nav-link i::before,
-            .nav-link + i,
-            .nav-link + i::before {
+            .nav-link i {
                 display: none !important;
             }
         </style>
@@ -1563,7 +1560,6 @@ with st.sidebar:
     menu_option = option_menu(
         "",
         opcoes_menu,
-        icons=["" for _ in opcoes_menu],
         default_index=0,
         styles={
             # tornar o fundo do menu transparente para coincidir com a barra lateral
