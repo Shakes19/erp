@@ -1149,11 +1149,9 @@ class QuotationPDF(FPDF):
         row_size = table_cfg.get("row_font_size", 9)
         self.set_font(row_font, "", row_size)
         
-        # Preparar descrição com máximo de 10 linhas
+        # Preparar descrição sem limite fixo, respeitando quebras de linha
         desc = artigo['descricao']
         lines = self.split_text(desc, 45)
-        max_lines = 10
-        lines = lines[:max_lines]
 
         # Primeira linha com dados do item
         self.cell(widths[0], 8, str(idx), border=1, align='C')
@@ -1174,35 +1172,26 @@ class QuotationPDF(FPDF):
             self.cell(widths[5], 8, "", border=1)
             self.ln()
 
-        # Linhas vazias para garantir espaço para 10 linhas
-        for _ in range(max_lines - len(lines)):
-            self.cell(widths[0], 8, "", border=1)
-            self.cell(widths[1], 8, "", border=1)
-            self.cell(widths[2], 8, "", border=1)
-            self.cell(widths[3], 8, "", border=1)
-            self.cell(widths[4], 8, "", border=1)
-            self.cell(widths[5], 8, "", border=1)
-            self.ln()
+        # Sem linhas em branco adicionais: altura ajusta-se ao conteúdo
 
     def split_text(self, text, max_length):
-        """Divide texto em linhas"""
+        """Divide texto em linhas respeitando quebras de linha"""
         lines = []
-        words = text.split()
-        current_line = ""
-        
-        for word in words:
-            test_line = current_line + " " + word if current_line else word
-            if len(test_line) <= max_length:
-                current_line = test_line
-            else:
-                if current_line:
+        for part in text.split('\n'):
+            words = part.split()
+            if not words:
+                lines.append('')
+                continue
+            current_line = words[0]
+            for word in words[1:]:
+                test_line = f"{current_line} {word}"
+                if len(test_line) <= max_length:
+                    current_line = test_line
+                else:
                     lines.append(current_line)
-                current_line = word
-        
-        if current_line:
+                    current_line = word
             lines.append(current_line)
-        
-        return lines if lines else [text[:max_length]]
+        return lines if lines else ['']
 
     def gerar(self, fornecedor, data, artigos, referencia=""):
         self.add_page()
@@ -1272,20 +1261,23 @@ class ClientQuotationPDF(FPDF):
         self.ln()
 
     def split_text(self, text, max_length):
+        """Divide texto em linhas respeitando quebras de linha"""
         lines = []
-        words = text.split()
-        current_line = ""
-        for word in words:
-            test_line = (current_line + " " + word).strip() if current_line else word
-            if len(test_line) <= max_length:
-                current_line = test_line
-            else:
-                if current_line:
+        for part in text.split('\n'):
+            words = part.split()
+            if not words:
+                lines.append('')
+                continue
+            current_line = words[0]
+            for word in words[1:]:
+                test_line = f"{current_line} {word}"
+                if len(test_line) <= max_length:
+                    current_line = test_line
+                else:
                     lines.append(current_line)
-                current_line = word
-        if current_line:
+                    current_line = word
             lines.append(current_line)
-        return lines if lines else [text[:max_length]]
+        return lines if lines else ['']
 
     def add_table_row(self, idx, item):
         table_cfg = self.cfg.get("table", {})
@@ -1298,11 +1290,9 @@ class ClientQuotationPDF(FPDF):
         quantidade = int(item['quantidade_final'])
         total = preco_venda * quantidade
 
-        # Descrição com máximo de 10 linhas
+        # Descrição sem limite fixo, respeitando quebras de linha
         desc = item['descricao']
         lines = self.split_text(desc, 30)
-        max_lines = 10
-        lines = lines[:max_lines]
 
         # Primeira linha com dados
         self.cell(widths[0], 6, str(idx), border=1, align='C')
@@ -1326,11 +1316,7 @@ class ClientQuotationPDF(FPDF):
                 self.cell(widths[j], 6, "", border=1)
             self.ln()
 
-        # Linhas vazias para completar 10 linhas
-        for _ in range(max_lines - len(lines)):
-            for w in widths:
-                self.cell(w, 6, "", border=1)
-            self.ln()
+        # Sem linhas em branco adicionais: altura ajusta-se ao conteúdo
 
         return total
 
