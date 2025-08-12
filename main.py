@@ -1209,7 +1209,7 @@ class InquiryPDF(FPDF):
         )
         self.set_xy(self.w - 15 - 70, 45)
         for line in company_lines:
-            self.cell(70, 4, line, ln=1, align="L")
+            self.cell(70, 4, line, ln=1, align="R")
 
         # Ajustar posição para início do corpo
         self.set_y(70)
@@ -1318,17 +1318,6 @@ class InquiryPDF(FPDF):
 
         self.set_y(y_start + row_height)
 
-    def add_notes(self):
-        self.ln(4)
-        self.set_font("Helvetica", "", 11)
-        notas = [
-            "Please offer only the original brands named in the inquiry.",
-            "Please include the following additional information in your offer:",
-            "Delivery time; Reseller / export discount.",
-        ]
-        for note in notas:
-            self.multi_cell(0, 5, note)
-
     def gerar(self, fornecedor, data, artigos, referencia="", contacto=""):
         """Gera o PDF e devolve bytes"""
         self.recipient = {
@@ -1345,7 +1334,6 @@ class InquiryPDF(FPDF):
         self.table_header()
         for idx, art in enumerate(artigos, 1):
             self.add_item(idx, art)
-        self.add_notes()
         return self.output(dest="S").encode("latin-1")
 
 
@@ -1510,22 +1498,30 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor, data, artigos):
         config = load_pdf_config("pedido")
 
         empresa = obter_config_empresa()
+        conn = obter_conexao()
+        c = conn.cursor()
+        c.execute(
+            "SELECT nome_solicitante, email_solicitante FROM rfq WHERE id = ?",
+            (rfq_id,),
+        )
+        solicitante_row = c.fetchone()
+        nome_user = solicitante_row[0] if solicitante_row and solicitante_row[0] else ""
+        email_user = solicitante_row[1] if solicitante_row and solicitante_row[1] else ""
         if empresa:
             linhas = [empresa.get("nome") or "", empresa.get("morada") or ""]
             if empresa.get("telefone"):
                 linhas.append(f"Tel: {empresa['telefone']}")
-            if empresa.get("email"):
-                linhas.append(empresa["email"])
             if empresa.get("website"):
                 linhas.append(empresa["website"])
+            if nome_user:
+                linhas.append(nome_user)
+            if email_user:
+                linhas.append(email_user)
             config["company_lines"] = [l for l in linhas if l]
             if empresa.get("iban"):
                 config["bank_details"] = [{"IBAN / Account No.": empresa["iban"]}]
             if empresa.get("nif"):
                 config["legal_info"] = [f"NIF: {empresa['nif']}"]
-
-        conn = obter_conexao()
-        c = conn.cursor()
         c.execute(
             """SELECT processo.numero FROM rfq JOIN processo ON rfq.processo_id = processo.id
                    WHERE rfq.id = ?""",
