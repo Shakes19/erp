@@ -1542,8 +1542,10 @@ with st.sidebar:
     if st.session_state.get("role") in ["admin", "gestor"]:
         opcoes_menu.append("⚙️ Configurações")
     menu_option = option_menu(
-        "Navegação",
+        "",
         opcoes_menu,
+        icons=["" for _ in opcoes_menu],
+        menu_icon="",
         default_index=0,
         styles={
             # tornar o fundo do menu transparente para coincidir com a barra lateral
@@ -1559,6 +1561,7 @@ with st.sidebar:
                 "line-height": "24px",
             },
             "nav-link-selected": {"background-color": "#d0f0c0"},
+            "icon": {"display": "none"},
         },
     )
     
@@ -1569,10 +1572,13 @@ with st.sidebar:
     st.metric("Cotações Pendentes", stats.get('rfq_pendentes', 0))
     st.metric("Cotações Respondidas", stats.get('rfq_respondidas', 0))
 
-    if st.button("🚪 Sair", key="sidebar_logout"):
-        st.session_state.logged_in = False
-        st.session_state.role = None
-        st.rerun()
+    st.markdown("<br>", unsafe_allow_html=True)
+    btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 1])
+    with btn_col2:
+        if st.button("🚪 Sair", key="sidebar_logout"):
+            st.session_state.logged_in = False
+            st.session_state.role = None
+            st.rerun()
 
     st.markdown("---")
     st.markdown("""
@@ -1780,8 +1786,8 @@ elif menu_option == "📩 Responder Cotações":
             """
             <style>
             [data-testid="stDialog"] {
-                width: 60vw;
-                max-width: 900px;
+                width: 90vw;
+                max-width: none;
                 left: 50%;
                 transform: translateX(-50%);
             }
