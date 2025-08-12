@@ -1,5 +1,6 @@
 import sqlite3
 import os
+from datetime import datetime
 
 DB_PATH = "cotacoes.db"
 
@@ -228,7 +229,6 @@ def criar_base_dados():
         for indice in indices:
             c.execute(indice)
 
-        inserir_dados_exemplo(c)
         conn.commit()
         print("Base de dados criada/atualizada com sucesso!")
     except sqlite3.Error as e:
@@ -238,26 +238,6 @@ def criar_base_dados():
     finally:
         if conn:
             conn.close()
-
-
-def inserir_dados_exemplo(cursor):
-    """Insere alguns fornecedores de exemplo se a tabela estiver vazia."""
-    try:
-        cursor.execute("SELECT COUNT(*) FROM fornecedor")
-        if cursor.fetchone()[0] == 0:
-            fornecedores = [
-                ("Falex", "fornecedor@falex.com", "+351 123 456 789"),
-                ("Sloap", "vendas@sloap.pt", "+351 987 654 321"),
-                ("Nexautomation", "info@nexautomation.com", "+351 555 123 456"),
-            ]
-            cursor.executemany(
-                "INSERT INTO fornecedor (nome, email, telefone) VALUES (?, ?, ?)",
-                fornecedores,
-            )
-            print("Fornecedores de exemplo inseridos.")
-    except sqlite3.Error as e:
-        print(f"Erro ao inserir dados de exemplo: {e}")
-
 
 def verificar_integridade_db():
     """Verifica a integridade da base de dados."""
@@ -288,3 +268,38 @@ def backup_database(backup_path="backup_cotacoes.db"):
         print(f"✅ Backup criado: {backup_path}")
     except Exception as e:
         print(f"Erro ao criar backup: {e}")
+
+
+def gerar_numero_processo():
+    """Gera um número interno único para o processo no formato QTYYYY-N."""
+    ano = datetime.now().year
+    prefixo = f"QT{ano}-"
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        c = conn.cursor()
+        c.execute(
+            "SELECT MAX(CAST(substr(numero, 8) AS INTEGER)) FROM processo WHERE numero LIKE ?",
+            (f"{prefixo}%",),
+        )
+        max_seq = c.fetchone()[0]
+    finally:
+        conn.close()
+    proximo = (max_seq or 0) + 1
+    return f"{prefixo}{proximo}"
+
+
+def criar_processo(descricao="", cliente="", observacoes=""):
+    """Cria um novo processo com número interno sequencial por ano."""
+    numero = gerar_numero_processo()
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO processo (numero, descricao, cliente, observacoes)
+                   VALUES (?, ?, ?, ?)""",
+            (numero, descricao, cliente, observacoes),
+        )
+        conn.commit()
+        return c.lastrowid, numero
+    finally:
+        conn.close()

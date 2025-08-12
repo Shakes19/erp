@@ -1,0 +1,5 @@
+cotacoes.db
+logo.jpeg
+*.db
+*.env
+__pycache__/
