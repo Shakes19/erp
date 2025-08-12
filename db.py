@@ -158,28 +158,32 @@ def criar_base_dados():
         c.execute(
             """
             CREATE TABLE IF NOT EXISTS pdf_storage (
-                rfq_id INTEGER,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rfq_id INTEGER NOT NULL,
                 tipo_pdf TEXT NOT NULL,
                 pdf_data BLOB NOT NULL,
                 data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
                 tamanho_bytes INTEGER,
-                PRIMARY KEY (rfq_id, tipo_pdf),
+                nome_ficheiro TEXT,
+                UNIQUE(rfq_id, tipo_pdf),
                 FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
             )
             """
         )
         c.execute("PRAGMA table_info(pdf_storage)")
         columns = [row[1] for row in c.fetchall()]
-        if 'tipo_pdf' not in columns:
+        if 'id' not in columns or 'nome_ficheiro' not in columns:
             c.execute(
                 """
                 CREATE TABLE IF NOT EXISTS pdf_storage_new (
-                    rfq_id INTEGER,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    rfq_id INTEGER NOT NULL,
                     tipo_pdf TEXT NOT NULL,
                     pdf_data BLOB NOT NULL,
                     data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
                     tamanho_bytes INTEGER,
-                    PRIMARY KEY (rfq_id, tipo_pdf),
+                    nome_ficheiro TEXT,
+                    UNIQUE(rfq_id, tipo_pdf),
                     FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
                 )
                 """
@@ -187,7 +191,7 @@ def criar_base_dados():
             c.execute(
                 """
                 INSERT INTO pdf_storage_new (rfq_id, tipo_pdf, pdf_data, data_criacao, tamanho_bytes)
-                SELECT rfq_id, 'pedido', pdf_data, data_criacao, tamanho_bytes FROM pdf_storage
+                SELECT rfq_id, tipo_pdf, pdf_data, data_criacao, tamanho_bytes FROM pdf_storage
                 """
             )
             c.execute("DROP TABLE pdf_storage")
@@ -198,6 +202,8 @@ def criar_base_dados():
             c.execute("ALTER TABLE pdf_storage ADD COLUMN data_criacao TEXT DEFAULT CURRENT_TIMESTAMP")
         if 'tamanho_bytes' not in columns:
             c.execute("ALTER TABLE pdf_storage ADD COLUMN tamanho_bytes INTEGER")
+        if 'nome_ficheiro' not in columns:
+            c.execute("ALTER TABLE pdf_storage ADD COLUMN nome_ficheiro TEXT")
 
         # Tabela de logs
         c.execute(
