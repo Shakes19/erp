@@ -1537,33 +1537,13 @@ st.markdown("""
 
 # Menu lateral
 with st.sidebar:
-    # Ocultar ícones padrão "bi-caret-right" do menu
-    st.markdown(
-        """
-        <style>
-            .nav-link i,
-            .nav-link i::before,
-            .nav-link + i,
-            .nav-link + i::before {
-                display: none !important;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    opcoes_menu = [
-        "🏠 Dashboard",
-        "📝 Nova Cotação",
-        "📩 Responder Cotações",
-        "📊 Relatórios",
-    ]
+    st.title("📋 Menu Principal")
+    opcoes_menu = ["🏠 Dashboard", "📝 Nova Cotação", "📩 Responder Cotações", "📊 Relatórios"]
     if st.session_state.get("role") in ["admin", "gestor"]:
         opcoes_menu.append("⚙️ Configurações")
     menu_option = option_menu(
-        "",
+        "Navegação",
         opcoes_menu,
-        icons=["" for _ in opcoes_menu],
         default_index=0,
         styles={
             # tornar o fundo do menu transparente para coincidir com a barra lateral
@@ -1573,12 +1553,12 @@ with st.sidebar:
                 "font-size": "14px",
                 "text-align": "left",
                 "margin": "2px",
-                "--hover-color": "#f0f0f0",
+                "--hover-color": "#eee",
                 "white-space": "nowrap",
                 "padding": "4px 2px",
                 "line-height": "24px",
             },
-            "nav-link-selected": {"background-color": "#cce5ff"},
+            "nav-link-selected": {"background-color": "#d0f0c0"},
         },
     )
     
