@@ -39,6 +39,9 @@ Editar
   - Geração e envio automático de PDF para o cliente
 - **Relatórios**
   - Estatísticas gerais e por fornecedor
+- **Gestão de PDFs**
+  - Todos os utilizadores podem visualizar
+  - Apenas administradores podem substituir os ficheiros
 - **Configurações**
   - Gestão de fornecedores, marcas e margens
   - Configuração de e-mail para envio automático

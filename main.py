@@ -1607,6 +1607,7 @@ with st.sidebar:
         "📝 Nova Cotação",
         "📩 Responder Cotações",
         "📊 Relatórios",
+        "📄 PDFs",
         "👤 Perfil",
     ]
     if st.session_state.get("role") in ["admin", "gestor"]:
@@ -2375,6 +2376,33 @@ elif menu_option == "📊 Relatórios":
         else:
             st.info("Nenhum utilizador registado")
 
+elif menu_option == "📄 PDFs":
+    st.title("📄 Gestão de PDFs")
+
+    cotacoes = obter_todas_cotacoes()
+    if cotacoes:
+        cot_sel = st.selectbox(
+            "Selecionar Cotação",
+            options=cotacoes,
+            format_func=lambda c: f"#{c['id']} - {c['referencia']}"
+        )
+        tipo_pdf = st.selectbox("Tipo de PDF", ["pedido", "cliente"], key="tipo_pdf_gest")
+        pdf_atual = obter_pdf_da_db(cot_sel["id"], tipo_pdf)
+        if pdf_atual:
+            exibir_pdf("PDF Atual", pdf_atual)
+        else:
+            st.info("PDF não encontrado")
+
+        if st.session_state.get("role") == "admin":
+            novo_pdf = st.file_uploader("Substituir PDF", type=["pdf"], key="upload_pdf_gest")
+            if novo_pdf and st.button("💾 Guardar PDF"):
+                if guardar_pdf_upload(cot_sel["id"], tipo_pdf, novo_pdf.name, novo_pdf.getvalue()):
+                    st.success("PDF atualizado com sucesso!")
+        else:
+            st.info("Apenas administradores podem atualizar o PDF.")
+    else:
+        st.info("Nenhuma cotação disponível")
+
 elif menu_option == "👤 Perfil":
     st.title("👤 Meu Perfil")
     user = obter_utilizador_por_id(st.session_state.get("user_id"))
@@ -2383,22 +2411,22 @@ elif menu_option == "👤 Perfil":
 
         with tab_email:
             with st.form("email_form"):
-                novo_email = st.text_input("Email", value=user[4])
+                st.text_input("Email", value=user[4], disabled=True)
                 email_pw = st.text_input("Password do Email", type="password")
-                sub_email = st.form_submit_button("Atualizar Email")
+                sub_email = st.form_submit_button("Atualizar Password do Email")
             if sub_email:
                 if atualizar_utilizador(
                     user[0],
                     user[1],
                     user[3],
-                    novo_email,
+                    user[4],
                     user[5],
                     None,
                     email_pw or None,
                 ):
-                    st.success("Email atualizado com sucesso!")
+                    st.success("Password do email atualizada com sucesso!")
                 else:
-                    st.error("Erro ao atualizar email")
+                    st.error("Erro ao atualizar password do email")
 
         with tab_senha:
             with st.form("senha_form"):
