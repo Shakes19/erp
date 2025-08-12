@@ -205,6 +205,19 @@ def criar_base_dados():
         if 'nome_ficheiro' not in columns:
             c.execute("ALTER TABLE pdf_storage ADD COLUMN nome_ficheiro TEXT")
 
+        # Tabela de configuração da empresa
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS configuracao_empresa (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT,
+                morada TEXT,
+                nif TEXT,
+                iban TEXT
+            )
+            """
+        )
+
         # Tabela de logs
         c.execute(
             """
