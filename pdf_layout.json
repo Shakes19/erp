@@ -11,14 +11,14 @@
     },
     "body": {"font": "Arial", "font_size": 12, "note_font_size": 10},
     "table": {
-      "headers": ["#", "Art. Nº", "Descrição", "Qtd", "Unidade", "Preço Unit."],
-      "widths": [10, 25, 85, 20, 25, 25],
+      "headers": ["#", "Art. Nº", "Descrição", "Qtd", "Unidade"],
+      "widths": [10, 25, 110, 20, 25],
       "font": "Arial",
       "font_style": "B",
       "font_size": 10,
       "row_font_size": 9
     },
-    "footer_note": "Por favor, preencha os preços unitários e devolva este documento."
+    "footer_note": "Por favor, devolva este documento preenchido."
   },
   "cliente": {
     "header": {

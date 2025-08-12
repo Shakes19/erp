@@ -13,6 +13,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
+from db import criar_processo
 
 
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
@@ -560,21 +561,22 @@ def eliminar_utilizador(user_id):
 
 # ========================== FUNÇÕES DE GESTÃO DE RFQs ==========================
 
-def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
+def criar_rfq(fornecedor_id, data, artigos, nome_solicitante="",
               email_solicitante="", observacoes=""):
     """Criar nova RFQ"""
     conn = obter_conexao()
     c = conn.cursor()
-    
+
     try:
         utilizador_id = st.session_state.get("user_id")
+        processo_id, referencia = criar_processo()
         c.execute("""
-            INSERT INTO rfq (fornecedor_id, data, referencia,
+            INSERT INTO rfq (processo_id, fornecedor_id, data, referencia,
                            nome_solicitante, email_solicitante, observacoes, estado, utilizador_id)
-            VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
-        """, (fornecedor_id, data.isoformat(), referencia,
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pendente', ?)
+        """, (processo_id, fornecedor_id, data.isoformat(), referencia,
               nome_solicitante, email_solicitante, observacoes, utilizador_id))
-        
+
         rfq_id = c.lastrowid
 
         # Inserir artigos
@@ -596,8 +598,8 @@ def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
         gerar_e_armazenar_pdf(rfq_id, nome_fornecedor, data, artigos, referencia)
         # Enviar pedido por email ao fornecedor
         enviar_email_pedido_fornecedor(rfq_id)
-        
-        return rfq_id
+
+        return rfq_id, referencia
     except Exception as e:
         conn.rollback()
         st.error(f"Erro ao criar RFQ: {str(e)}")
@@ -960,6 +962,8 @@ def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
         corpo = f"""
         Estimado(a) {nome_solicitante},
 
+        Your Reference: {referencia}
+
         Segue em anexo o orçamento solicitado com a referência {referencia}.
 
         Ficamos à disposição para qualquer esclarecimento adicional.
@@ -1132,8 +1136,8 @@ class QuotationPDF(FPDF):
 
     def add_table_header(self):
         table_cfg = self.cfg.get("table", {})
-        headers = table_cfg.get("headers", ["#", "Art. Nº", "Descrição", "Qtd", "Unidade", "Preço Unit."])
-        widths = table_cfg.get("widths", [10, 25, 85, 20, 25, 25])
+        headers = table_cfg.get("headers", ["#", "Art. Nº", "Descrição", "Qtd", "Unidade"])
+        widths = table_cfg.get("widths", [10, 25, 110, 20, 25])
         font = table_cfg.get("font", "Arial")
         style = table_cfg.get("font_style", "B")
         size = table_cfg.get("font_size", 10)
@@ -1144,32 +1148,30 @@ class QuotationPDF(FPDF):
 
     def add_table_row(self, idx, artigo):
         table_cfg = self.cfg.get("table", {})
-        widths = table_cfg.get("widths", [10, 25, 85, 20, 25, 25])
+        widths = table_cfg.get("widths", [10, 25, 110, 20, 25])
         row_font = table_cfg.get("font", "Arial")
         row_size = table_cfg.get("row_font_size", 9)
         self.set_font(row_font, "", row_size)
-        
-        # Preparar descrição sem limite fixo, respeitando quebras de linha
+
         desc = artigo['descricao']
-        lines = self.split_text(desc, 45)
+        lines = self.split_text(desc, 60)
+        line_count = len(lines)
 
-        # Primeira linha com dados do item
-        self.cell(widths[0], 8, str(idx), border=1, align='C')
-        self.cell(widths[1], 8, artigo.get('artigo_num', '')[:15], border=1)
-        self.cell(widths[2], 8, lines[0] if lines else '', border=1)
-        self.cell(widths[3], 8, str(artigo['quantidade']), border=1, align='C')
-        self.cell(widths[4], 8, artigo['unidade'], border=1)
-        self.cell(widths[5], 8, "_______", border=1, align='C')  # Campo vazio para preço
-        self.ln()
+        for i, line in enumerate(lines):
+            if line_count == 1:
+                border = 'LTRB'
+            elif i == 0:
+                border = 'LTR'
+            elif i == line_count - 1:
+                border = 'LRB'
+            else:
+                border = 'LR'
 
-        # Linhas adicionais para descrições longas
-        for line in lines[1:]:
-            self.cell(widths[0], 8, "", border=1)
-            self.cell(widths[1], 8, "", border=1)
-            self.cell(widths[2], 8, line, border=1)
-            self.cell(widths[3], 8, "", border=1)
-            self.cell(widths[4], 8, "", border=1)
-            self.cell(widths[5], 8, "", border=1)
+            self.cell(widths[0], 8, str(idx) if i == 0 else '', border=border, align='C')
+            self.cell(widths[1], 8, artigo.get('artigo_num', '')[:15] if i == 0 else '', border=border)
+            self.cell(widths[2], 8, line, border=border)
+            self.cell(widths[3], 8, str(artigo['quantidade']) if i == 0 else '', border=border, align='C')
+            self.cell(widths[4], 8, artigo['unidade'] if i == 0 else '', border=border)
             self.ln()
 
         # Sem linhas em branco adicionais: altura ajusta-se ao conteúdo
@@ -1293,27 +1295,33 @@ class ClientQuotationPDF(FPDF):
         # Descrição sem limite fixo, respeitando quebras de linha
         desc = item['descricao']
         lines = self.split_text(desc, 30)
+        line_count = len(lines)
 
-        # Primeira linha com dados
-        self.cell(widths[0], 6, str(idx), border=1, align='C')
-        self.cell(widths[1], 6, (item.get('artigo_num') or '')[:10], border=1)
-        self.cell(widths[2], 6, lines[0] if lines else '', border=1)
-        self.cell(widths[3], 6, str(quantidade), border=1, align='C')
-        self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=1, align='R')
-        self.cell(widths[5], 6, f"EUR {total:.2f}", border=1, align='R')
-        self.cell(widths[6], 6, (item.get('hs_code') or '')[:10], border=1, align='C')
-        self.cell(widths[7], 6, (item.get('pais_origem') or '')[:8], border=1, align='C')
-        self.cell(widths[8], 6, f"{item.get('prazo_entrega', 30)}d", border=1, align='C')
-        self.cell(widths[9], 6, f"{(item.get('peso') or 0):.1f}kg", border=1, align='C')
-        self.ln()
+        for i, line in enumerate(lines):
+            if line_count == 1:
+                border = 'LTRB'
+            elif i == 0:
+                border = 'LTR'
+            elif i == line_count - 1:
+                border = 'LRB'
+            else:
+                border = 'LR'
 
-        # Linhas adicionais para descrições longas
-        for line in lines[1:]:
-            self.cell(widths[0], 6, "", border=1)
-            self.cell(widths[1], 6, "", border=1)
-            self.cell(widths[2], 6, line, border=1)
-            for j in range(3, 10):
-                self.cell(widths[j], 6, "", border=1)
+            self.cell(widths[0], 6, str(idx) if i == 0 else '', border=border, align='C')
+            self.cell(widths[1], 6, (item.get('artigo_num') or '')[:10] if i == 0 else '', border=border)
+            self.cell(widths[2], 6, line, border=border)
+
+            if i == 0:
+                self.cell(widths[3], 6, str(quantidade), border=border, align='C')
+                self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=border, align='R')
+                self.cell(widths[5], 6, f"EUR {total:.2f}", border=border, align='R')
+                self.cell(widths[6], 6, (item.get('hs_code') or '')[:10], border=border, align='C')
+                self.cell(widths[7], 6, (item.get('pais_origem') or '')[:8], border=border, align='C')
+                self.cell(widths[8], 6, f"{item.get('prazo_entrega', 30)}d", border=border, align='C')
+                self.cell(widths[9], 6, f"{(item.get('peso') or 0):.1f}kg", border=border, align='C')
+            else:
+                for j in range(3, 10):
+                    self.cell(widths[j], 6, "", border=border)
             self.ln()
 
         # Sem linhas em branco adicionais: altura ajusta-se ao conteúdo
@@ -1797,12 +1805,10 @@ elif menu_option == "📝 Nova Cotação":
         data = st.date_input("Data da cotação", datetime.today())
 
     with st.form(key="nova_cotacao_form"):
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
-            referencia = st.text_input("Referência *", placeholder="Ex: KTB-2025-001")
-        with col2:
             nome_solicitante = st.text_input("Nome do solicitante")
-        with col3:
+        with col2:
             email_solicitante = st.text_input("Email do solicitante")
 
         col_obs, col_pdf = st.columns(2)
@@ -1875,21 +1881,19 @@ elif menu_option == "📝 Nova Cotação":
         # Validar campos obrigatórios
         if not marca_selecionada or not fornecedor_id_selecionado:
             st.error("Por favor, selecione uma marca válida")
-        elif not referencia:
-            st.error("A referência é obrigatória")
         else:
             fornecedor_id = fornecedor_id_selecionado
             artigos_validos = [a for a in st.session_state.artigos if a['descricao'].strip()]
 
             if artigos_validos and fornecedor_id:
-                rfq_id = criar_rfq(
+                rfq_id, referencia = criar_rfq(
                     fornecedor_id, data, artigos_validos,
-                    referencia, nome_solicitante,
+                    nome_solicitante,
                     email_solicitante, observacoes
                 )
 
                 if rfq_id:
-                    st.success(f"✅ Cotação #{rfq_id} criada com sucesso!")
+                    st.success(f"✅ Cotação #{rfq_id} (Ref: {referencia}) criada com sucesso!")
                     # Guardar PDF do cliente (upload) se existir
                     if upload_pedido_cliente is not None:
                         guardar_pdf_upload(

@@ -277,7 +277,7 @@ def backup_database(backup_path="backup_cotacoes.db"):
 
 
 def gerar_numero_processo():
-    """Gera um número interno único para o processo no formato QTYYYY-N."""
+    """Gera um número interno único para o processo no formato QTYYYY-X."""
     ano = datetime.now().year
     prefixo = f"QT{ano}-"
     conn = sqlite3.connect(DB_PATH)
@@ -294,16 +294,15 @@ def gerar_numero_processo():
     return f"{prefixo}{proximo}"
 
 
-def criar_processo(descricao="", cliente="", observacoes=""):
+def criar_processo(descricao=""):
     """Cria um novo processo com número interno sequencial por ano."""
     numero = gerar_numero_processo()
     conn = sqlite3.connect(DB_PATH)
     try:
         c = conn.cursor()
         c.execute(
-            """INSERT INTO processo (numero, descricao, cliente, observacoes)
-                   VALUES (?, ?, ?, ?)""",
-            (numero, descricao, cliente, observacoes),
+            "INSERT INTO processo (numero, descricao) VALUES (?, ?)",
+            (numero, descricao),
         )
         conn.commit()
         return c.lastrowid, numero
