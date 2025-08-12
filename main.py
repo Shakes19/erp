@@ -2102,6 +2102,7 @@ elif menu_option == "📩 Responder Cotações":
                             """,
                             (cotacao["id"],),
                         )
+
                         anexos = c.fetchall()
                         conn.close()
                         if anexos:
