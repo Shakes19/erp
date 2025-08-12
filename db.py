@@ -206,10 +206,10 @@ def criar_base_dados():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 acao TEXT NOT NULL,
                 tabela_afetada TEXT,
-                registro_id INTEGER,
+                registo_id INTEGER,
                 dados_antes TEXT,
                 dados_depois TEXT,
-                usuario TEXT,
+                utilizador TEXT,
                 data_log TEXT DEFAULT CURRENT_TIMESTAMP
             )
             """
