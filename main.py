@@ -160,7 +160,7 @@ def criar_base_dados_completa():
             pdf_data BLOB NOT NULL,
             data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
             tamanho_bytes INTEGER,
-            nome_arquivo TEXT,
+            nome_ficheiro TEXT,
             UNIQUE(rfq_id, tipo_pdf)
         )
         """)
@@ -934,7 +934,7 @@ def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
             email_user = current_user[4]
             email_password = current_user[6]
         else:
-            st.error("Configure o seu email e password no perfil antes de enviar emails.")
+            st.error("Configure o seu email e palavra-passe no perfil antes de enviar emails.")
             return False
 
         print(f"🔧 Configurações SMTP: {smtp_server}:{smtp_port}")
@@ -1030,7 +1030,7 @@ def enviar_email_pedido_fornecedor(rfq_id):
             email_user = current_user[4]
             email_password = current_user[6]
         else:
-            st.error("Configure o seu email e password no perfil antes de enviar emails.")
+            st.error("Configure o seu email e palavra-passe no perfil antes de enviar emails.")
             return False
 
         # Construir email
@@ -1066,15 +1066,15 @@ KTB Portugal
         st.error(f"Falha ao enviar email ao fornecedor: {e}")
         return False
 
-def guardar_pdf_upload(rfq_id, tipo_pdf, nome_arquivo, bytes_):
+def guardar_pdf_upload(rfq_id, tipo_pdf, nome_ficheiro, bytes_):
     """Guarda um PDF carregado pelo utilizador na tabela pdf_storage."""
     try:
         conn = obter_conexao()
         c = conn.cursor()
         c.execute("""
-            INSERT OR REPLACE INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes, nome_arquivo)
+            INSERT OR REPLACE INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes, nome_ficheiro)
             VALUES (?, ?, ?, ?, ?)
-        """, (str(rfq_id), tipo_pdf, bytes_, len(bytes_), nome_arquivo))
+        """, (str(rfq_id), tipo_pdf, bytes_, len(bytes_), nome_ficheiro))
         conn.commit()
         conn.close()
         return True
@@ -1507,7 +1507,7 @@ def obter_estatisticas_db():
         
         stats = {}
         
-        # Contar registros principais
+        # Contar registos principais
         c.execute("SELECT COUNT(*) FROM rfq")
         stats['rfq'] = c.fetchone()[0]
         
@@ -1603,7 +1603,7 @@ def login_screen():
     )
     with st.form("login_form"):
         username = st.text_input("Utilizador")
-        password = st.text_input("Password", type="password")
+        password = st.text_input("Palavra-passe", type="password")
         submitted = st.form_submit_button("Entrar")
     if submitted:
         user = obter_utilizador_por_username(username)
@@ -2094,7 +2094,7 @@ elif menu_option == "📩 Responder Cotações":
                         # Mostrar anexos existentes
                         conn = obter_conexao()
                         c = conn.cursor()
-                        c.execute("SELECT tipo_pdf, nome_arquivo, pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf IN ('anexo_cliente', 'anexo_fornecedor')", (str(cotacao['id']),))
+                        c.execute("SELECT tipo_pdf, nome_ficheiro, pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf IN ('anexo_cliente', 'anexo_fornecedor')", (str(cotacao['id']),))
                         anexos = c.fetchall()
                         conn.close()
                         if anexos:
@@ -2201,7 +2201,7 @@ elif menu_option == "📩 Responder Cotações":
                         # Anexos
                         conn = obter_conexao()
                         c = conn.cursor()
-                        c.execute("SELECT tipo_pdf, nome_arquivo, pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf IN ('anexo_cliente', 'anexo_fornecedor')", (str(cotacao['id']),))
+                        c.execute("SELECT tipo_pdf, nome_ficheiro, pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf IN ('anexo_cliente', 'anexo_fornecedor')", (str(cotacao['id']),))
                         anexos = c.fetchall()
                         conn.close()
                         if anexos:
@@ -2499,13 +2499,13 @@ elif menu_option == "👤 Perfil":
     st.title("👤 Meu Perfil")
     user = obter_utilizador_por_id(st.session_state.get("user_id"))
     if user:
-        tab_email, tab_senha = st.tabs(["Email", "Password do Sistema"])
+        tab_email, tab_palavra_passe = st.tabs(["Email", "Palavra-passe do Sistema"])
 
         with tab_email:
             with st.form("email_form"):
                 st.text_input("Email", value=user[4], disabled=True)
-                email_pw = st.text_input("Password do Email", type="password")
-                sub_email = st.form_submit_button("Atualizar Password do Email")
+                email_pw = st.text_input("Palavra-passe do Email", type="password")
+                sub_email = st.form_submit_button("Atualizar Palavra-passe do Email")
             if sub_email:
                 if atualizar_utilizador(
                     user[0],
@@ -2516,18 +2516,18 @@ elif menu_option == "👤 Perfil":
                     None,
                     email_pw or None,
                 ):
-                    st.success("Password do email atualizada com sucesso!")
+                    st.success("Palavra-passe do email atualizada com sucesso!")
                 else:
-                    st.error("Erro ao atualizar password do email")
+                    st.error("Erro ao atualizar palavra-passe do email")
 
-        with tab_senha:
-            with st.form("senha_form"):
-                nova_pw = st.text_input("Nova Password", type="password")
-                confirmar_pw = st.text_input("Confirmar Password", type="password")
-                sub_pw = st.form_submit_button("Alterar Password")
+        with tab_palavra_passe:
+            with st.form("palavra_passe_form"):
+                nova_pw = st.text_input("Nova Palavra-passe", type="password")
+                confirmar_pw = st.text_input("Confirmar Palavra-passe", type="password")
+                sub_pw = st.form_submit_button("Alterar Palavra-passe")
             if sub_pw:
                 if not nova_pw or nova_pw != confirmar_pw:
-                    st.error("Passwords não coincidem")
+                    st.error("Palavras-passe não coincidem")
                 else:
                     if atualizar_utilizador(
                         user[0],
@@ -2538,9 +2538,9 @@ elif menu_option == "👤 Perfil":
                         nova_pw,
                         None,
                     ):
-                        st.success("Password atualizada com sucesso!")
+                        st.success("Palavra-passe atualizada com sucesso!")
                     else:
-                        st.error("Erro ao atualizar password")
+                        st.error("Erro ao atualizar palavra-passe")
     else:
         st.error("Utilizador não encontrado")
 
@@ -2634,9 +2634,9 @@ elif menu_option == "⚙️ Configurações":
                     username = st.text_input("Username *")
                     nome = st.text_input("Nome")
                     email_user = st.text_input("Email")
-                    email_pass = st.text_input("Password do Email", type="password")
+                    email_pass = st.text_input("Palavra-passe do Email", type="password")
                     role = st.selectbox("Role", ["admin", "gestor", "user"])
-                    password = st.text_input("Password *", type="password")
+                    password = st.text_input("Palavra-passe *", type="password")
 
                     if st.form_submit_button("➕ Adicionar"):
                         if username and password:
@@ -2648,7 +2648,7 @@ elif menu_option == "⚙️ Configurações":
                             else:
                                 st.error("Erro ao adicionar utilizador")
                         else:
-                            st.error("Username e password são obrigatórios")
+                            st.error("Username e palavra-passe são obrigatórios")
 
             with col2:
                 st.markdown("### Utilizadores Registados")
@@ -2661,14 +2661,14 @@ elif menu_option == "⚙️ Configurações":
                             nome_edit = st.text_input("Nome", user[2] or "")
                             email_edit = st.text_input("Email", user[3] or "")
                             email_pass_edit = st.text_input(
-                                "Password do Email", type="password"
+                                "Palavra-passe do Email", type="password"
                             )
                             role_edit = st.selectbox(
                                 "Role",
                                 ["admin", "gestor", "user"],
                                 index=["admin", "gestor", "user"].index(user[4]),
                             )
-                            password_edit = st.text_input("Password", type="password")
+                            password_edit = st.text_input("Palavra-passe", type="password")
 
                             col_a, col_b = st.columns(2)
                             with col_a:
@@ -2833,7 +2833,7 @@ elif menu_option == "⚙️ Configurações":
 
                 st.success("Configuração de email guardada!")
 
-        st.info("Nota: Para Gmail, use uma 'App Password' em vez da password normal")
+        st.info("Nota: Para Gmail, usa uma 'App Password' em vez da palavra-passe normal")
     
     with tab5:
         st.subheader("Backup e Restauro")
@@ -2843,7 +2843,7 @@ elif menu_option == "⚙️ Configurações":
             if backup_path:
                 st.success(f"Backup criado: {backup_path}")
                 
-                # Ler o arquivo de backup para download
+                # Ler o ficheiro de backup para download
                 with open(backup_path, 'rb') as f:
                     backup_data = f.read()
                 
@@ -2859,13 +2859,13 @@ elif menu_option == "⚙️ Configurações":
         st.warning("⚠️ Restaurar backup irá substituir todos os dados atuais!")
         
         uploaded_backup = st.file_uploader(
-            "Selecionar arquivo de backup",
+            "Selecionar ficheiro de backup",
             type=['db']
         )
         
         if uploaded_backup:
             if st.button("⚠️ Restaurar Backup", type="secondary"):
-                # Salvar arquivo temporário
+                # Guardar ficheiro temporário
                 temp_path = "temp_restore.db"
                 with open(temp_path, 'wb') as f:
                     f.write(uploaded_backup.getvalue())

@@ -55,7 +55,7 @@ Editar
 
 1. **Clonar o repositório**
 ```bash
-git clone https://github.com/teu-usuario/erp-ktb.git
+git clone https://github.com/teu-utilizador/erp-ktb.git
 cd erp-ktb
 Criar ambiente virtual (opcional, mas recomendado)
 
@@ -114,7 +114,7 @@ A base de dados (cotacoes.db) é criada automaticamente ao iniciar a aplicação
 
 As configurações de e-mail devem ser definidas em EMAIL_CONFIG no main.py ou diretamente na interface em "Configurações > Email".
 
-Para envio de e-mails via Gmail, é necessário gerar senha de aplicação na conta Google.
+Para envio de e-mails via Gmail, é necessário gerar uma palavra-passe de aplicação na conta Google.
 
 📜 Licença
 Projeto interno da KTB Portugal – uso restrito.
