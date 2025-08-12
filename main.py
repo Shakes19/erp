@@ -1542,7 +1542,7 @@ with st.sidebar:
     if st.session_state.get("role") in ["admin", "gestor"]:
         opcoes_menu.append("⚙️ Configurações")
     menu_option = option_menu(
-        "Navegação",
+        "",
         opcoes_menu,
         default_index=0,
         styles={
@@ -2552,4 +2552,5 @@ st.markdown("""
         Sistema ERP KTB Portugal v4.0 | Desenvolvido por Ricardo Nogueira | © 2025
     </div>
 """, unsafe_allow_html=True)
+
 
