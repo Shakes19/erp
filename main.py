@@ -2095,9 +2095,12 @@ elif menu_option == "📩 Responder Cotações":
                         conn = obter_conexao()
                         c = conn.cursor()
                         c.execute(
-                            "SELECT tipo_pdf, nome_ficheiro, pdf_data FROM pdf_storage "
-                            "WHERE rfq_id = ? AND tipo_pdf IN ('anexo_cliente', 'anexo_fornecedor')",
-                            (str(cotacao["id"]),),
+                            """
+                            SELECT tipo_pdf, nome_ficheiro, pdf_data
+                            FROM pdf_storage
+                            WHERE rfq_id = ? AND tipo_pdf IN ('anexo_cliente', 'anexo_fornecedor')
+                            """,
+                            (cotacao["id"],),
                         )
                         anexos = c.fetchall()
                         conn.close()
