@@ -1585,8 +1585,6 @@ with st.sidebar:
 # ========================== PÁGINAS DO SISTEMA ==========================
 
 if menu_option == "🏠 Dashboard":
-    st.title("Dashboard - Sistema ERP KTB Portugal")
-    
     # Métricas principais
     col1, col2, col3, col4 = st.columns(4)
     
@@ -2552,4 +2550,5 @@ st.markdown("""
         Sistema ERP KTB Portugal v4.0 | Desenvolvido por Ricardo Nogueira | © 2025
     </div>
 """, unsafe_allow_html=True)
+
 
