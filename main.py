@@ -1537,8 +1537,24 @@ st.markdown("""
 
 # Menu lateral
 with st.sidebar:
-    st.title("📋 Menu Principal")
-    opcoes_menu = ["🏠 Dashboard", "📝 Nova Cotação", "📩 Responder Cotações", "📊 Relatórios"]
+    # Ocultar ícones padrão "bi-caret-right" do menu
+    st.markdown(
+        """
+        <style>
+            .nav-link i {
+                display: none !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    opcoes_menu = [
+        "🏠 Dashboard",
+        "📝 Nova Cotação",
+        "📩 Responder Cotações",
+        "📊 Relatórios",
+    ]
     if st.session_state.get("role") in ["admin", "gestor"]:
         opcoes_menu.append("⚙️ Configurações")
     menu_option = option_menu(
@@ -1553,12 +1569,12 @@ with st.sidebar:
                 "font-size": "14px",
                 "text-align": "left",
                 "margin": "2px",
-                "--hover-color": "#eee",
+                "--hover-color": "#f0f0f0",
                 "white-space": "nowrap",
                 "padding": "4px 2px",
                 "line-height": "24px",
             },
-            "nav-link-selected": {"background-color": "#d0f0c0"},
+            "nav-link-selected": {"background-color": "#cce5ff"},
         },
     )
     
@@ -1585,8 +1601,6 @@ with st.sidebar:
 # ========================== PÁGINAS DO SISTEMA ==========================
 
 if menu_option == "🏠 Dashboard":
-    st.title("Dashboard - Sistema ERP KTB Portugal")
-    
     # Métricas principais
     col1, col2, col3, col4 = st.columns(4)
     
