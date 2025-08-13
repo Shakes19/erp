@@ -1,11 +1,27 @@
-import streamlit as st
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+"""Database utilities for process management.
+
+This module previously relied on a remote PostgreSQL connection defined in
+Streamlit ``st.secrets``.  In the testing environment that connection is not
+available, which caused ``criar_processo`` to fail and left RFQs without an
+associated process.  To make the application self‑contained, we now use a local
+SQLite database (the same one used by the rest of the application).
+"""
+
+import os
 from datetime import datetime
 
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+
+
+# Path of the SQLite database used by the main application.
+DB_PATH = os.environ.get("DB_PATH", "cotacoes.db")
+
+# SQLAlchemy engine/session factory targeting the local SQLite DB.  ``check_same_thread``
+# is disabled so the connection can be shared across different threads that
+# Streamlit might use.
 engine = create_engine(
-    st.secrets["DATABASE_URL"],
-    pool_size=5, max_overflow=5, pool_pre_ping=True, pool_recycle=1800
+    f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False}
 )
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
@@ -16,9 +32,10 @@ def criar_processo(descricao: str = ""):
     prefixo = f"QT{ano}-"
     session = SessionLocal()
     try:
+        # SQLite uses ``SUBSTR`` instead of ``SUBSTRING``
         result = session.execute(
             text(
-                "SELECT MAX(CAST(SUBSTRING(numero, 8) AS INTEGER)) FROM processo WHERE numero LIKE :prefixo"
+                "SELECT MAX(CAST(SUBSTR(numero, 8) AS INTEGER)) FROM processo WHERE numero LIKE :prefixo"
             ),
             {"prefixo": f"{prefixo}%"},
         )
