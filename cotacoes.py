@@ -1,61 +1,84 @@
 import streamlit as st
-import sqlite3
-
-# Caminho único da base de dados
-DB_PATH = "cotacoes.db"
+from sqlalchemy import text
+from db import SessionLocal
 
 st.set_page_config(page_title="Preencher Cotações", layout="centered")
 st.title("📥 Preencher Cotações Recebidas")
 
+
 def obter_conexao():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
+    return SessionLocal()
+
 
 # Obter todos os processos com número + id
 def listar_processos():
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute("SELECT id, numero FROM processo ORDER BY data_abertura DESC")
-    processos = c.fetchall()
-    conn.close()
-    return processos
+    session = obter_conexao()
+    try:
+        result = session.execute(text("SELECT id, numero FROM processo ORDER BY data_abertura DESC"))
+        return result.fetchall()
+    finally:
+        session.close()
+
 
 # Obter fornecedores
 def listar_fornecedores():
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute("SELECT id, nome FROM fornecedor")
-    fornecedores = c.fetchall()
-    conn.close()
-    return fornecedores
+    session = obter_conexao()
+    try:
+        result = session.execute(text("SELECT id, nome FROM fornecedor"))
+        return result.fetchall()
+    finally:
+        session.close()
+
 
 # Obter artigos de um RFQ
 def obter_artigos(rfq_id):
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute("SELECT id, descricao, quantidade, unidade FROM artigo WHERE rfq_id = ?", (rfq_id,))
-    artigos = c.fetchall()
-    conn.close()
-    return artigos
+    session = obter_conexao()
+    try:
+        result = session.execute(
+            text("SELECT id, descricao, quantidade, unidade FROM artigo WHERE rfq_id = :rfq_id"),
+            {"rfq_id": rfq_id},
+        )
+        return result.fetchall()
+    finally:
+        session.close()
+
 
 # Obter o id do RFQ com base no processo e fornecedor
 def obter_rfq_id(processo_id, fornecedor_id):
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute("SELECT id FROM rfq WHERE processo_id = ? AND fornecedor_id = ?", (processo_id, fornecedor_id))
-    resultado = c.fetchone()
-    conn.close()
-    return resultado[0] if resultado else None
+    session = obter_conexao()
+    try:
+        result = session.execute(
+            text("SELECT id FROM rfq WHERE processo_id = :processo_id AND fornecedor_id = :fornecedor_id"),
+            {"processo_id": processo_id, "fornecedor_id": fornecedor_id},
+        ).fetchone()
+        return result[0] if result else None
+    finally:
+        session.close()
+
 
 # Guardar resposta
 def guardar_resposta(fornecedor_id, rfq_id, artigo_id, custo, prazo_entrega):
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute("""
+    session = obter_conexao()
+    try:
+        session.execute(
+            text(
+                """
         INSERT INTO resposta_fornecedor (fornecedor_id, rfq_id, artigo_id, custo, prazo_entrega)
-        VALUES (?, ?, ?, ?, ?)
-    """, (fornecedor_id, rfq_id, artigo_id, custo, prazo_entrega))
-    conn.commit()
-    conn.close()
+        VALUES (:fornecedor_id, :rfq_id, :artigo_id, :custo, :prazo_entrega)
+        """
+            ),
+            {
+                "fornecedor_id": fornecedor_id,
+                "rfq_id": rfq_id,
+                "artigo_id": artigo_id,
+                "custo": custo,
+                "prazo_entrega": prazo_entrega,
+            },
+        )
+        session.commit()
+    finally:
+        session.close()
+
 
 # Seleção de processo e fornecedor
 st.subheader("Selecionar Pedido de Cotação")
@@ -81,8 +104,12 @@ if processos and fornecedores:
         for artigo in artigos:
             artigo_id, descricao, quantidade, unidade = artigo
             st.markdown(f"**{descricao}** - {quantidade} {unidade}")
-            custo = st.number_input(f"Custo unitário (€) para '{descricao}'", min_value=0.0, format="%.2f", key=f"custo_{artigo_id}")
-            prazo = st.number_input(f"Prazo entrega (semanas) para '{descricao}'", min_value=0, format="%d", key=f"prazo_{artigo_id}")
+            custo = st.number_input(
+                f"Custo unitário (€) para '{descricao}'", min_value=0.0, format="%.2f", key=f"custo_{artigo_id}"
+            )
+            prazo = st.number_input(
+                f"Prazo entrega (semanas) para '{descricao}'", min_value=0, format="%d", key=f"prazo_{artigo_id}"
+            )
             respostas.append((artigo_id, custo, prazo))
 
         if st.button("💾 Guardar Respostas"):
