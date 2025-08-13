@@ -1,6 +1,6 @@
 # 📊 ERP KTB Portugal
 
-Sistema de gestão de cotações desenvolvido em **Python** com **Streamlit** e **SQLite (via SQLAlchemy)**, permitindo:
+Sistema de gestão de cotações desenvolvido em **Python** com **Streamlit** e **SQLite (via SQLAlchemy)**, com suporte opcional a **PostgreSQL**, permitindo:
 - Criar e gerir pedidos de cotação (RFQs)
 - Responder cotações e enviar orçamentos
 - Gerar PDFs automáticos (pedido e cliente)
@@ -13,7 +13,7 @@ Sistema de gestão de cotações desenvolvido em **Python** com **Streamlit** e 
 
 .
 ├── main.py # Interface principal Streamlit e lógica de negócio
-├── db.py # Camada de acesso à BD SQLite via SQLAlchemy
+├── db.py # Camada de acesso à BD via SQLAlchemy (SQLite por padrão, com suporte a PostgreSQL)
 ├── requirements.txt # Dependências do projeto
 ├── README.md # Este ficheiro
 
@@ -72,7 +72,8 @@ A aplicação abrirá no navegador padrão em `http://localhost:8501`.
 
 📦 Dependências principais
 - streamlit – Interface web interativa
-- sqlalchemy – ORM para acesso à BD SQLite
+- sqlalchemy – ORM para acesso à base de dados
+- psycopg2-binary – Driver PostgreSQL (opcional)
 - bcrypt – Hash de palavras-passe
 - fpdf – Geração de PDFs
 - smtplib – Envio de emails
@@ -84,7 +85,8 @@ ajustado diretamente pela aplicação em **Configurações > Layout PDF**.
 Altere textos, tamanhos de letra, cabeçalhos ou posições e as mudanças são
 aplicadas imediatamente.
 📌 Notas
-- A base de dados utiliza um ficheiro SQLite local (`cotacoes.db`).
+- A base de dados utiliza um ficheiro SQLite local (`cotacoes.db`) por padrão.
+- Definindo `DATABASE_URL`, o sistema utilizará a base de dados especificada (por exemplo PostgreSQL).
 - A palavra-passe de e-mail **não** é armazenada na BD. Define a variável de ambiente `EMAIL_PASSWORD` para permitir o envio de emails.
 - As configurações de e-mail (servidor e porta) podem ser ajustadas em "Configurações > Email".
 - Para envio de e-mails via Gmail, usa uma "App Password" em vez da palavra-passe normal.
