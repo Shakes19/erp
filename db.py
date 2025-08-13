@@ -212,10 +212,12 @@ def criar_base_dados():
             """
             CREATE TABLE IF NOT EXISTS utilizador (
                 id SERIAL PRIMARY KEY,
-                nome TEXT NOT NULL UNIQUE,
-                senha TEXT NOT NULL,
+                username TEXT NOT NULL UNIQUE,
+                password TEXT NOT NULL,
+                nome TEXT,
                 email TEXT UNIQUE,
-                papel TEXT DEFAULT 'usuario'
+                role TEXT DEFAULT 'user',
+                email_password TEXT
             )
             """
         )
