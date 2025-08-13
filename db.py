@@ -1,8 +1,9 @@
 """Database utilities for the ERP system.
 
-This module centralizes all interaction with the local SQLite database used by
-Streamlit.  A single SQLAlchemy engine is exposed so every part of the
-application talks to the same database layer.
+Originally this project targeted a local SQLite database.  The module now
+supports both SQLite and PostgreSQL through SQLAlchemy, selecting the engine
+based on environment variables.  A single SQLAlchemy engine is exposed so every
+part of the application talks to the same database layer.
 """
 
 import os
@@ -13,26 +14,35 @@ import bcrypt
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-# Path of the SQLite database used by the main application.
+# Connection information ----------------------------------------------------
+# ``DATABASE_URL`` takes precedence.  When not provided, a local SQLite file is
+# used instead.  ``DB_PATH`` is retained for backwards compatibility and for
+# features that operate directly on the SQLite file (e.g. backups).
+DB_URL = os.environ.get("DATABASE_URL")
 DB_PATH = os.environ.get("DB_PATH", "cotacoes.db")
 
-# SQLAlchemy engine/session factory targeting the local SQLite DB.
-# ``check_same_thread`` is disabled so the connection can be shared across
-# different threads that Streamlit might use.
-engine = create_engine(
-    f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False}
-)
+if DB_URL:
+    engine = create_engine(DB_URL)
+else:
+    engine = create_engine(
+        f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False}
+    )
+
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
 def get_connection():
-    """Return a raw SQLite3 connection bound to the global engine.
+    """Return a raw DB-API connection bound to the global engine.
 
-    Foreign keys are enabled on every connection.
+    For SQLite databases, foreign keys and a busy timeout are enabled on every
+    connection.  For other backends (e.g. PostgreSQL) the connection is returned
+    without additional configuration.
     """
+
     conn = engine.raw_connection()
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 5000")
+    if engine.dialect.name == "sqlite":
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 5000")
     return conn
 
 
@@ -52,11 +62,19 @@ def verify_password(password: str, hashed: str) -> bool:
 def criar_base_dados_completa():
     """Create all database tables and apply basic PRAGMAs.
 
-    WAL mode and a global busy timeout are enabled to improve concurrency.
-    A default administrator account (username/password ``admin``) is also
-    created if the user table is empty.
+    For PostgreSQL (or any non-SQLite backend) this function becomes a no-op, as
+    it assumes the schema is managed externally.  When using SQLite, WAL mode and
+    a global busy timeout are enabled to improve concurrency.  A default
+    administrator account (username/password ``admin``) is also created if the
+    user table is empty.
     """
-    # Ensure directory exists
+
+    if engine.dialect.name != "sqlite":
+        # Schema creation for PostgreSQL is expected to be handled via separate
+        # migration tools; nothing to do here.
+        return True
+
+    # Ensure directory exists for the SQLite database
     db_dir = os.path.dirname(DB_PATH)
     if db_dir and not os.path.exists(db_dir):
         os.makedirs(db_dir)
@@ -303,7 +321,15 @@ def criar_base_dados_completa():
 
 
 def backup_database(backup_path: str | None = None):
-    """Create a consistent backup of the SQLite database using the online API."""
+    """Create a consistent backup of the database.
+
+    Currently only SQLite backups are supported.  For PostgreSQL this function
+    raises ``NotImplementedError`` and the backup should be handled externally.
+    """
+
+    if engine.dialect.name != "sqlite":
+        raise NotImplementedError("Backups are only supported for SQLite databases")
+
     if not backup_path:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_path = f"backup_cotacoes_{timestamp}.db"

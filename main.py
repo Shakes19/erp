@@ -133,7 +133,7 @@ def atualizar_fornecedor(fornecedor_id, nome, email="", telefone="", morada="", 
         )
         conn.commit()
         return True
-    except sqlite3.IntegrityError:
+    except Exception:
         return False
     finally:
         conn.close()
@@ -173,7 +173,7 @@ def adicionar_marca_fornecedor(fornecedor_id, marca):
         """, (fornecedor_id, marca))
         conn.commit()
         return True
-    except sqlite3.IntegrityError:
+    except Exception:
         return False
     finally:
         conn.close()
@@ -274,7 +274,7 @@ def inserir_utilizador(username, password, nome="", email="", role="user"):
         )
         conn.commit()
         return c.lastrowid
-    except sqlite3.IntegrityError:
+    except Exception:
         return None
     finally:
         conn.close()
@@ -352,13 +352,12 @@ def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
         enviar_email_pedido_fornecedor(rfq_id)
 
         return rfq_id, numero_processo
-    except sqlite3.IntegrityError:
-        conn.rollback()
-        st.error("Erro ao criar RFQ: referência já existente.")
-        return None, None
     except Exception as e:
         conn.rollback()
-        st.error(f"Erro ao criar RFQ: {str(e)}")
+        if "UNIQUE" in str(e).upper():
+            st.error("Erro ao criar RFQ: referência já existente.")
+        else:
+            st.error(f"Erro ao criar RFQ: {str(e)}")
         return None, None
     finally:
         conn.close()
