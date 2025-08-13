@@ -6,4 +6,4 @@ numpy
 streamlit-option-menu
 schedule
 sqlalchemy
-psycopg2-binary
+bcrypt
