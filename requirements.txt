@@ -5,3 +5,4 @@ pandas
 numpy
 streamlit-option-menu
 schedule
+psycopg2-binary
