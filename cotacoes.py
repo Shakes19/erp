@@ -1,10 +1,14 @@
 import streamlit as st
+import sqlite3
 
-from db import obter_conexao
-
+# Caminho único da base de dados
+DB_PATH = "cotacoes.db"
 
 st.set_page_config(page_title="Preencher Cotações", layout="centered")
 st.title("📥 Preencher Cotações Recebidas")
+
+def obter_conexao():
+    return sqlite3.connect(DB_PATH, check_same_thread=False)
 
 # Obter todos os processos com número + id
 def listar_processos():
@@ -28,7 +32,7 @@ def listar_fornecedores():
 def obter_artigos(rfq_id):
     conn = obter_conexao()
     c = conn.cursor()
-    c.execute("SELECT id, descricao, quantidade, unidade FROM artigo WHERE rfq_id = %s", (rfq_id,))
+    c.execute("SELECT id, descricao, quantidade, unidade FROM artigo WHERE rfq_id = ?", (rfq_id,))
     artigos = c.fetchall()
     conn.close()
     return artigos
@@ -37,7 +41,7 @@ def obter_artigos(rfq_id):
 def obter_rfq_id(processo_id, fornecedor_id):
     conn = obter_conexao()
     c = conn.cursor()
-    c.execute("SELECT id FROM rfq WHERE processo_id = %s AND fornecedor_id = %s", (processo_id, fornecedor_id))
+    c.execute("SELECT id FROM rfq WHERE processo_id = ? AND fornecedor_id = ?", (processo_id, fornecedor_id))
     resultado = c.fetchone()
     conn.close()
     return resultado[0] if resultado else None
@@ -46,13 +50,10 @@ def obter_rfq_id(processo_id, fornecedor_id):
 def guardar_resposta(fornecedor_id, rfq_id, artigo_id, custo, prazo_entrega):
     conn = obter_conexao()
     c = conn.cursor()
-    c.execute(
-        """
+    c.execute("""
         INSERT INTO resposta_fornecedor (fornecedor_id, rfq_id, artigo_id, custo, prazo_entrega)
-        VALUES (%s, %s, %s, %s, %s)
-        """,
-        (fornecedor_id, rfq_id, artigo_id, custo, prazo_entrega),
-    )
+        VALUES (?, ?, ?, ?, ?)
+    """, (fornecedor_id, rfq_id, artigo_id, custo, prazo_entrega))
     conn.commit()
     conn.close()
 

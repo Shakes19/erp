@@ -16,7 +16,7 @@ def _daily_backup():
     backup_database(backup_path)
 
 
-def agendar_backup_diario(hora="20:30"):
+def agendar_backup_diario(hora="00:00"):
     """Agenda um backup diário da base de dados para a hora especificada."""
     schedule.every().day.at(hora).do(_daily_backup)
 

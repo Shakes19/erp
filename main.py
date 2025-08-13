@@ -1,21 +1,23 @@
 import streamlit as st
+import sqlite3
 from datetime import datetime
 from fpdf import FPDF
 import base64
 import json
 from io import BytesIO
 import os
+import shutil
 import smtplib
 from streamlit_option_menu import option_menu
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-import psycopg2
-from db import criar_processo, criar_base_dados, obter_conexao
+from db import criar_processo
 
 
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
+DB_PATH = "cotacoes.db"
 
 # Configurações de Email (servidor e porta padrão)
 EMAIL_CONFIG = {
@@ -51,6 +53,313 @@ st.set_page_config(
 )
 
 # ========================== GESTÃO DA BASE DE DADOS ==========================
+
+def criar_base_dados_completa():
+    """Cria e configura a base de dados SQLite com todas as tabelas necessárias"""
+    
+    # Garantir que o diretório existe
+    db_dir = os.path.dirname(DB_PATH)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir)
+    
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+
+        # Ativar foreign keys
+        c.execute("PRAGMA foreign_keys = ON")
+
+        # Tabela de fornecedores
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS fornecedor (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL UNIQUE,
+            email TEXT,
+            telefone TEXT,
+            morada TEXT,
+            nif TEXT,
+            data_criacao TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
+        # Tabela de marcas por fornecedor
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS fornecedor_marca (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fornecedor_id INTEGER NOT NULL,
+            marca TEXT NOT NULL,
+            FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
+            UNIQUE(fornecedor_id, marca)
+        )
+        """)
+
+        # Tabela de processos
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS processo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero TEXT NOT NULL UNIQUE,
+            descricao TEXT,
+            data_abertura TEXT DEFAULT CURRENT_TIMESTAMP,
+            estado TEXT DEFAULT 'ativo'
+        )
+        """)
+
+        # Tabela RFQ (Request for Quotation)
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS rfq (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            processo_id INTEGER,
+            fornecedor_id INTEGER NOT NULL,
+            data TEXT NOT NULL,
+            estado TEXT DEFAULT 'pendente',
+            referencia TEXT NOT NULL UNIQUE,
+            observacoes TEXT,
+            nome_solicitante TEXT,
+            email_solicitante TEXT,
+            telefone_solicitante TEXT,
+            empresa_solicitante TEXT,
+            data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
+            data_atualizacao TEXT DEFAULT CURRENT_TIMESTAMP,
+            utilizador_id INTEGER,
+            FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
+            FOREIGN KEY (utilizador_id) REFERENCES utilizador(id) ON DELETE SET NULL,
+            FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE SET NULL
+        )
+        """)
+
+        # Garantir que colunas adicionais existem na tabela rfq
+        c.execute("PRAGMA table_info(rfq)")
+        rfq_columns = [row[1] for row in c.fetchall()]
+        if "utilizador_id" not in rfq_columns:
+            c.execute("ALTER TABLE rfq ADD COLUMN utilizador_id INTEGER")
+        if "processo_id" not in rfq_columns:
+            c.execute("ALTER TABLE rfq ADD COLUMN processo_id INTEGER")
+
+        # Tabela de artigos
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS artigo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rfq_id INTEGER NOT NULL,
+            artigo_num TEXT,
+            descricao TEXT NOT NULL,
+            quantidade INTEGER NOT NULL DEFAULT 1,
+            unidade TEXT NOT NULL DEFAULT 'Peças',
+            especificacoes TEXT,
+            marca TEXT,
+            ordem INTEGER DEFAULT 1,
+            FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
+        )
+        """)
+
+        # Tabela de respostas dos fornecedores
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS resposta_fornecedor (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fornecedor_id INTEGER NOT NULL,
+            rfq_id INTEGER NOT NULL,
+            artigo_id INTEGER NOT NULL,
+            descricao TEXT,
+            custo REAL NOT NULL DEFAULT 0.0,
+            prazo_entrega INTEGER NOT NULL DEFAULT 1,
+            quantidade_final INTEGER,
+            peso REAL DEFAULT 0.0,
+            hs_code TEXT,
+            pais_origem TEXT,
+            moeda TEXT DEFAULT 'EUR',
+            margem_utilizada REAL DEFAULT 10.0,
+            preco_venda REAL,
+            observacoes TEXT,
+            data_resposta TEXT DEFAULT CURRENT_TIMESTAMP,
+            validade_dias INTEGER DEFAULT 30,
+            FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
+            FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE,
+            FOREIGN KEY (artigo_id) REFERENCES artigo(id) ON DELETE CASCADE,
+            UNIQUE (fornecedor_id, rfq_id, artigo_id)
+        )
+        """)
+
+        # Tabela para armazenamento de PDFs
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS pdf_storage (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rfq_id TEXT NOT NULL,
+            tipo_pdf TEXT NOT NULL,
+            pdf_data BLOB NOT NULL,
+            data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
+            tamanho_bytes INTEGER,
+            nome_ficheiro TEXT,
+            UNIQUE(rfq_id, tipo_pdf)
+        )
+        """)
+
+        # Tabela de configuração de margens por marca
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS configuracao_margens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fornecedor_id INTEGER,
+            marca TEXT,
+            margem_percentual REAL DEFAULT 10.0,
+            ativo BOOLEAN DEFAULT TRUE,
+            data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE
+        )
+        """)
+
+        # Tabela de configurações de email
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS configuracao_email (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            smtp_server TEXT,
+            smtp_port INTEGER,
+            email_user TEXT,
+            email_password TEXT,
+            ativo BOOLEAN DEFAULT TRUE
+        )
+        """)
+
+        # Tabela de configuração da empresa
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS configuracao_empresa (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT,
+            morada TEXT,
+            nif TEXT,
+            iban TEXT,
+            telefone TEXT,
+            email TEXT,
+            website TEXT
+        )
+        """)
+
+        c.execute("PRAGMA table_info(configuracao_empresa)")
+        cols = [row[1] for row in c.fetchall()]
+        for col in ["telefone", "email", "website"]:
+            if col not in cols:
+                c.execute(f"ALTER TABLE configuracao_empresa ADD COLUMN {col} TEXT")
+
+        # Tabela de utilizadores do sistema
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS utilizador (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            nome TEXT,
+            email TEXT,
+            role TEXT NOT NULL,
+            email_password TEXT
+        )
+        """)
+
+        # Garantir que coluna email_password existe
+        c.execute("PRAGMA table_info(utilizador)")
+        if "email_password" not in [row[1] for row in c.fetchall()]:
+            c.execute("ALTER TABLE utilizador ADD COLUMN email_password TEXT")
+
+        # Inserir utilizador administrador padrão se a tabela estiver vazia
+        c.execute("SELECT COUNT(*) FROM utilizador")
+        if c.fetchone()[0] == 0:
+            c.execute(
+                """
+                INSERT INTO utilizador (username, password, nome, email, role, email_password)
+                VALUES ('admin', 'admin', 'Administrador', 'admin@example.com', 'admin', '')
+                """
+            )
+
+        # Criar índices para melhor performance
+        indices = [
+            "CREATE INDEX IF NOT EXISTS idx_rfq_fornecedor ON rfq(fornecedor_id)",
+            "CREATE INDEX IF NOT EXISTS idx_rfq_data ON rfq(data)",
+            "CREATE INDEX IF NOT EXISTS idx_rfq_estado ON rfq(estado)",
+            "CREATE INDEX IF NOT EXISTS idx_rfq_referencia ON rfq(referencia)",
+            "CREATE INDEX IF NOT EXISTS idx_artigo_rfq ON artigo(rfq_id)",
+            "CREATE INDEX IF NOT EXISTS idx_resposta_fornecedor ON resposta_fornecedor(fornecedor_id, rfq_id)",
+            "CREATE INDEX IF NOT EXISTS idx_resposta_artigo ON resposta_fornecedor(artigo_id)",
+            "CREATE INDEX IF NOT EXISTS idx_fornecedor_nome ON fornecedor(nome)",
+            "CREATE INDEX IF NOT EXISTS idx_fornecedor_marca ON fornecedor_marca(fornecedor_id, marca)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_utilizador_username ON utilizador(username)"
+        ]
+        
+        for indice in indices:
+            c.execute(indice)
+
+        # Inserir dados de exemplo se as tabelas estão vazias
+        inserir_dados_exemplo(c)
+
+        # Inserir margem padrão se não existir
+        c.execute("SELECT COUNT(*) FROM configuracao_margens WHERE fornecedor_id IS NULL AND marca IS NULL")
+        if c.fetchone()[0] == 0:
+            c.execute("""
+                INSERT INTO configuracao_margens (fornecedor_id, marca, margem_percentual)
+                VALUES (NULL, NULL, 10.0)
+            """)
+
+        conn.commit()
+        print("Base de dados criada/atualizada com sucesso!")
+        return True
+        
+    except sqlite3.Error as e:
+        print(f"Erro ao criar base de dados: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def inserir_dados_exemplo(cursor):
+    """Insere dados de exemplo se as tabelas estão vazias"""
+    try:
+        # Verificar se já existem fornecedores
+        cursor.execute("SELECT COUNT(*) FROM fornecedor")
+        count_fornecedores = cursor.fetchone()[0]
+        
+        if count_fornecedores == 0:
+            # Inserir fornecedores de exemplo
+            fornecedores_exemplo = [
+                ("Falex", "fornecedor@falex.com", "+351 123 456 789", "Rua Industrial, 123", "123456789"),
+                ("Sloap", "vendas@sloap.pt", "+351 987 654 321", "Av. Tecnológica, 456", "987654321"),
+                ("Nexautomation", "info@nexautomation.com", "+351 555 123 456", "Zona Industrial, Lote 789", "555666777")
+            ]
+            
+            cursor.executemany("""
+                INSERT INTO fornecedor (nome, email, telefone, morada, nif) 
+                VALUES (?, ?, ?, ?, ?)
+            """, fornecedores_exemplo)
+            
+            # Obter IDs dos fornecedores inseridos
+            cursor.execute("SELECT id, nome FROM fornecedor")
+            fornecedores = cursor.fetchall()
+            
+            # Inserir marcas de exemplo
+            marcas_por_fornecedor = {
+                "Falex": ["Schneider Electric", "Phoenix Contact", "Weidmuller"],
+                "Sloap": ["ABB", "Siemens"],
+                "Nexautomation": ["Omron", "Festo", "SMC", "Sick"]
+            }
+            
+            for forn_id, forn_nome in fornecedores:
+                if forn_nome in marcas_por_fornecedor:
+                    for marca in marcas_por_fornecedor[forn_nome]:
+                        cursor.execute("""
+                            INSERT INTO fornecedor_marca (fornecedor_id, marca)
+                            VALUES (?, ?)
+                        """, (forn_id, marca))
+                        
+                        # Inserir margem padrão para cada marca
+                        cursor.execute("""
+                            INSERT INTO configuracao_margens (fornecedor_id, marca, margem_percentual)
+                            VALUES (?, ?, ?)
+                        """, (forn_id, marca, 15.0))  # 15% de margem padrão para marcas
+            
+            print("Fornecedores e marcas de exemplo inseridos.")
+    
+    except sqlite3.Error as e:
+        print(f"Erro ao inserir dados de exemplo: {e}")
+
+def obter_conexao():
+    """Retorna uma conexão à base de dados"""
+    return sqlite3.connect(DB_PATH, check_same_thread=False)
 
 
 def obter_config_empresa():
@@ -125,7 +434,7 @@ def atualizar_fornecedor(fornecedor_id, nome, email="", telefone="", morada="", 
         )
         conn.commit()
         return True
-    except psycopg2.IntegrityError:
+    except sqlite3.IntegrityError:
         return False
     finally:
         conn.close()
@@ -165,7 +474,7 @@ def adicionar_marca_fornecedor(fornecedor_id, marca):
         """, (fornecedor_id, marca))
         conn.commit()
         return True
-    except psycopg2.IntegrityError:
+    except sqlite3.IntegrityError:
         return False
     finally:
         conn.close()
@@ -266,7 +575,7 @@ def inserir_utilizador(username, password, nome="", email="", role="user", email
         )
         conn.commit()
         return c.lastrowid
-    except psycopg2.IntegrityError:
+    except sqlite3.IntegrityError:
         return None
     finally:
         conn.close()
@@ -1439,6 +1748,19 @@ def obter_estatisticas_db():
         print(f"Erro ao obter estatísticas: {e}")
         return {}
 
+def backup_database(backup_path=None):
+    """Criar backup da base de dados"""
+    try:
+        if not backup_path:
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = f"backup_cotacoes_{timestamp}.db"
+        
+        shutil.copy2(DB_PATH, backup_path)
+        return backup_path
+    except Exception as e:
+        print(f"Erro ao criar backup: {e}")
+        return None
 
 # ========================== INICIALIZAÇÃO DO SISTEMA ==========================
 
@@ -1446,11 +1768,10 @@ def inicializar_sistema():
     """Inicializar todo o sistema"""
     print("Inicializando sistema ERP KTB Portugal...")
     
-    try:
-        criar_base_dados()
+    if criar_base_dados_completa():
         print("✓ Base de dados inicializada")
-    except Exception as e:
-        print(f"✗ Erro ao inicializar base de dados: {e}")
+    else:
+        print("✗ Erro ao inicializar base de dados")
     
     stats = obter_estatisticas_db()
     print(f"✓ Sistema inicializado com {stats.get('rfq', 0)} RFQs e {stats.get('fornecedor', 0)} fornecedores")
@@ -2741,7 +3062,50 @@ elif menu_option == "⚙️ Configurações":
     
     with tab5:
         st.subheader("Backup e Restauro")
-        st.info("Operações de backup/restauro não estão disponíveis com a base de dados externa.")
+        
+        if st.button("💾 Criar Backup"):
+            backup_path = backup_database()
+            if backup_path:
+                st.success(f"Backup criado: {backup_path}")
+                
+                # Ler o ficheiro de backup para download
+                with open(backup_path, 'rb') as f:
+                    backup_data = f.read()
+                
+                st.download_button(
+                    "⬇️ Download Backup",
+                    data=backup_data,
+                    file_name=backup_path,
+                    mime="application/octet-stream"
+                )
+        
+        st.markdown("---")
+        
+        st.warning("⚠️ Restaurar backup irá substituir todos os dados atuais!")
+        
+        uploaded_backup = st.file_uploader(
+            "Selecionar ficheiro de backup",
+            type=['db']
+        )
+        
+        if uploaded_backup:
+            if st.button("⚠️ Restaurar Backup", type="secondary"):
+                # Guardar ficheiro temporário
+                temp_path = "temp_restore.db"
+                with open(temp_path, 'wb') as f:
+                    f.write(uploaded_backup.getvalue())
+
+                # Fazer backup atual antes de restaurar
+                backup_database("backup_antes_restauro.db")
+
+                # Restaurar
+                try:
+                    shutil.copy2(temp_path, DB_PATH)
+                    os.remove(temp_path)
+                    st.success("Backup restaurado com sucesso!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao restaurar: {e}")
 
     with tab6:
         st.subheader("Layout dos PDFs")
