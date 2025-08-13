@@ -670,12 +670,19 @@ def obter_todas_cotacoes(filtro_referencia="", estado=None, fornecedor_id=None, 
         c = conn.cursor()
         
         query = """
-            SELECT rfq.id, rfq.data, fornecedor.nome, rfq.estado, processo.numero, rfq.referencia,
-                   COUNT(artigo.id) as num_artigos, rfq.nome_solicitante, rfq.email_solicitante,
+            SELECT rfq.id,
+                   rfq.data,
+                   COALESCE(fornecedor.nome, 'Fornecedor desconhecido'),
+                   rfq.estado,
+                   COALESCE(processo.numero, 'Sem processo'),
+                   rfq.referencia,
+                   COUNT(artigo.id) as num_artigos,
+                   rfq.nome_solicitante,
+                   rfq.email_solicitante,
                    u.nome
             FROM rfq
-            JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id
-            JOIN processo ON rfq.processo_id = processo.id
+            LEFT JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id
+            LEFT JOIN processo ON rfq.processo_id = processo.id
             LEFT JOIN utilizador u ON rfq.utilizador_id = u.id
             LEFT JOIN artigo ON rfq.id = artigo.rfq_id
         """
@@ -732,9 +739,9 @@ def obter_detalhes_cotacao(rfq_id):
         c = conn.cursor()
         
         c.execute("""
-            SELECT rfq.*, fornecedor.nome
+            SELECT rfq.*, COALESCE(fornecedor.nome, 'Fornecedor desconhecido')
             FROM rfq
-            JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id
+            LEFT JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id
             WHERE rfq.id = ?
         """, (rfq_id,))
         info = c.fetchone()
@@ -1554,7 +1561,7 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
         }
 
         c.execute(
-            """SELECT processo.numero FROM rfq JOIN processo ON rfq.processo_id = processo.id
+            """SELECT processo.numero FROM rfq LEFT JOIN processo ON rfq.processo_id = processo.id
                    WHERE rfq.id = ?""",
             (rfq_id,),
         )
@@ -1591,9 +1598,12 @@ def gerar_pdf_cliente(rfq_id):
         c = conn.cursor()
         
         # 1. Obter dados da RFQ
-        c.execute("""SELECT rfq.*, fornecedor.nome 
-                   FROM rfq JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id 
-                   WHERE rfq.id = ?""", (rfq_id,))
+        c.execute(
+            """SELECT rfq.*, COALESCE(fornecedor.nome, 'Fornecedor desconhecido')
+                   FROM rfq LEFT JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id
+                   WHERE rfq.id = ?""",
+            (rfq_id,),
+        )
         rfq_data = c.fetchone()
         
         if not rfq_data:
