@@ -1524,7 +1524,8 @@ def login_screen():
         unsafe_allow_html=True,
     )
     with st.form("login_form"):
-        username = st.text_input("Utilizador")
+        # ``strip`` evita falhas de autenticação devido a espaços acidentais
+        username = st.text_input("Utilizador").strip()
         password = st.text_input("Palavra-passe", type="password")
         submitted = st.form_submit_button("Entrar")
     if submitted:
