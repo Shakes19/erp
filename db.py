@@ -22,7 +22,11 @@ DB_URL = os.environ.get("DATABASE_URL")
 DB_PATH = os.environ.get("DB_PATH", "cotacoes.db")
 
 if DB_URL:
-    engine = create_engine(DB_URL)
+    # When a full database URL is provided (e.g. PostgreSQL) enable ``pool_pre_ping``
+    # so SQLAlchemy validates pooled connections before use.  This avoids the
+    # overhead of constantly creating new connections and can noticeably speed up
+    # page loads in the Streamlit app when the database is remote.
+    engine = create_engine(DB_URL, pool_pre_ping=True)
 else:
     engine = create_engine(
         f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False}
@@ -420,13 +424,32 @@ def criar_processo(descricao: str = ""):
         )
         max_seq = result.scalar()
         numero = f"{prefixo}{(max_seq or 0) + 1}"
-        insert_result = session.execute(
-            text(
-                "INSERT INTO processo (numero, descricao) VALUES (:numero, :descricao)"
-            ),
-            {"numero": numero, "descricao": descricao},
-        )
+
+        # ``INSERT .. RETURNING`` is used when supported (e.g. PostgreSQL) so the
+        # generated ID can be obtained reliably.  For SQLite the ``RETURNING``
+        # clause is also available in modern versions; if unavailable ``lastrowid``
+        # is used as a fallback.
+        if engine.dialect.name == "postgresql":
+            insert_result = session.execute(
+                text(
+                    "INSERT INTO processo (numero, descricao) VALUES (:numero, :descricao) RETURNING id"
+                ),
+                {"numero": numero, "descricao": descricao},
+            )
+            processo_id = insert_result.scalar_one()
+        else:
+            insert_result = session.execute(
+                text(
+                    "INSERT INTO processo (numero, descricao) VALUES (:numero, :descricao)"
+                ),
+                {"numero": numero, "descricao": descricao},
+            )
+            try:
+                processo_id = insert_result.lastrowid
+            except AttributeError:  # pragma: no cover - defensive fallback
+                processo_id = session.execute(text("SELECT last_insert_rowid()")).scalar()
+
         session.commit()
-        return insert_result.lastrowid, numero
+        return processo_id, numero
     finally:
         session.close()
