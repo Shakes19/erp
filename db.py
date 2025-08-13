@@ -31,19 +31,65 @@ else:
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
+class _CursorWrapper:
+    """DB-API cursor that adapts SQLite-style ``?`` placeholders.
+
+    The application was originally written for SQLite using ``?`` as the
+    placeholder marker.  When running against other backends (notably
+    PostgreSQL/psycopg2 which expects ``%s``) this causes syntax errors.  The
+    wrapper transparently converts the placeholders so existing queries work
+    on both engines.
+    """
+
+    def __init__(self, cursor, paramstyle):
+        self._cursor = cursor
+        self._paramstyle = paramstyle
+
+    def execute(self, query, params=None):
+        if params and self._paramstyle in {"pyformat", "format"}:
+            query = query.replace("?", "%s")
+        return self._cursor.execute(query, params or ())
+
+    def executemany(self, query, seq_of_params):
+        if self._paramstyle in {"pyformat", "format"}:
+            query = query.replace("?", "%s")
+        return self._cursor.executemany(query, seq_of_params)
+
+    def __getattr__(self, name):  # pragma: no cover - simple delegation
+        return getattr(self._cursor, name)
+
+
+class _ConnectionWrapper:
+    def __init__(self, conn, paramstyle):
+        self._conn = conn
+        self._paramstyle = paramstyle
+
+    def cursor(self):
+        return _CursorWrapper(self._conn.cursor(), self._paramstyle)
+
+    def __getattr__(self, name):  # pragma: no cover - simple delegation
+        return getattr(self._conn, name)
+
+
 def get_connection():
-    """Return a raw DB-API connection bound to the global engine.
+    """Return a DB-API connection bound to the global engine.
 
     For SQLite databases, foreign keys and a busy timeout are enabled on every
-    connection.  For other backends (e.g. PostgreSQL) the connection is returned
-    without additional configuration.
+    connection.  For other backends (e.g. PostgreSQL) a lightweight wrapper is
+    returned that converts SQLite-style ``?`` placeholders to the paramstyle
+    expected by the backend (e.g. ``%s`` for psycopg2).
     """
 
     conn = engine.raw_connection()
     if engine.dialect.name == "sqlite":
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA busy_timeout = 5000")
-    return conn
+        return conn
+
+    # Non-SQLite backends may use a different paramstyle.  Wrap the connection
+    # so calls to ``cursor.execute`` still accept queries written with ``?``
+    # placeholders.
+    return _ConnectionWrapper(conn, engine.dialect.paramstyle)
 
 
 def hash_password(password: str) -> str:
