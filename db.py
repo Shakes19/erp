@@ -41,13 +41,13 @@ def criar_processo(descricao: str = ""):
         )
         max_seq = result.scalar()
         numero = f"{prefixo}{(max_seq or 0) + 1}"
-        new_id = session.execute(
+        insert_result = session.execute(
             text(
-                "INSERT INTO processo (numero, descricao) VALUES (:numero, :descricao) RETURNING id"
+                "INSERT INTO processo (numero, descricao) VALUES (:numero, :descricao)"
             ),
             {"numero": numero, "descricao": descricao},
-        ).scalar()
+        )
         session.commit()
-        return new_id, numero
+        return insert_result.lastrowid, numero
     finally:
         session.close()
