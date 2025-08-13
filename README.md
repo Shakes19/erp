@@ -1,6 +1,6 @@
 # 📊 ERP KTB Portugal
 
-Sistema de gestão de cotações desenvolvido em **Python** com **Streamlit** e **SQLite**, permitindo:
+Sistema de gestão de cotações desenvolvido em **Python** com **Streamlit** e **PostgreSQL (Supabase)**, permitindo:
 - Criar e gerir pedidos de cotação (RFQs)
 - Responder cotações e enviar orçamentos
 - Gerar PDFs automáticos (pedido e cliente)
@@ -13,9 +13,9 @@ Sistema de gestão de cotações desenvolvido em **Python** com **Streamlit** e 
 
 .
 ├── main.py # Interface principal Streamlit e lógica de negócio
-├── db.py # Funções de conexão e gestão da base de dados SQLite
+├── db.py # Configuração da ligação ao PostgreSQL via SQLAlchemy
 ├── requirements.txt # Dependências do projeto
-├── cotacoes.db # Base de dados SQLite (gerada automaticamente)
+├── .streamlit/secrets.toml # String de conexão ao Supabase
 ├── README.md # Este ficheiro
 
 markdown
@@ -72,12 +72,9 @@ bash
 Copiar
 Editar
 pip install -r requirements.txt
-Criar/Inicializar base de dados
 
-bash
-Copiar
-Editar
-python db.py
+Configura a string de conexão em `.streamlit/secrets.toml`.
+
 ▶️ Executar a aplicação
 bash
 Copiar
@@ -92,7 +89,8 @@ http://localhost:8501
 📦 Dependências principais
 streamlit – Interface web interativa
 
-sqlite3 – Base de dados local
+sqlalchemy – ORM para acesso ao PostgreSQL
+psycopg2-binary – Driver PostgreSQL
 
 fpdf – Geração de PDFs
 
@@ -112,7 +110,7 @@ ajustado diretamente pela aplicação em **Configurações > Layout PDF**.
 Altere textos, tamanhos de letra, cabeçalhos ou posições e as mudanças são
 aplicadas imediatamente.
 📌 Notas
-A base de dados (cotacoes.db) é criada automaticamente ao iniciar a aplicação se não existir.
+A base de dados é gerida pelo Supabase; define a string de conexão em `.streamlit/secrets.toml`.
 
 As configurações de e-mail devem ser definidas em EMAIL_CONFIG no main.py ou diretamente na interface em "Configurações > Email".
 
