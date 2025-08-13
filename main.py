@@ -656,10 +656,14 @@ def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
         enviar_email_pedido_fornecedor(rfq_id)
 
         return rfq_id, numero_processo
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        st.error("Erro ao criar RFQ: referência já existente.")
+        return None, None
     except Exception as e:
         conn.rollback()
         st.error(f"Erro ao criar RFQ: {str(e)}")
-        return None
+        return None, None
     finally:
         conn.close()
 
