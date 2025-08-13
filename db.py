@@ -97,10 +97,27 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
-def verify_password(password: str, hashed: str) -> bool:
+def verify_password(password: str, hashed: str | bytes | None) -> bool:
     """Verify a plaintext password against the stored hash."""
+
+    if hashed is None:
+        return False
+
+    # ``hashed`` may come from the DB as ``bytes``/``memoryview`` (e.g. when the
+    # column type is BYTEA) or as plain text.  Normalise to ``bytes`` for
+    # ``bcrypt`` while keeping a textual representation for fallback checks.
+    if isinstance(hashed, (bytes, bytearray, memoryview)):
+        hashed_bytes = bytes(hashed)
+        hashed_str = hashed_bytes.decode(errors="ignore")
+    else:
+        hashed_bytes = hashed.encode()
+        hashed_str = hashed
+
     try:
-        return bcrypt.checkpw(password.encode(), hashed.encode())
+        return bcrypt.checkpw(password.encode(), hashed_bytes)
+    except ValueError:
+        # Stored password isn't a valid bcrypt hash (legacy plain-text entry).
+        return password == hashed_str
     except Exception:
         return False
 
