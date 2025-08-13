@@ -1,133 +1,144 @@
-import sqlite3
 import os
 from datetime import datetime
 
-DB_PATH = "cotacoes.db"
+import psycopg2
+from psycopg2 import extensions
+
+
+# String de ligação à base de dados. Pode ser configurada através da variável
+# de ambiente DATABASE_URL. Inclui a palavra-passe fornecida.
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://postgres.metfqkdducobgjkjrris:MkA2w%2FE%21G3ErJUu@"
+    "aws-1-eu-west-3.pooler.supabase.com:5432/postgres",
+)
+
+
+class QMarkCursor(psycopg2.extensions.cursor):
+    """Cursor que permite o uso do estilo de parâmetros '?' como no sqlite."""
+
+    def execute(self, query, vars=None):  # type: ignore[override]
+        if vars is not None:
+            query = query.replace("?", "%s")
+        return super().execute(query, vars)
+
+
+def obter_conexao():
+    """Devolve uma ligação à base de dados PostgreSQL."""
+    return psycopg2.connect(DATABASE_URL, cursor_factory=QMarkCursor)
 
 
 def criar_base_dados():
-    """Cria e atualiza a base de dados com todas as tabelas necessárias."""
-    db_dir = os.path.dirname(DB_PATH)
-    if db_dir and not os.path.exists(db_dir):
-        os.makedirs(db_dir)
-
+    """Cria todas as tabelas necessárias na base de dados."""
     conn = None
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("PRAGMA foreign_keys = ON")
+        conn = obter_conexao()
+        cur = conn.cursor()
 
         # Tabela de fornecedores
-        c.execute(
+        cur.execute(
             """
             CREATE TABLE IF NOT EXISTS fornecedor (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 nome TEXT NOT NULL UNIQUE,
                 email TEXT,
                 telefone TEXT,
-                data_criacao TEXT DEFAULT CURRENT_TIMESTAMP
+                morada TEXT,
+                nif TEXT,
+                data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
 
-        # Tabela de processos
-        c.execute(
+        # Marcas por fornecedor
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS fornecedor_marca (
+                id SERIAL PRIMARY KEY,
+                fornecedor_id INTEGER NOT NULL,
+                marca TEXT NOT NULL,
+                FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
+                UNIQUE(fornecedor_id, marca)
+            )
+            """
+        )
+
+        # Processos
+        cur.execute(
             """
             CREATE TABLE IF NOT EXISTS processo (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 numero TEXT NOT NULL UNIQUE,
                 descricao TEXT,
-                data_abertura TEXT DEFAULT CURRENT_TIMESTAMP,
+                data_abertura TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 estado TEXT DEFAULT 'ativo'
             )
             """
         )
 
-        # Tabela de RFQs
-        c.execute(
+        # RFQ
+        cur.execute(
             """
             CREATE TABLE IF NOT EXISTS rfq (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 processo_id INTEGER,
                 fornecedor_id INTEGER NOT NULL,
-                data TEXT NOT NULL,
+                data DATE NOT NULL,
                 estado TEXT DEFAULT 'pendente',
-                referencia TEXT,
+                referencia TEXT NOT NULL UNIQUE,
                 observacoes TEXT,
                 nome_solicitante TEXT,
                 email_solicitante TEXT,
-                data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
-                data_atualizacao TEXT DEFAULT CURRENT_TIMESTAMP,
+                telefone_solicitante TEXT,
+                empresa_solicitante TEXT,
+                data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                data_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 utilizador_id INTEGER,
                 FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
-                FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE SET NULL,
-                FOREIGN KEY (utilizador_id) REFERENCES utilizador(id) ON DELETE SET NULL
+                FOREIGN KEY (utilizador_id) REFERENCES utilizador(id) ON DELETE SET NULL,
+                FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE SET NULL
             )
             """
         )
 
-        # Garantir colunas extra em rfq
-        c.execute("PRAGMA table_info(rfq)")
-        columns = [row[1] for row in c.fetchall()]
-        if 'utilizador_id' not in columns:
-            c.execute("ALTER TABLE rfq ADD COLUMN utilizador_id INTEGER")
-        if 'referencia' not in columns:
-            c.execute("ALTER TABLE rfq ADD COLUMN referencia TEXT")
-        if 'observacoes' not in columns:
-            c.execute("ALTER TABLE rfq ADD COLUMN observacoes TEXT")
-        if 'nome_solicitante' not in columns:
-            c.execute("ALTER TABLE rfq ADD COLUMN nome_solicitante TEXT")
-        if 'email_solicitante' not in columns:
-            c.execute("ALTER TABLE rfq ADD COLUMN email_solicitante TEXT")
-        if 'data_criacao' not in columns:
-            c.execute("ALTER TABLE rfq ADD COLUMN data_criacao TEXT DEFAULT CURRENT_TIMESTAMP")
-        if 'data_atualizacao' not in columns:
-            c.execute("ALTER TABLE rfq ADD COLUMN data_atualizacao TEXT DEFAULT CURRENT_TIMESTAMP")
-
-        # Tabela de artigos
-        c.execute(
+        # Artigos
+        cur.execute(
             """
             CREATE TABLE IF NOT EXISTS artigo (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 rfq_id INTEGER NOT NULL,
                 artigo_num TEXT,
                 descricao TEXT NOT NULL,
                 quantidade INTEGER NOT NULL DEFAULT 1,
                 unidade TEXT NOT NULL DEFAULT 'Peças',
                 especificacoes TEXT,
+                marca TEXT,
                 ordem INTEGER DEFAULT 1,
                 FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
             )
             """
         )
 
-        # Ajustes na tabela artigo
-        c.execute("PRAGMA table_info(artigo)")
-        columns = [row[1] for row in c.fetchall()]
-        if 'artigo_num' not in columns:
-            c.execute("ALTER TABLE artigo ADD COLUMN artigo_num TEXT")
-        if 'especificacoes' not in columns:
-            c.execute("ALTER TABLE artigo ADD COLUMN especificacoes TEXT")
-        if 'ordem' not in columns:
-            c.execute("ALTER TABLE artigo ADD COLUMN ordem INTEGER DEFAULT 1")
-
-        # Tabela de respostas de fornecedores
-        c.execute(
+        # Respostas dos fornecedores
+        cur.execute(
             """
             CREATE TABLE IF NOT EXISTS resposta_fornecedor (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 fornecedor_id INTEGER NOT NULL,
                 rfq_id INTEGER NOT NULL,
                 artigo_id INTEGER NOT NULL,
                 descricao TEXT,
                 custo REAL NOT NULL DEFAULT 0.0,
                 prazo_entrega INTEGER NOT NULL DEFAULT 1,
+                quantidade_final INTEGER,
                 peso REAL DEFAULT 0.0,
                 hs_code TEXT,
                 pais_origem TEXT,
                 moeda TEXT DEFAULT 'EUR',
+                margem_utilizada REAL DEFAULT 10.0,
+                preco_venda REAL,
                 observacoes TEXT,
-                data_resposta TEXT DEFAULT CURRENT_TIMESTAMP,
+                data_resposta TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 validade_dias INTEGER DEFAULT 30,
                 FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
                 FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE,
@@ -137,79 +148,54 @@ def criar_base_dados():
             """
         )
 
-        c.execute("PRAGMA table_info(resposta_fornecedor)")
-        columns = [row[1] for row in c.fetchall()]
-        if 'peso' not in columns:
-            c.execute("ALTER TABLE resposta_fornecedor ADD COLUMN peso REAL DEFAULT 0.0")
-        if 'hs_code' not in columns:
-            c.execute("ALTER TABLE resposta_fornecedor ADD COLUMN hs_code TEXT")
-        if 'pais_origem' not in columns:
-            c.execute("ALTER TABLE resposta_fornecedor ADD COLUMN pais_origem TEXT")
-        if 'moeda' not in columns:
-            c.execute("ALTER TABLE resposta_fornecedor ADD COLUMN moeda TEXT DEFAULT 'EUR'")
-        if 'observacoes' not in columns:
-            c.execute("ALTER TABLE resposta_fornecedor ADD COLUMN observacoes TEXT")
-        if 'data_resposta' not in columns:
-            c.execute("ALTER TABLE resposta_fornecedor ADD COLUMN data_resposta TEXT DEFAULT CURRENT_TIMESTAMP")
-        if 'validade_dias' not in columns:
-            c.execute("ALTER TABLE resposta_fornecedor ADD COLUMN validade_dias INTEGER DEFAULT 30")
-
-        # Tabela de PDFs
-        c.execute(
+        # Armazenamento de PDFs
+        cur.execute(
             """
             CREATE TABLE IF NOT EXISTS pdf_storage (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                rfq_id INTEGER NOT NULL,
+                id SERIAL PRIMARY KEY,
+                rfq_id TEXT NOT NULL,
                 tipo_pdf TEXT NOT NULL,
-                pdf_data BLOB NOT NULL,
-                data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
+                pdf_data BYTEA NOT NULL,
+                data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 tamanho_bytes INTEGER,
                 nome_ficheiro TEXT,
-                UNIQUE(rfq_id, tipo_pdf),
-                FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
+                UNIQUE(rfq_id, tipo_pdf)
             )
             """
         )
-        c.execute("PRAGMA table_info(pdf_storage)")
-        columns = [row[1] for row in c.fetchall()]
-        if 'id' not in columns or 'nome_ficheiro' not in columns:
-            c.execute(
-                """
-                CREATE TABLE IF NOT EXISTS pdf_storage_new (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    rfq_id INTEGER NOT NULL,
-                    tipo_pdf TEXT NOT NULL,
-                    pdf_data BLOB NOT NULL,
-                    data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
-                    tamanho_bytes INTEGER,
-                    nome_ficheiro TEXT,
-                    UNIQUE(rfq_id, tipo_pdf),
-                    FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
-                )
-                """
-            )
-            c.execute(
-                """
-                INSERT INTO pdf_storage_new (rfq_id, tipo_pdf, pdf_data, data_criacao, tamanho_bytes)
-                SELECT rfq_id, tipo_pdf, pdf_data, data_criacao, tamanho_bytes FROM pdf_storage
-                """
-            )
-            c.execute("DROP TABLE pdf_storage")
-            c.execute("ALTER TABLE pdf_storage_new RENAME TO pdf_storage")
-            c.execute("PRAGMA table_info(pdf_storage)")
-            columns = [row[1] for row in c.fetchall()]
-        if 'data_criacao' not in columns:
-            c.execute("ALTER TABLE pdf_storage ADD COLUMN data_criacao TEXT DEFAULT CURRENT_TIMESTAMP")
-        if 'tamanho_bytes' not in columns:
-            c.execute("ALTER TABLE pdf_storage ADD COLUMN tamanho_bytes INTEGER")
-        if 'nome_ficheiro' not in columns:
-            c.execute("ALTER TABLE pdf_storage ADD COLUMN nome_ficheiro TEXT")
 
-        # Tabela de configuração da empresa
-        c.execute(
+        # Configuração de margens
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS configuracao_margens (
+                id SERIAL PRIMARY KEY,
+                fornecedor_id INTEGER,
+                marca TEXT,
+                margem REAL DEFAULT 10.0,
+                FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
+                UNIQUE(fornecedor_id, marca)
+            )
+            """
+        )
+
+        # Configuração de email
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS configuracao_email (
+                id SERIAL PRIMARY KEY,
+                smtp_server TEXT,
+                smtp_port INTEGER,
+                email TEXT,
+                password TEXT
+            )
+            """
+        )
+
+        # Configuração da empresa
+        cur.execute(
             """
             CREATE TABLE IF NOT EXISTS configuracao_empresa (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 nome TEXT,
                 morada TEXT,
                 nif TEXT,
@@ -221,24 +207,31 @@ def criar_base_dados():
             """
         )
 
-        c.execute("PRAGMA table_info(configuracao_empresa)")
-        cols = [row[1] for row in c.fetchall()]
-        for col in ["telefone", "email", "website"]:
-            if col not in cols:
-                c.execute(f"ALTER TABLE configuracao_empresa ADD COLUMN {col} TEXT")
+        # Utilizadores
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS utilizador (
+                id SERIAL PRIMARY KEY,
+                nome TEXT NOT NULL UNIQUE,
+                senha TEXT NOT NULL,
+                email TEXT UNIQUE,
+                papel TEXT DEFAULT 'usuario'
+            )
+            """
+        )
 
-        # Tabela de logs
-        c.execute(
+        # Logs do sistema
+        cur.execute(
             """
             CREATE TABLE IF NOT EXISTS sistema_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 acao TEXT NOT NULL,
                 tabela_afetada TEXT,
                 registo_id INTEGER,
                 dados_antes TEXT,
                 dados_depois TEXT,
                 utilizador TEXT,
-                data_log TEXT DEFAULT CURRENT_TIMESTAMP
+                data_log TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
@@ -252,64 +245,49 @@ def criar_base_dados():
             "CREATE INDEX IF NOT EXISTS idx_artigo_rfq ON artigo(rfq_id)",
             "CREATE INDEX IF NOT EXISTS idx_resposta_fornecedor ON resposta_fornecedor(fornecedor_id, rfq_id)",
             "CREATE INDEX IF NOT EXISTS idx_resposta_artigo ON resposta_fornecedor(artigo_id)",
-            "CREATE INDEX IF NOT EXISTS idx_fornecedor_nome ON fornecedor(nome)"
+            "CREATE INDEX IF NOT EXISTS idx_fornecedor_nome ON fornecedor(nome)",
         ]
         for indice in indices:
-            c.execute(indice)
+            cur.execute(indice)
 
         conn.commit()
-        print("Base de dados criada/atualizada com sucesso!")
-    except sqlite3.Error as e:
-        print(f"Erro ao criar base de dados: {e}")
-        if conn:
-            conn.rollback()
     finally:
         if conn:
             conn.close()
 
+
 def verificar_integridade_db():
-    """Verifica a integridade da base de dados."""
+    """Verifica se a ligação à base de dados está funcional."""
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("PRAGMA integrity_check")
-        resultado = c.fetchone()[0]
-        if resultado == "ok":
-            print("✅ Integridade da base de dados: OK")
-            return True
-        else:
-            print(f"❌ Problemas de integridade: {resultado}")
-            return False
-    except sqlite3.Error as e:
-        print(f"Erro ao verificar integridade: {e}")
+        conn = obter_conexao()
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        cur.fetchone()
+        return True
+    except Exception:
         return False
     finally:
         if conn:
             conn.close()
 
 
-def backup_database(backup_path="backup_cotacoes.db"):
-    """Cria um backup da base de dados."""
-    try:
-        import shutil
-        shutil.copy2(DB_PATH, backup_path)
-        print(f"✅ Backup criado: {backup_path}")
-    except Exception as e:
-        print(f"Erro ao criar backup: {e}")
+def backup_database(*_args, **_kwargs):
+    """Placeholder para backup da base de dados externa."""
+    print("Backup não implementado para base de dados externa.")
 
 
 def gerar_numero_processo():
     """Gera um número interno único para o processo no formato QTYYYY-X."""
     ano = datetime.now().year
     prefixo = f"QT{ano}-"
-    conn = sqlite3.connect(DB_PATH)
+    conn = obter_conexao()
     try:
-        c = conn.cursor()
-        c.execute(
-            "SELECT MAX(CAST(substr(numero, 8) AS INTEGER)) FROM processo WHERE numero LIKE ?",
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT MAX(CAST(SUBSTRING(numero FROM 8) AS INTEGER)) FROM processo WHERE numero LIKE %s",
             (f"{prefixo}%",),
         )
-        max_seq = c.fetchone()[0]
+        max_seq = cur.fetchone()[0]
     finally:
         conn.close()
     proximo = (max_seq or 0) + 1
@@ -319,14 +297,15 @@ def gerar_numero_processo():
 def criar_processo(descricao=""):
     """Cria um novo processo com número interno sequencial por ano."""
     numero = gerar_numero_processo()
-    conn = sqlite3.connect(DB_PATH)
+    conn = obter_conexao()
     try:
-        c = conn.cursor()
-        c.execute(
-            "INSERT INTO processo (numero, descricao) VALUES (?, ?)",
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO processo (numero, descricao) VALUES (%s, %s)",
             (numero, descricao),
         )
         conn.commit()
-        return c.lastrowid, numero
+        return cur.lastrowid, numero
     finally:
         conn.close()
+
