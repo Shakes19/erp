@@ -1,6 +1,6 @@
 # 📊 ERP KTB Portugal
 
-Sistema de gestão de cotações desenvolvido em **Python** com **Streamlit** e **PostgreSQL (Supabase)**, permitindo:
+Sistema de gestão de cotações desenvolvido em **Python** com **Streamlit** e **SQLite (via SQLAlchemy)**, permitindo:
 - Criar e gerir pedidos de cotação (RFQs)
 - Responder cotações e enviar orçamentos
 - Gerar PDFs automáticos (pedido e cliente)
@@ -13,14 +13,9 @@ Sistema de gestão de cotações desenvolvido em **Python** com **Streamlit** e 
 
 .
 ├── main.py # Interface principal Streamlit e lógica de negócio
-├── db.py # Configuração da ligação ao PostgreSQL via SQLAlchemy
+├── db.py # Camada de acesso à BD SQLite via SQLAlchemy
 ├── requirements.txt # Dependências do projeto
-├── .streamlit/secrets.toml # String de conexão ao Supabase
 ├── README.md # Este ficheiro
-
-markdown
-Copiar
-Editar
 
 ---
 
@@ -58,50 +53,29 @@ Editar
 ```bash
 git clone https://github.com/teu-utilizador/erp-ktb.git
 cd erp-ktb
-Criar ambiente virtual (opcional, mas recomendado)
-
-bash
-Copiar
-Editar
+```
+2. **(Opcional) Criar ambiente virtual**
+```bash
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
-venv\Scripts\activate     # Windows
-Instalar dependências
-
-bash
-Copiar
-Editar
+venv\\Scripts\\activate     # Windows
+```
+3. **Instalar dependências**
+```bash
 pip install -r requirements.txt
-
-Configura a string de conexão em `.streamlit/secrets.toml`.
-
-▶️ Executar a aplicação
-bash
-Copiar
-Editar
+```
+4. **Executar a aplicação**
+```bash
 streamlit run main.py
-A aplicação abrirá no navegador padrão, normalmente em:
+```
+A aplicação abrirá no navegador padrão em `http://localhost:8501`.
 
-arduino
-Copiar
-Editar
-http://localhost:8501
 📦 Dependências principais
-streamlit – Interface web interativa
-
-sqlalchemy – ORM para acesso ao PostgreSQL
-psycopg2-binary – Driver PostgreSQL
-
-fpdf – Geração de PDFs
-
-smtplib – Envio de emails
-
-Instalação manual:
-
-bash
-Copiar
-Editar
-pip install streamlit fpdf
+- streamlit – Interface web interativa
+- sqlalchemy – ORM para acesso à BD SQLite
+- bcrypt – Hash de palavras-passe
+- fpdf – Geração de PDFs
+- smtplib – Envio de emails
 
 ### 📝 Personalização de Layout dos PDFs
 
@@ -110,11 +84,10 @@ ajustado diretamente pela aplicação em **Configurações > Layout PDF**.
 Altere textos, tamanhos de letra, cabeçalhos ou posições e as mudanças são
 aplicadas imediatamente.
 📌 Notas
-A base de dados é gerida pelo Supabase; define a string de conexão em `.streamlit/secrets.toml`.
-
-As configurações de e-mail devem ser definidas em EMAIL_CONFIG no main.py ou diretamente na interface em "Configurações > Email".
-
-Para envio de e-mails via Gmail, é necessário gerar uma palavra-passe de aplicação na conta Google.
+- A base de dados utiliza um ficheiro SQLite local (`cotacoes.db`).
+- A palavra-passe de e-mail **não** é armazenada na BD. Define a variável de ambiente `EMAIL_PASSWORD` para permitir o envio de emails.
+- As configurações de e-mail (servidor e porta) podem ser ajustadas em "Configurações > Email".
+- Para envio de e-mails via Gmail, usa uma "App Password" em vez da palavra-passe normal.
 
 ### ⏰ Backup automático diário
 
@@ -128,12 +101,3 @@ Os ficheiros de backup são guardados na pasta `backups/` com a data no nome.
 
 📜 Licença
 Projeto interno da KTB Portugal – uso restrito.
-
-yaml
-Copiar
-Editar
-
----
-
-Se quiseres, eu posso complementar este README com a **explicação de cada função do `db.py`** para facilitar manutenção futura.  
-Queres que o README já inclua isso?
