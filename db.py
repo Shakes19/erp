@@ -92,6 +92,21 @@ def criar_base_dados():
             """
         )
 
+        # Utilizadores
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS utilizador (
+                id SERIAL PRIMARY KEY,
+                username TEXT NOT NULL UNIQUE,
+                password TEXT NOT NULL,
+                nome TEXT,
+                email TEXT UNIQUE,
+                role TEXT DEFAULT 'user',
+                email_password TEXT
+            )
+            """
+        )
+
         # RFQ
         cur.execute(
             """
@@ -219,21 +234,6 @@ def criar_base_dados():
                 telefone TEXT,
                 email TEXT,
                 website TEXT
-            )
-            """
-        )
-
-        # Utilizadores
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS utilizador (
-                id SERIAL PRIMARY KEY,
-                username TEXT NOT NULL UNIQUE,
-                password TEXT NOT NULL,
-                nome TEXT,
-                email TEXT UNIQUE,
-                role TEXT DEFAULT 'user',
-                email_password TEXT
             )
             """
         )
