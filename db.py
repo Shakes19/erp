@@ -19,7 +19,23 @@ class QMarkCursor(psycopg2.extensions.cursor):
 
     def execute(self, query, vars=None):  # type: ignore[override]
         if vars is not None:
-            query = query.replace("?", "%s")
+            # Substitute SQLite-style '?' placeholders with PostgreSQL '%s'
+            # while keeping question marks that appear inside quoted strings.
+            new_query = []
+            in_single = False
+            in_double = False
+            for char in query:
+                if char == "'" and not in_double:
+                    in_single = not in_single
+                elif char == '"' and not in_single:
+                    in_double = not in_double
+
+                if char == "?" and not in_single and not in_double:
+                    new_query.append("%s")
+                else:
+                    new_query.append(char)
+            query = "".join(new_query)
+
         return super().execute(query, vars)
 
 
