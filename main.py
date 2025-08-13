@@ -1295,7 +1295,9 @@ class InquiryPDF(FPDF):
         col_w = self._table_col_widths()
         line_height = 5
         # Preparar texto do item
-        item_text = item.get("descricao", "")
+        # ``descricao`` might be ``None`` if the item was partially filled in
+        # the UI, so fall back to an empty string before splitting.
+        item_text = item.get("descricao") or ""
         lines = item_text.split("\n")
         line_count = len(lines)
         row_height = line_count * line_height
@@ -1307,7 +1309,14 @@ class InquiryPDF(FPDF):
 
         x_start = self.get_x()
         y_start = self.get_y()
-        part_no = item.get("artigo_num", "")
+        # ``artigo_num`` can be present with a ``None`` value.  ``FPDF.cell``
+        # calls ``replace`` on the provided text, which fails for ``None``.
+        # Converting to ``""`` avoids the "NoneType has no attribute 'replace'"
+        # error when generating the PDF.
+        part_no = item.get("artigo_num") or ""
+        quantidade = item.get("quantidade")
+        quantidade_str = str(quantidade) if quantidade is not None else ""
+        unidade = item.get("unidade") or ""
         # Desenhar células
         for i in range(line_count):
             border = "LR"
@@ -1318,8 +1327,8 @@ class InquiryPDF(FPDF):
             self.set_xy(x_start, y_start + i * line_height)
             self.cell(col_w[0], line_height, str(idx) if i == 0 else "", border=border, align="C")
             self.cell(col_w[1], line_height, part_no if i == 0 else "", border=border, align="C")
-            self.cell(col_w[2], line_height, str(item.get("quantidade", "")) if i == 0 else "", border=border, align="C")
-            self.cell(col_w[3], line_height, item.get("unidade", "") if i == 0 else "", border=border, align="C")
+            self.cell(col_w[2], line_height, quantidade_str if i == 0 else "", border=border, align="C")
+            self.cell(col_w[3], line_height, unidade if i == 0 else "", border=border, align="C")
             self.cell(col_w[4], line_height, lines[i], border=border)
 
         self.set_y(y_start + row_height)
