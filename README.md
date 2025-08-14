@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="myERP logo" width="120" />
+</p>
+
 # 📊 myERP
 
 Sistema de gestão de cotações desenvolvido em **Python** com **Streamlit** e **SQLite (via SQLAlchemy)**, permitindo:
