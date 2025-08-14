@@ -883,10 +883,17 @@ def guardar_pdf_upload(rfq_id, tipo_pdf, nome_ficheiro, bytes_):
     try:
         conn = obter_conexao()
         c = conn.cursor()
-        c.execute("""
-            INSERT OR REPLACE INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes, nome_ficheiro)
+        c.execute(
+            """
+            INSERT INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes, nome_ficheiro)
             VALUES (?, ?, ?, ?, ?)
-        """, (str(rfq_id), tipo_pdf, bytes_, len(bytes_), nome_ficheiro))
+            ON CONFLICT (rfq_id, tipo_pdf) DO UPDATE SET
+                pdf_data = excluded.pdf_data,
+                tamanho_bytes = excluded.tamanho_bytes,
+                nome_ficheiro = excluded.nome_ficheiro
+            """,
+            (str(rfq_id), tipo_pdf, bytes_, len(bytes_), nome_ficheiro),
+        )
         conn.commit()
         conn.close()
         return True
@@ -1319,8 +1326,11 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
 
         c.execute(
             """
-            INSERT OR REPLACE INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes)
+            INSERT INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes)
             VALUES (?, ?, ?, ?)
+            ON CONFLICT (rfq_id, tipo_pdf) DO UPDATE SET
+                pdf_data = excluded.pdf_data,
+                tamanho_bytes = excluded.tamanho_bytes
         """,
             (str(rfq_id), "pedido", pdf_bytes, len(pdf_bytes)),
         )
@@ -1395,10 +1405,15 @@ def gerar_pdf_cliente(rfq_id):
         )
 
         # 4. Armazenar PDF
-        c.execute("""INSERT OR REPLACE INTO pdf_storage 
+        c.execute(
+            """INSERT INTO pdf_storage
                   (rfq_id, tipo_pdf, pdf_data, tamanho_bytes)
-                  VALUES (?, ?, ?, ?)""",
-                  (str(rfq_id), "cliente", pdf_bytes, len(pdf_bytes)))
+                  VALUES (?, ?, ?, ?)
+                  ON CONFLICT (rfq_id, tipo_pdf) DO UPDATE SET
+                      pdf_data = excluded.pdf_data,
+                      tamanho_bytes = excluded.tamanho_bytes""",
+            (str(rfq_id), "cliente", pdf_bytes, len(pdf_bytes)),
+        )
         
         conn.commit()
         return True
