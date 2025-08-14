@@ -2,6 +2,7 @@ import streamlit as st
 import sqlite3
 from datetime import datetime, date
 from fpdf import FPDF
+from PIL import Image
 import base64
 import json
 from io import BytesIO
@@ -73,9 +74,12 @@ def _format_iso_date(value):
     return dt.strftime("%d/%m/%Y")
 
 
+LOGO_PATH = "assets/logo.png"
+logo_image = Image.open(LOGO_PATH)
+
 st.set_page_config(
     page_title="myERP",
-    page_icon="📊",
+    page_icon=logo_image,
     layout="wide"
 )
 
@@ -1637,6 +1641,7 @@ if 'logged_in' not in st.session_state:
 
 
 def login_screen():
+    st.markdown(f"<p style='text-align:center'><img src='{LOGO_PATH}' width='120'/></p>", unsafe_allow_html=True)
     st.markdown("<h1 style='text-align:center;'>🔐 Login</h1>", unsafe_allow_html=True)
     # Estilizar o formulário para ser mais amplo e centralizado
     st.markdown(
