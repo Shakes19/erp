@@ -74,7 +74,7 @@ def _format_iso_date(value):
 
 
 st.set_page_config(
-    page_title="ERP KTB Portugal",
+    page_title="myERP",
     page_icon="📊",
     layout="wide"
 )
@@ -814,7 +814,7 @@ def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
         Ficamos à disposição para qualquer esclarecimento adicional.
 
         Com os melhores cumprimentos,
-        KTB Portugal
+        Ricardo Nogueira
         """
         
         msg.attach(MIMEText(corpo, 'plain'))
@@ -908,7 +908,7 @@ Segue em anexo o pedido de cotação relativo à referência {referencia}.
 Agradecemos o envio do preço, prazo de entrega, HS Code, país de origem e peso.
 
 Com os melhores cumprimentos,
-KTB Portugal
+Ricardo Nogueira
 """
         msg.attach(MIMEText(corpo, 'plain'))
 
@@ -1007,7 +1007,7 @@ class InquiryPDF(FPDF):
             )
         company_lines = self.cfg.get(
             "company_lines",
-            ["KTB Portugal, Lda.", "Rua Exemplo 123", "4455-123 Porto", "Portugal"],
+            ["Ricardo Nogueira", "Rua Exemplo 123", "4455-123 Porto", "Portugal"],
         )
         self.set_xy(self.w - 15 - 70, 45)
         self.multi_cell(70, 4, "\n".join(company_lines), align="R")
@@ -1601,7 +1601,7 @@ def obter_estatisticas_db():
 
 def inicializar_sistema():
     """Inicializar todo o sistema"""
-    print("Inicializando sistema ERP KTB Portugal...")
+    print("Inicializando sistema myERP...")
     
     if criar_base_dados_completa():
         print("✓ Base de dados inicializada")
@@ -1774,8 +1774,8 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("""
         <div style="text-align: center; font-size: 12px;">
-            <p>Sistema ERP v4.0</p>
-            <p>© 2025 KTB Portugal</p>
+            <p>Sistema myERP v4.0</p>
+            <p>© 2025 Ricardo Nogueira</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -3004,7 +3004,7 @@ elif menu_option == "⚙️ Configurações":
 st.markdown("---")
 st.markdown("""
     <div style="text-align: center; color: #666; font-size: 12px;">
-        Sistema ERP KTB Portugal v4.0 | Desenvolvido por Ricardo Nogueira | © 2025
+        Sistema myERP v4.0 | Desenvolvido por Ricardo Nogueira | © 2025
     </div>
 """, unsafe_allow_html=True)
 

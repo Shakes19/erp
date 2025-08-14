@@ -1,4 +1,4 @@
-# 📊 ERP KTB Portugal
+# 📊 myERP
 
 Sistema de gestão de cotações desenvolvido em **Python** com **Streamlit** e **SQLite (via SQLAlchemy)**, permitindo:
 - Criar e gerir pedidos de cotação (RFQs)
@@ -51,8 +51,8 @@ Sistema de gestão de cotações desenvolvido em **Python** com **Streamlit** e 
 
 1. **Clonar o repositório**
 ```bash
-git clone https://github.com/teu-utilizador/erp-ktb.git
-cd erp-ktb
+git clone https://github.com/teu-utilizador/myerp.git
+cd myerp
 ```
 2. **(Opcional) Criar ambiente virtual**
 ```bash
@@ -100,4 +100,4 @@ python backup_scheduler.py
 Os ficheiros de backup são guardados na pasta `backups/` com a data no nome.
 
 📜 Licença
-Projeto interno da KTB Portugal – uso restrito.
+Projeto de Ricardo Nogueira – uso restrito.
