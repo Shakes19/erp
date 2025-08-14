@@ -228,7 +228,7 @@ def listar_utilizadores():
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
-        "SELECT id, username, nome, email, role FROM utilizador ORDER BY username"
+        "SELECT id, username, nome, email, role, email_password FROM utilizador ORDER BY username"
     )
     utilizadores = c.fetchall()
     conn.close()
@@ -240,7 +240,7 @@ def obter_utilizador_por_username(username):
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
-        "SELECT id, username, password, nome, email, role FROM utilizador WHERE username = ?",
+        "SELECT id, username, password, nome, email, role, email_password FROM utilizador WHERE username = ?",
         (username,),
     )
     user = c.fetchone()
@@ -253,7 +253,7 @@ def obter_utilizador_por_id(user_id):
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
-        "SELECT id, username, password, nome, email, role FROM utilizador WHERE id = ?",
+        "SELECT id, username, password, nome, email, role, email_password FROM utilizador WHERE id = ?",
         (user_id,),
     )
     user = c.fetchone()
@@ -261,17 +261,17 @@ def obter_utilizador_por_id(user_id):
     return user
 
 
-def inserir_utilizador(username, password, nome="", email="", role="user"):
+def inserir_utilizador(username, password, nome="", email="", role="user", email_password=""):
     """Inserir novo utilizador"""
     conn = obter_conexao()
     c = conn.cursor()
     try:
         c.execute(
             """
-            INSERT INTO utilizador (username, password, nome, email, role)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO utilizador (username, password, nome, email, role, email_password)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (username, hash_password(password), nome, email, role),
+            (username, hash_password(password), nome, email, role, email_password),
         )
         conn.commit()
         return c.lastrowid
@@ -282,7 +282,7 @@ def inserir_utilizador(username, password, nome="", email="", role="user"):
 
 
 def atualizar_utilizador(
-    user_id, username, nome, email, role, password=None
+    user_id, username, nome, email, role, password=None, email_password=None
 ):
     """Atualizar dados de um utilizador"""
     conn = obter_conexao()
@@ -293,6 +293,9 @@ def atualizar_utilizador(
         if password:
             fields.append("password = ?")
             params.append(hash_password(password))
+        if email_password is not None:
+            fields.append("email_password = ?")
+            params.append(email_password)
         params.append(user_id)
         c.execute(
             f"UPDATE utilizador SET {', '.join(fields)} WHERE id = ?",
@@ -520,6 +523,7 @@ def eliminar_cotacao(rfq_id):
     
     try:
         c.execute("DELETE FROM resposta_fornecedor WHERE rfq_id = ?", (rfq_id,))
+        c.execute("DELETE FROM resposta_custos WHERE rfq_id = ?", (rfq_id,))
         c.execute("DELETE FROM artigo WHERE rfq_id = ?", (rfq_id,))
         c.execute("DELETE FROM pdf_storage WHERE rfq_id = ?", (str(rfq_id),))
         c.execute("DELETE FROM rfq WHERE id = ?", (rfq_id,))
@@ -534,11 +538,11 @@ def eliminar_cotacao(rfq_id):
 
 # ========================== FUNÇÕES DE GESTÃO DE RESPOSTAS ==========================
 
-def guardar_respostas(rfq_id, respostas):
+def guardar_respostas(rfq_id, respostas, custo_envio=0.0):
     """Guardar respostas do fornecedor e enviar email"""
     conn = obter_conexao()
     c = conn.cursor()
-    
+
     try:
         # Obter fornecedor_id diretamente da RFQ [CORREÇÃO]
         c.execute("SELECT fornecedor_id FROM rfq WHERE id = ?", (rfq_id,))
@@ -550,6 +554,8 @@ def guardar_respostas(rfq_id, respostas):
             
         fornecedor_id = resultado[0]  # Obtém o ID do fornecedor da RFQ
 
+        total_custos = sum(item[1] for item in respostas if item[1] > 0)
+
         # Obter margem para cada artigo baseada na marca
         for item in respostas:
             artigo_id, custo, prazo, peso, hs_code, pais_origem, descricao_editada, quantidade_final = item
@@ -558,19 +564,43 @@ def guardar_respostas(rfq_id, respostas):
             c.execute("SELECT marca FROM artigo WHERE id = ?", (artigo_id,))
             marca_result = c.fetchone()
             marca = marca_result[0] if marca_result else None
-            
+
+            proporcao = (custo / total_custos) if total_custos else 0
+            custo_total = custo + custo_envio * proporcao
+
             # Obter margem configurada para a marca
             margem = obter_margem_para_marca(fornecedor_id, marca)
-            preco_venda = custo * (1 + margem/100)
-            
-            c.execute("""
-                INSERT OR REPLACE INTO resposta_fornecedor 
-                (fornecedor_id, rfq_id, artigo_id, descricao, custo, prazo_entrega, 
+            preco_venda = custo_total * (1 + margem/100)
+
+            c.execute(
+                """
+                INSERT OR REPLACE INTO resposta_fornecedor
+                (fornecedor_id, rfq_id, artigo_id, descricao, custo, prazo_entrega,
                  peso, hs_code, pais_origem, margem_utilizada, preco_venda, quantidade_final)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (fornecedor_id, rfq_id, artigo_id, descricao_editada, custo, prazo, 
-                  peso, hs_code, pais_origem, margem, preco_venda, quantidade_final))
+                """,
+                (
+                    fornecedor_id,
+                    rfq_id,
+                    artigo_id,
+                    descricao_editada,
+                    custo_total,
+                    prazo,
+                    peso,
+                    hs_code,
+                    pais_origem,
+                    margem,
+                    preco_venda,
+                    quantidade_final,
+                ),
+            )
         
+        # Guardar custos adicionais
+        c.execute(
+            "INSERT OR REPLACE INTO resposta_custos (rfq_id, custo_envio) VALUES (?, ?)",
+            (rfq_id, custo_envio),
+        )
+
         # Atualizar estado da RFQ
         c.execute("UPDATE rfq SET estado = 'respondido' WHERE id = ?", (rfq_id,))
         
@@ -736,12 +766,12 @@ def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
 
         # Credenciais do utilizador atual
         current_user = obter_utilizador_por_id(st.session_state.get("user_id"))
-        email_password = os.environ.get("EMAIL_PASSWORD")
-        if current_user and current_user[4] and email_password:
+        if current_user and current_user[4] and current_user[6]:
             email_user = current_user[4]
+            email_password = current_user[6]
         else:
             st.error(
-                "Configure o seu email no perfil e defina a palavra-passe na variável de ambiente EMAIL_PASSWORD."
+                "Configure o seu email e palavra-passe no perfil."
             )
             return False
 
@@ -836,12 +866,12 @@ def enviar_email_pedido_fornecedor(rfq_id):
             smtp_port = EMAIL_CONFIG['smtp_port']
 
         current_user = obter_utilizador_por_id(st.session_state.get("user_id"))
-        email_password = os.environ.get("EMAIL_PASSWORD")
-        if current_user and current_user[4] and email_password:
+        if current_user and current_user[4] and current_user[6]:
             email_user = current_user[4]
+            email_password = current_user[6]
         else:
             st.error(
-                "Configure o seu email no perfil e defina a palavra-passe na variável de ambiente EMAIL_PASSWORD."
+                "Configure o seu email e palavra-passe no perfil."
             )
             return False
 
@@ -1916,7 +1946,7 @@ elif menu_option == "📩 Responder Cotações":
             """
             <style>
             [data-testid="stDialog"] {
-                width: 100vw;
+                width: 130vw;
                 height: 100vh;
                 max-width: none;
                 top: 0;
@@ -2012,6 +2042,13 @@ elif menu_option == "📩 Responder Cotações":
 
                 st.markdown("---")
 
+            custo_envio = st.number_input(
+                "Custos de envio e embalagem",
+                min_value=0.0,
+                step=0.01,
+                key=f"custo_envio_{cotacao['id']}"
+            )
+
             col1, col2 = st.columns(2)
 
             with col1:
@@ -2031,7 +2068,7 @@ elif menu_option == "📩 Responder Cotações":
                         upload_resposta_forn.name,
                         upload_resposta_forn.getvalue()
                     )
-                if guardar_respostas(cotacao['id'], respostas_validas):
+                if guardar_respostas(cotacao['id'], respostas_validas, custo_envio):
                     st.success("✅ Resposta guardada e email enviado com sucesso!")
                     st.rerun()
             else:
@@ -2472,11 +2509,26 @@ elif menu_option == "👤 Perfil":
     st.title("👤 Meu Perfil")
     user = obter_utilizador_por_id(st.session_state.get("user_id"))
     if user:
-        st.subheader("Email")
-        st.text_input("Email", value=user[4], disabled=True)
-        st.info(
-            "A palavra-passe do email é definida na variável de ambiente EMAIL_PASSWORD."
-        )
+        st.subheader("Configuração de Email")
+        with st.form("email_form"):
+            email_edit = st.text_input("Username", value=user[4] or "")
+            email_pw_edit = st.text_input(
+                "Palavra-passe do Email", value=user[6] or "", type="password"
+            )
+            sub_email = st.form_submit_button("Guardar Email")
+        if sub_email:
+            if atualizar_utilizador(
+                user[0],
+                user[1],
+                user[3],
+                email_edit,
+                user[5],
+                None,
+                email_pw_edit,
+            ):
+                st.success("Dados de email atualizados com sucesso!")
+            else:
+                st.error("Erro ao atualizar dados de email")
 
         st.subheader("Alterar Palavra-passe do Sistema")
         with st.form("palavra_passe_form"):
@@ -2508,8 +2560,8 @@ elif menu_option == "⚙️ Configurações":
         st.title("⚙️ Configurações do Sistema")
         tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
             "Fornecedores",
-            "Utilizadores",
             "Marcas e Margens",
+            "Utilizadores",
             "Email",
             "Backup",
             "Layout PDF",
@@ -2580,6 +2632,103 @@ elif menu_option == "⚙️ Configurações":
                     st.write(f"**Marcas:** {', '.join(marcas) if marcas else 'Nenhuma'}")
     
     with tab2:
+        st.subheader("Configuração de Marcas e Margens")
+
+        fornecedores = listar_fornecedores()
+
+        if fornecedores:
+            fornecedor_sel = st.selectbox(
+                "Selecionar Fornecedor",
+                options=fornecedores,
+                format_func=lambda x: x[1],
+                key="forn_marcas"
+            )
+
+            if fornecedor_sel:
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.markdown("### Adicionar Marca")
+                    with st.form("add_marca_form"):
+                        nova_marca = st.text_input("Nome da Marca")
+                        margem_marca = st.number_input(
+                            "Margem (%)",
+                            min_value=0.0,
+                            max_value=100.0,
+                            value=15.0,
+                            step=0.5
+                        )
+
+                        if st.form_submit_button("➕ Adicionar Marca"):
+                            if nova_marca:
+                                if adicionar_marca_fornecedor(fornecedor_sel[0], nova_marca):
+                                    configurar_margem_marca(fornecedor_sel[0], nova_marca, margem_marca)
+                                    st.success(f"Marca {nova_marca} adicionada!")
+                                    st.rerun()
+                                else:
+                                    st.error("Marca já existe para este fornecedor")
+
+                with col2:
+                    st.markdown("### Marcas Existentes")
+                    marcas = obter_marcas_fornecedor(fornecedor_sel[0])
+
+                    if marcas:
+                        for marca in marcas:
+                            margem = obter_margem_para_marca(fornecedor_sel[0], marca)
+
+                            with st.expander(f"{marca} - {margem:.1f}%"):
+                                nova_margem = st.number_input(
+                                    "Nova Margem (%)",
+                                    min_value=0.0,
+                                    max_value=100.0,
+                                    value=margem,
+                                    step=0.5,
+                                    key=f"margem_{fornecedor_sel[0]}_{marca}"
+                                )
+
+                                col1, col2 = st.columns(2)
+
+                                with col1:
+                                    if st.button("💾 Atualizar", key=f"upd_{fornecedor_sel[0]}_{marca}"):
+                                        if configurar_margem_marca(fornecedor_sel[0], marca, nova_margem):
+                                            st.success("Margem atualizada!")
+                                            st.rerun()
+
+                                with col2:
+                                    if st.button("🗑️ Remover", key=f"del_{fornecedor_sel[0]}_{marca}"):
+                                        if remover_marca_fornecedor(fornecedor_sel[0], marca):
+                                            st.success("Marca removida!")
+                                            st.rerun()
+                    else:
+                        st.info("Nenhuma marca configurada")
+
+        st.markdown("---")
+
+        # Margem padrão
+        st.subheader("Margem Padrão Global")
+
+        margem_global = obter_margem_para_marca(None, None)
+        nova_margem_global = st.number_input(
+            "Margem Padrão (%)",
+            min_value=0.0,
+            max_value=100.0,
+            value=margem_global,
+            step=0.5
+        )
+
+        if st.button("💾 Guardar Margem Padrão"):
+            conn = obter_conexao()
+            c = conn.cursor()
+            c.execute("""
+                UPDATE configuracao_margens
+                SET margem_percentual = ?
+                WHERE fornecedor_id IS NULL AND marca IS NULL
+            """, (nova_margem_global,))
+            conn.commit()
+            conn.close()
+            st.success("Margem padrão atualizada!")
+
+    with tab3:
         if st.session_state.get("role") != "admin":
             st.warning("Apenas administradores podem gerir utilizadores.")
         else:
@@ -2593,13 +2742,14 @@ elif menu_option == "⚙️ Configurações":
                     username = st.text_input("Username *")
                     nome = st.text_input("Nome")
                     email_user = st.text_input("Email")
+                    email_pw_user = st.text_input("Password Email", type="password")
                     role = st.selectbox("Role", ["admin", "gestor", "user"])
                     password = st.text_input("Palavra-passe *", type="password")
 
                     if st.form_submit_button("➕ Adicionar"):
                         if username and password:
                             if inserir_utilizador(
-                                username, password, nome, email_user, role
+                                username, password, nome, email_user, role, email_pw_user
                             ):
                                 st.success(f"Utilizador {username} adicionado!")
                                 st.rerun()
@@ -2618,6 +2768,7 @@ elif menu_option == "⚙️ Configurações":
                             username_edit = st.text_input("Username", user[1])
                             nome_edit = st.text_input("Nome", user[2] or "")
                             email_edit = st.text_input("Email", user[3] or "")
+                            email_pw_edit = st.text_input("Password Email", user[5] or "", type="password")
                             role_edit = st.selectbox(
                                 "Role",
                                 ["admin", "gestor", "user"],
@@ -2635,6 +2786,7 @@ elif menu_option == "⚙️ Configurações":
                                         email_edit,
                                         role_edit,
                                         password_edit or None,
+                                        email_pw_edit or None,
                                     ):
                                         st.success("Utilizador atualizado")
                                         st.rerun()
@@ -2647,103 +2799,6 @@ elif menu_option == "⚙️ Configurações":
                                         st.rerun()
                                     else:
                                         st.error("Erro ao eliminar utilizador")
-
-    with tab3:
-        st.subheader("Configuração de Marcas e Margens")
-        
-        fornecedores = listar_fornecedores()
-        
-        if fornecedores:
-            fornecedor_sel = st.selectbox(
-                "Selecionar Fornecedor",
-                options=fornecedores,
-                format_func=lambda x: x[1],
-                key="forn_marcas"
-            )
-            
-            if fornecedor_sel:
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("### Adicionar Marca")
-                    with st.form("add_marca_form"):
-                        nova_marca = st.text_input("Nome da Marca")
-                        margem_marca = st.number_input(
-                            "Margem (%)",
-                            min_value=0.0,
-                            max_value=100.0,
-                            value=15.0,
-                            step=0.5
-                        )
-                        
-                        if st.form_submit_button("➕ Adicionar Marca"):
-                            if nova_marca:
-                                if adicionar_marca_fornecedor(fornecedor_sel[0], nova_marca):
-                                    configurar_margem_marca(fornecedor_sel[0], nova_marca, margem_marca)
-                                    st.success(f"Marca {nova_marca} adicionada!")
-                                    st.rerun()
-                                else:
-                                    st.error("Marca já existe para este fornecedor")
-                
-                with col2:
-                    st.markdown("### Marcas Existentes")
-                    marcas = obter_marcas_fornecedor(fornecedor_sel[0])
-                    
-                    if marcas:
-                        for marca in marcas:
-                            margem = obter_margem_para_marca(fornecedor_sel[0], marca)
-                            
-                            with st.expander(f"{marca} - {margem:.1f}%"):
-                                nova_margem = st.number_input(
-                                    "Nova Margem (%)",
-                                    min_value=0.0,
-                                    max_value=100.0,
-                                    value=margem,
-                                    step=0.5,
-                                    key=f"margem_{fornecedor_sel[0]}_{marca}"
-                                )
-                                
-                                col1, col2 = st.columns(2)
-                                
-                                with col1:
-                                    if st.button("💾 Atualizar", key=f"upd_{fornecedor_sel[0]}_{marca}"):
-                                        if configurar_margem_marca(fornecedor_sel[0], marca, nova_margem):
-                                            st.success("Margem atualizada!")
-                                            st.rerun()
-                                
-                                with col2:
-                                    if st.button("🗑️ Remover", key=f"del_{fornecedor_sel[0]}_{marca}"):
-                                        if remover_marca_fornecedor(fornecedor_sel[0], marca):
-                                            st.success("Marca removida!")
-                                            st.rerun()
-                    else:
-                        st.info("Nenhuma marca configurada")
-        
-        st.markdown("---")
-        
-        # Margem padrão
-        st.subheader("Margem Padrão Global")
-        
-        margem_global = obter_margem_para_marca(None, None)
-        nova_margem_global = st.number_input(
-            "Margem Padrão (%)",
-            min_value=0.0,
-            max_value=100.0,
-            value=margem_global,
-            step=0.5
-        )
-        
-        if st.button("💾 Guardar Margem Padrão"):
-            conn = obter_conexao()
-            c = conn.cursor()
-            c.execute("""
-                UPDATE configuracao_margens 
-                SET margem_percentual = ?
-                WHERE fornecedor_id IS NULL AND marca IS NULL
-            """, (nova_margem_global,))
-            conn.commit()
-            conn.close()
-            st.success("Margem padrão atualizada!")
             st.rerun()
     
     with tab4:
