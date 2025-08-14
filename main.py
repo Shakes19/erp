@@ -1130,62 +1130,40 @@ class InquiryPDF(FPDF):
         return self.output(dest="S").encode("latin-1")
 
 
-class ClientQuotationPDF(FPDF):
-    """PDF para orçamento ao cliente com todos os detalhes"""
+class ClientQuotationPDF(InquiryPDF):
+    """PDF para orçamento ao cliente com layout semelhante ao PDF de pedido."""
+
     def __init__(self, config=None):
-        super().__init__()
-        self.cfg = config or {}
+        super().__init__(config=config)
 
-    def header(self):
-        header_cfg = self.cfg.get("header", {})
-        logo_cfg = header_cfg.get("logo", {})
-        try:
-            path = logo_cfg.get("path", "logo.jpeg")
-            if os.path.exists(path):
-                self.image(path, logo_cfg.get("x", 160), logo_cfg.get("y", 10), logo_cfg.get("w", 40))
-        except Exception:
-            pass
-        font = header_cfg.get("font", "Arial")
-        style = header_cfg.get("font_style", "B")
-        size = header_cfg.get("font_size", 16)
-        title = header_cfg.get("title", "QUOTATION")
-        line_height = header_cfg.get("line_height", 10)
-        self.set_font(font, style, size)
-        self.cell(0, line_height, title, ln=True, align='C')
-        self.ln(header_cfg.get("spacing", 5))
+    def add_title(self):
+        title = self.cfg.get("header", {}).get("title", "QUOTATION")
+        self.set_font("Helvetica", "B", 16)
+        self.cell(0, 8, title, ln=1)
+        self.ln(4)
 
-    def add_info(self, rfq_info, solicitante_info):
-        body_cfg = self.cfg.get("body", {})
-        font = body_cfg.get("font", "Arial")
-        size = body_cfg.get("font_size", 12)
-        self.set_font(font, "", size)
-        self.cell(0, 8, f"Date: {rfq_info['data']}", ln=True)
-        self.cell(0, 8, f"Reference: {rfq_info['referencia']}", ln=True)
-        if solicitante_info.get('nome'):
-            self.cell(0, 8, f"To: {solicitante_info['nome']}", ln=True)
-        if solicitante_info.get('email'):
-            self.cell(0, 8, f"Email: {solicitante_info['email']}", ln=True)
-        self.ln(5)
-
-    def add_table_header(self):
+    def table_header(self):
         table_cfg = self.cfg.get("table", {})
-        headers = table_cfg.get("headers", ["#", "Item No.", "Description", "Qty", "Unit Price", "Total", "HS Code", "Origin", "Lead Time", "Weight"])
+        headers = table_cfg.get(
+            "headers",
+            ["#", "Item No.", "Description", "Qty", "Unit Price", "Total", "HS Code", "Origin", "Lead Time", "Weight"],
+        )
         widths = table_cfg.get("widths", [8, 18, 55, 12, 18, 20, 18, 15, 12, 14])
         font = table_cfg.get("font", "Arial")
         style = table_cfg.get("font_style", "B")
         size = table_cfg.get("font_size", 9)
         self.set_font(font, style, size)
-        for i in range(len(headers)):
-            self.cell(widths[i], 7, headers[i], border=1, align='C')
+        for w, h in zip(widths, headers):
+            self.cell(w, 7, h, border=1, align="C")
         self.ln()
 
     def split_text(self, text, max_length):
         """Divide texto em linhas respeitando quebras de linha"""
         lines = []
-        for part in text.split('\n'):
+        for part in text.split("\n"):
             words = part.split()
             if not words:
-                lines.append('')
+                lines.append("")
                 continue
             current_line = words[0]
             for word in words[1:]:
@@ -1196,52 +1174,49 @@ class ClientQuotationPDF(FPDF):
                     lines.append(current_line)
                     current_line = word
             lines.append(current_line)
-        return lines if lines else ['']
+        return lines if lines else [""]
 
-    def add_table_row(self, idx, item):
+    def add_item(self, idx, item):
         table_cfg = self.cfg.get("table", {})
         widths = table_cfg.get("widths", [8, 18, 55, 12, 18, 20, 18, 15, 12, 14])
         row_font = table_cfg.get("font", "Arial")
         row_size = table_cfg.get("row_font_size", 8)
         self.set_font(row_font, "", row_size)
 
-        preco_venda = float(item['preco_venda'])
-        quantidade = int(item['quantidade_final'])
+        preco_venda = float(item["preco_venda"])
+        quantidade = int(item["quantidade_final"])
         total = preco_venda * quantidade
 
-        # Descrição sem limite fixo, respeitando quebras de linha
-        desc = item['descricao']
+        desc = item["descricao"]
         lines = self.split_text(desc, 30)
         line_count = len(lines)
+        row_height = line_count * 6
+
+        if self.get_y() + row_height > self.page_break_trigger:
+            self.add_page()
+            self.table_header()
 
         for i, line in enumerate(lines):
-            if line_count == 1:
-                border = 'LTRB'
-            elif i == 0:
-                border = 'LTR'
-            elif i == line_count - 1:
-                border = 'LRB'
-            else:
-                border = 'LR'
-
-            self.cell(widths[0], 6, str(idx) if i == 0 else '', border=border, align='C')
-            self.cell(widths[1], 6, (item.get('artigo_num') or '')[:10] if i == 0 else '', border=border)
-            self.cell(widths[2], 6, line, border=border)
-
+            border = "LR"
             if i == 0:
-                self.cell(widths[3], 6, str(quantidade), border=border, align='C')
-                self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=border, align='R')
-                self.cell(widths[5], 6, f"EUR {total:.2f}", border=border, align='R')
-                self.cell(widths[6], 6, (item.get('hs_code') or '')[:10], border=border, align='C')
-                self.cell(widths[7], 6, (item.get('pais_origem') or '')[:8], border=border, align='C')
-                self.cell(widths[8], 6, f"{item.get('prazo_entrega', 30)}d", border=border, align='C')
-                self.cell(widths[9], 6, f"{(item.get('peso') or 0):.1f}kg", border=border, align='C')
+                border = "LTR"
+            if i == line_count - 1:
+                border = border.replace("R", "RB")
+            self.cell(widths[0], 6, str(idx) if i == 0 else "", border=border, align="C")
+            self.cell(widths[1], 6, (item.get("artigo_num") or "")[:10] if i == 0 else "", border=border)
+            self.cell(widths[2], 6, line, border=border)
+            if i == 0:
+                self.cell(widths[3], 6, str(quantidade), border=border, align="C")
+                self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=border, align="R")
+                self.cell(widths[5], 6, f"EUR {total:.2f}", border=border, align="R")
+                self.cell(widths[6], 6, (item.get("hs_code") or "")[:10], border=border, align="C")
+                self.cell(widths[7], 6, (item.get("pais_origem") or "")[:8], border=border, align="C")
+                self.cell(widths[8], 6, f"{item.get('prazo_entrega', 30)}d", border=border, align="C")
+                self.cell(widths[9], 6, f"{(item.get('peso') or 0):.1f}kg", border=border, align="C")
             else:
-                for j in range(3, 10):
-                    self.cell(widths[j], 6, "", border=border)
+                for w in widths[3:]:
+                    self.cell(w, 6, "", border=border)
             self.ln()
-
-        # Sem linhas em branco adicionais: altura ajusta-se ao conteúdo
 
         return total
 
@@ -1255,34 +1230,47 @@ class ClientQuotationPDF(FPDF):
         extra_w = totals_cfg.get("extra_width", 39)
         self.ln(5)
         self.set_font(font, style, size)
-        self.cell(label_w, 8, "TOTAL:", border=1, align='R')
-        self.cell(total_w, 8, f"EUR {total_geral:.2f}", border=1, align='C')
-        self.cell(extra_w, 8, f"Total Weight: {peso_total:.1f}kg", border=1, align='C')
+        self.cell(label_w, 8, "TOTAL:", border=1, align="R")
+        self.cell(total_w, 8, f"EUR {total_geral:.2f}", border=1, align="C")
+        self.cell(extra_w, 8, f"Total Weight: {peso_total:.1f}kg", border=1, align="C")
         self.ln(10)
 
-        conditions = self.cfg.get("conditions", [
-            "Proposal validity: 30 days",
-            "Prices do not include VAT",
-            "Payment terms: To be agreed",
-        ])
+        conditions = self.cfg.get(
+            "conditions",
+            [
+                "Proposal validity: 30 days",
+                "Prices do not include VAT",
+                "Payment terms: To be agreed",
+            ],
+        )
         self.set_font(font, "", size - 1)
         for cond in conditions:
             self.cell(0, 5, cond, ln=True)
 
     def gerar(self, rfq_info, solicitante_info, itens_resposta):
+        addr_lines = []
+        if solicitante_info.get("nome"):
+            addr_lines.append(solicitante_info["nome"])
+        if solicitante_info.get("email"):
+            addr_lines.append(solicitante_info["email"])
+        self.recipient = {
+            "address": addr_lines,
+            "metadata": {
+                "Date": rfq_info["data"],
+                "Reference": rfq_info["referencia"],
+            },
+        }
         self.add_page()
-        self.add_info(rfq_info, solicitante_info)
-        self.add_table_header()
-
+        self.add_title()
+        self.table_header()
         total_geral = 0.0
         peso_total = 0.0
         for idx, item in enumerate(itens_resposta, 1):
-            total_item = self.add_table_row(idx, item)
+            total_item = self.add_item(idx, item)
             total_geral += total_item
-            peso_total += float(item.get('peso') or 0) * int(item['quantidade_final'])
-
+            peso_total += float(item.get("peso") or 0) * int(item["quantidade_final"])
         self.add_total(total_geral, peso_total)
-        return self.output(dest='S').encode('latin-1')
+        return self.output(dest="S").encode("latin-1")
 # ========================== FUNÇÕES DE GESTÃO DE PDFs ==========================
 
 def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
@@ -1419,7 +1407,16 @@ def gerar_pdf_cliente(rfq_id):
         config = load_pdf_config("cliente")
         empresa = obter_config_empresa()
         if empresa:
-            config["company"] = empresa
+            linhas = [empresa.get("nome") or "", empresa.get("morada") or ""]
+            if empresa.get("telefone"):
+                linhas.append(f"Tel: {empresa['telefone']}")
+            if empresa.get("website"):
+                linhas.append(empresa["website"])
+            config["company_lines"] = [l for l in linhas if l]
+            if empresa.get("iban"):
+                config["bank_details"] = [{"IBAN / Account No.": empresa["iban"]}]
+            if empresa.get("nif"):
+                config["legal_info"] = [f"NIF: {empresa['nif']}"]
         pdf_cliente = ClientQuotationPDF(config)
         pdf_bytes = pdf_cliente.gerar(
             rfq_info={
@@ -1946,11 +1943,11 @@ elif menu_option == "📩 Responder Cotações":
             """
             <style>
             [data-testid="stDialog"] {
-                width: 130vw;
-                height: 100vh;
-                max-width: none;
-                top: 0;
-                left: 0;
+                width: 1000px;
+                max-width: 1000px;
+                left: 50%;
+                top: 50%;
+                transform: translate(-50%, -50%);
             }
             </style>
             """,
