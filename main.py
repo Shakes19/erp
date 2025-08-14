@@ -961,7 +961,11 @@ class InquiryPDF(FPDF):
             self.set_font("Helvetica", "B", 10)
             self.cell(25, 5, f"{label}:")
             self.set_font("Helvetica", "", 10)
-            self.cell(45, 5, value, ln=1)
+            # ``FPDF.cell`` internally calls ``replace`` on the value passed in,
+            # which fails if a non-string (e.g. an int) is provided.  Converting
+            # to ``str`` ensures metadata like numeric references or dates are
+            # handled without errors when generating PDFs.
+            self.cell(45, 5, str(value), ln=1)
             start_y += 5
 
         # Bloco do destinatário abaixo dos metadados
@@ -969,7 +973,9 @@ class InquiryPDF(FPDF):
         recip = self.recipient.get("address", [])
         self.set_font("Helvetica", "", 10)
         for line in recip:
-            self.cell(80, 5, line, ln=1)
+            # Garantir que cada linha é string para evitar erros de ``replace``
+            # caso algum campo seja numérico.
+            self.cell(80, 5, str(line), ln=1)
 
         # Bloco da empresa (logo + contactos) no lado direito
         if os.path.exists(logo_path):
@@ -1942,12 +1948,18 @@ elif menu_option == "📩 Responder Cotações":
         st.markdown(
             """
             <style>
+            /* Occupy the full viewport with the dialog overlay */
             [data-testid="stDialog"] {
+                width: 100%;
+                height: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            /* Limit the inner dialog content to 1000px */
+            [data-testid="stDialog"] > div {
                 width: 1000px;
                 max-width: 1000px;
-                left: 50%;
-                top: 50%;
-                transform: translate(-50%, -50%);
             }
             </style>
             """,
