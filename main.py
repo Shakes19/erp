@@ -1,6 +1,6 @@
 import streamlit as st
 import sqlite3
-from datetime import datetime
+from datetime import datetime, date
 from fpdf import FPDF
 import base64
 import json
@@ -51,6 +51,26 @@ def save_pdf_config(tipo, config):
     data[tipo] = config
     with open('pdf_layout.json', 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _format_iso_date(value):
+    """Format ISO 8601 strings or datetime objects to ``dd/mm/YYYY``.
+
+    Returns an empty string if the value is falsy or cannot be parsed.
+    """
+
+    if not value:
+        return ""
+
+    if isinstance(value, (datetime, date)):
+        dt = value
+    else:
+        try:
+            dt = datetime.fromisoformat(str(value))
+        except (TypeError, ValueError):
+            return ""
+
+    return dt.strftime("%d/%m/%Y")
 
 
 st.set_page_config(
@@ -1434,7 +1454,7 @@ def gerar_pdf_cliente(rfq_id):
         pdf_cliente = ClientQuotationPDF(config)
         pdf_bytes = pdf_cliente.gerar(
             rfq_info={
-                'data': datetime.fromisoformat(rfq_data[2]).strftime('%d/%m/%Y') if rfq_data[2] else '',
+                'data': _format_iso_date(rfq_data[2]),
                 'referencia': rfq_data[14] or '',
             },
             solicitante_info={
