@@ -318,6 +318,14 @@ def criar_base_dados_completa():
         """
     )
 
+    # Garantir coluna "ativo" para bases existentes
+    c.execute("PRAGMA table_info(configuracao_email)")
+    email_cols = [row[1] for row in c.fetchall()]
+    if "ativo" not in email_cols:
+        c.execute(
+            "ALTER TABLE configuracao_email ADD COLUMN ativo BOOLEAN DEFAULT TRUE"
+        )
+
     # Tabela de configuração da empresa
     c.execute(
         """
