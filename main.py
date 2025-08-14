@@ -21,6 +21,7 @@ from db import (
     hash_password,
     verify_password,
     DB_PATH,
+    engine,
 )
 
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
@@ -324,14 +325,42 @@ def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
     try:
         utilizador_id = st.session_state.get("user_id")
         processo_id, numero_processo = criar_processo()
-        c.execute("""
-            INSERT INTO rfq (processo_id, fornecedor_id, data, referencia,
-                           nome_solicitante, email_solicitante, estado, utilizador_id)
-            VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
-        """, (processo_id, fornecedor_id, data.isoformat(), referencia,
-              nome_solicitante, email_solicitante, utilizador_id))
-
-        rfq_id = c.lastrowid
+        if engine.dialect.name == "sqlite":
+            c.execute(
+                """
+                INSERT INTO rfq (processo_id, fornecedor_id, data, referencia,
+                               nome_solicitante, email_solicitante, estado, utilizador_id)
+                VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
+                """,
+                (
+                    processo_id,
+                    fornecedor_id,
+                    data.isoformat(),
+                    referencia,
+                    nome_solicitante,
+                    email_solicitante,
+                    utilizador_id,
+                ),
+            )
+            rfq_id = c.lastrowid
+        else:
+            c.execute(
+                """
+                INSERT INTO rfq (processo_id, fornecedor_id, data, referencia,
+                               nome_solicitante, email_solicitante, estado, utilizador_id)
+                VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?) RETURNING id
+                """,
+                (
+                    processo_id,
+                    fornecedor_id,
+                    data.isoformat(),
+                    referencia,
+                    nome_solicitante,
+                    email_solicitante,
+                    utilizador_id,
+                ),
+            )
+            rfq_id = c.fetchone()[0]
 
         # Inserir artigos
         for ordem, art in enumerate(artigos, 1):
