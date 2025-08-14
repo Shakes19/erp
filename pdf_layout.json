@@ -32,8 +32,8 @@
     },
     "body": {"font": "Arial", "font_size": 12},
     "table": {
-      "headers": ["#", "Item No.", "Description", "Qty", "Unit Price", "Total", "HS Code", "Origin", "Lead Time", "Weight"],
-      "widths": [8, 18, 50, 12, 18, 20, 16, 12, 12, 14],
+      "headers": ["#", "Item No.", "Description", "Qty", "Unit Price", "Total", "Lead Time", "Weight"],
+      "widths": [8, 18, 78, 12, 18, 20, 12, 14],
       "font": "Arial",
       "font_style": "B",
       "font_size": 9,
