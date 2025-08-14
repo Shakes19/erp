@@ -13,11 +13,18 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-from db import criar_processo
-
+from db import (
+    criar_processo,
+    criar_base_dados_completa,
+    get_connection as obter_conexao,
+    backup_database,
+    hash_password,
+    verify_password,
+    DB_PATH,
+    engine,
+)
 
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
-DB_PATH = "cotacoes.db"
 
 # Configurações de Email (servidor e porta padrão)
 EMAIL_CONFIG = {
@@ -53,313 +60,6 @@ st.set_page_config(
 )
 
 # ========================== GESTÃO DA BASE DE DADOS ==========================
-
-def criar_base_dados_completa():
-    """Cria e configura a base de dados SQLite com todas as tabelas necessárias"""
-    
-    # Garantir que o diretório existe
-    db_dir = os.path.dirname(DB_PATH)
-    if db_dir and not os.path.exists(db_dir):
-        os.makedirs(db_dir)
-    
-    conn = None
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-
-        # Ativar foreign keys
-        c.execute("PRAGMA foreign_keys = ON")
-
-        # Tabela de fornecedores
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS fornecedor (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT NOT NULL UNIQUE,
-            email TEXT,
-            telefone TEXT,
-            morada TEXT,
-            nif TEXT,
-            data_criacao TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
-
-        # Tabela de marcas por fornecedor
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS fornecedor_marca (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fornecedor_id INTEGER NOT NULL,
-            marca TEXT NOT NULL,
-            FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
-            UNIQUE(fornecedor_id, marca)
-        )
-        """)
-
-        # Tabela de processos
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS processo (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            numero TEXT NOT NULL UNIQUE,
-            descricao TEXT,
-            data_abertura TEXT DEFAULT CURRENT_TIMESTAMP,
-            estado TEXT DEFAULT 'ativo'
-        )
-        """)
-
-        # Tabela RFQ (Request for Quotation)
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS rfq (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            processo_id INTEGER,
-            fornecedor_id INTEGER NOT NULL,
-            data TEXT NOT NULL,
-            estado TEXT DEFAULT 'pendente',
-            referencia TEXT NOT NULL UNIQUE,
-            observacoes TEXT,
-            nome_solicitante TEXT,
-            email_solicitante TEXT,
-            telefone_solicitante TEXT,
-            empresa_solicitante TEXT,
-            data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
-            data_atualizacao TEXT DEFAULT CURRENT_TIMESTAMP,
-            utilizador_id INTEGER,
-            FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
-            FOREIGN KEY (utilizador_id) REFERENCES utilizador(id) ON DELETE SET NULL,
-            FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE SET NULL
-        )
-        """)
-
-        # Garantir que colunas adicionais existem na tabela rfq
-        c.execute("PRAGMA table_info(rfq)")
-        rfq_columns = [row[1] for row in c.fetchall()]
-        if "utilizador_id" not in rfq_columns:
-            c.execute("ALTER TABLE rfq ADD COLUMN utilizador_id INTEGER")
-        if "processo_id" not in rfq_columns:
-            c.execute("ALTER TABLE rfq ADD COLUMN processo_id INTEGER")
-
-        # Tabela de artigos
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS artigo (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            rfq_id INTEGER NOT NULL,
-            artigo_num TEXT,
-            descricao TEXT NOT NULL,
-            quantidade INTEGER NOT NULL DEFAULT 1,
-            unidade TEXT NOT NULL DEFAULT 'Peças',
-            especificacoes TEXT,
-            marca TEXT,
-            ordem INTEGER DEFAULT 1,
-            FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
-        )
-        """)
-
-        # Tabela de respostas dos fornecedores
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS resposta_fornecedor (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fornecedor_id INTEGER NOT NULL,
-            rfq_id INTEGER NOT NULL,
-            artigo_id INTEGER NOT NULL,
-            descricao TEXT,
-            custo REAL NOT NULL DEFAULT 0.0,
-            prazo_entrega INTEGER NOT NULL DEFAULT 1,
-            quantidade_final INTEGER,
-            peso REAL DEFAULT 0.0,
-            hs_code TEXT,
-            pais_origem TEXT,
-            moeda TEXT DEFAULT 'EUR',
-            margem_utilizada REAL DEFAULT 10.0,
-            preco_venda REAL,
-            observacoes TEXT,
-            data_resposta TEXT DEFAULT CURRENT_TIMESTAMP,
-            validade_dias INTEGER DEFAULT 30,
-            FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
-            FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE,
-            FOREIGN KEY (artigo_id) REFERENCES artigo(id) ON DELETE CASCADE,
-            UNIQUE (fornecedor_id, rfq_id, artigo_id)
-        )
-        """)
-
-        # Tabela para armazenamento de PDFs
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS pdf_storage (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            rfq_id TEXT NOT NULL,
-            tipo_pdf TEXT NOT NULL,
-            pdf_data BLOB NOT NULL,
-            data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
-            tamanho_bytes INTEGER,
-            nome_ficheiro TEXT,
-            UNIQUE(rfq_id, tipo_pdf)
-        )
-        """)
-
-        # Tabela de configuração de margens por marca
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS configuracao_margens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fornecedor_id INTEGER,
-            marca TEXT,
-            margem_percentual REAL DEFAULT 10.0,
-            ativo BOOLEAN DEFAULT TRUE,
-            data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE
-        )
-        """)
-
-        # Tabela de configurações de email
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS configuracao_email (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            smtp_server TEXT,
-            smtp_port INTEGER,
-            email_user TEXT,
-            email_password TEXT,
-            ativo BOOLEAN DEFAULT TRUE
-        )
-        """)
-
-        # Tabela de configuração da empresa
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS configuracao_empresa (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT,
-            morada TEXT,
-            nif TEXT,
-            iban TEXT,
-            telefone TEXT,
-            email TEXT,
-            website TEXT
-        )
-        """)
-
-        c.execute("PRAGMA table_info(configuracao_empresa)")
-        cols = [row[1] for row in c.fetchall()]
-        for col in ["telefone", "email", "website"]:
-            if col not in cols:
-                c.execute(f"ALTER TABLE configuracao_empresa ADD COLUMN {col} TEXT")
-
-        # Tabela de utilizadores do sistema
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS utilizador (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            nome TEXT,
-            email TEXT,
-            role TEXT NOT NULL,
-            email_password TEXT
-        )
-        """)
-
-        # Garantir que coluna email_password existe
-        c.execute("PRAGMA table_info(utilizador)")
-        if "email_password" not in [row[1] for row in c.fetchall()]:
-            c.execute("ALTER TABLE utilizador ADD COLUMN email_password TEXT")
-
-        # Inserir utilizador administrador padrão se a tabela estiver vazia
-        c.execute("SELECT COUNT(*) FROM utilizador")
-        if c.fetchone()[0] == 0:
-            c.execute(
-                """
-                INSERT INTO utilizador (username, password, nome, email, role, email_password)
-                VALUES ('admin', 'admin', 'Administrador', 'admin@example.com', 'admin', '')
-                """
-            )
-
-        # Criar índices para melhor performance
-        indices = [
-            "CREATE INDEX IF NOT EXISTS idx_rfq_fornecedor ON rfq(fornecedor_id)",
-            "CREATE INDEX IF NOT EXISTS idx_rfq_data ON rfq(data)",
-            "CREATE INDEX IF NOT EXISTS idx_rfq_estado ON rfq(estado)",
-            "CREATE INDEX IF NOT EXISTS idx_rfq_referencia ON rfq(referencia)",
-            "CREATE INDEX IF NOT EXISTS idx_artigo_rfq ON artigo(rfq_id)",
-            "CREATE INDEX IF NOT EXISTS idx_resposta_fornecedor ON resposta_fornecedor(fornecedor_id, rfq_id)",
-            "CREATE INDEX IF NOT EXISTS idx_resposta_artigo ON resposta_fornecedor(artigo_id)",
-            "CREATE INDEX IF NOT EXISTS idx_fornecedor_nome ON fornecedor(nome)",
-            "CREATE INDEX IF NOT EXISTS idx_fornecedor_marca ON fornecedor_marca(fornecedor_id, marca)",
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_utilizador_username ON utilizador(username)"
-        ]
-        
-        for indice in indices:
-            c.execute(indice)
-
-        # Inserir dados de exemplo se as tabelas estão vazias
-        inserir_dados_exemplo(c)
-
-        # Inserir margem padrão se não existir
-        c.execute("SELECT COUNT(*) FROM configuracao_margens WHERE fornecedor_id IS NULL AND marca IS NULL")
-        if c.fetchone()[0] == 0:
-            c.execute("""
-                INSERT INTO configuracao_margens (fornecedor_id, marca, margem_percentual)
-                VALUES (NULL, NULL, 10.0)
-            """)
-
-        conn.commit()
-        print("Base de dados criada/atualizada com sucesso!")
-        return True
-        
-    except sqlite3.Error as e:
-        print(f"Erro ao criar base de dados: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    finally:
-        if conn:
-            conn.close()
-
-def inserir_dados_exemplo(cursor):
-    """Insere dados de exemplo se as tabelas estão vazias"""
-    try:
-        # Verificar se já existem fornecedores
-        cursor.execute("SELECT COUNT(*) FROM fornecedor")
-        count_fornecedores = cursor.fetchone()[0]
-        
-        if count_fornecedores == 0:
-            # Inserir fornecedores de exemplo
-            fornecedores_exemplo = [
-                ("Falex", "fornecedor@falex.com", "+351 123 456 789", "Rua Industrial, 123", "123456789"),
-                ("Sloap", "vendas@sloap.pt", "+351 987 654 321", "Av. Tecnológica, 456", "987654321"),
-                ("Nexautomation", "info@nexautomation.com", "+351 555 123 456", "Zona Industrial, Lote 789", "555666777")
-            ]
-            
-            cursor.executemany("""
-                INSERT INTO fornecedor (nome, email, telefone, morada, nif) 
-                VALUES (?, ?, ?, ?, ?)
-            """, fornecedores_exemplo)
-            
-            # Obter IDs dos fornecedores inseridos
-            cursor.execute("SELECT id, nome FROM fornecedor")
-            fornecedores = cursor.fetchall()
-            
-            # Inserir marcas de exemplo
-            marcas_por_fornecedor = {
-                "Falex": ["Schneider Electric", "Phoenix Contact", "Weidmuller"],
-                "Sloap": ["ABB", "Siemens"],
-                "Nexautomation": ["Omron", "Festo", "SMC", "Sick"]
-            }
-            
-            for forn_id, forn_nome in fornecedores:
-                if forn_nome in marcas_por_fornecedor:
-                    for marca in marcas_por_fornecedor[forn_nome]:
-                        cursor.execute("""
-                            INSERT INTO fornecedor_marca (fornecedor_id, marca)
-                            VALUES (?, ?)
-                        """, (forn_id, marca))
-                        
-                        # Inserir margem padrão para cada marca
-                        cursor.execute("""
-                            INSERT INTO configuracao_margens (fornecedor_id, marca, margem_percentual)
-                            VALUES (?, ?, ?)
-                        """, (forn_id, marca, 15.0))  # 15% de margem padrão para marcas
-            
-            print("Fornecedores e marcas de exemplo inseridos.")
-    
-    except sqlite3.Error as e:
-        print(f"Erro ao inserir dados de exemplo: {e}")
-
-def obter_conexao():
-    """Retorna uma conexão à base de dados"""
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
 
 
 def obter_config_empresa():
@@ -434,7 +134,7 @@ def atualizar_fornecedor(fornecedor_id, nome, email="", telefone="", morada="", 
         )
         conn.commit()
         return True
-    except sqlite3.IntegrityError:
+    except Exception:
         return False
     finally:
         conn.close()
@@ -474,7 +174,7 @@ def adicionar_marca_fornecedor(fornecedor_id, marca):
         """, (fornecedor_id, marca))
         conn.commit()
         return True
-    except sqlite3.IntegrityError:
+    except Exception:
         return False
     finally:
         conn.close()
@@ -540,7 +240,7 @@ def obter_utilizador_por_username(username):
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
-        "SELECT id, username, password, nome, email, role, email_password FROM utilizador WHERE username = ?",
+        "SELECT id, username, password, nome, email, role FROM utilizador WHERE username = ?",
         (username,),
     )
     user = c.fetchone()
@@ -553,7 +253,7 @@ def obter_utilizador_por_id(user_id):
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
-        "SELECT id, username, password, nome, email, role, email_password FROM utilizador WHERE id = ?",
+        "SELECT id, username, password, nome, email, role FROM utilizador WHERE id = ?",
         (user_id,),
     )
     user = c.fetchone()
@@ -561,28 +261,28 @@ def obter_utilizador_por_id(user_id):
     return user
 
 
-def inserir_utilizador(username, password, nome="", email="", role="user", email_password=""):
+def inserir_utilizador(username, password, nome="", email="", role="user"):
     """Inserir novo utilizador"""
     conn = obter_conexao()
     c = conn.cursor()
     try:
         c.execute(
             """
-            INSERT INTO utilizador (username, password, nome, email, role, email_password)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO utilizador (username, password, nome, email, role)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (username, password, nome, email, role, email_password),
+            (username, hash_password(password), nome, email, role),
         )
         conn.commit()
         return c.lastrowid
-    except sqlite3.IntegrityError:
+    except Exception:
         return None
     finally:
         conn.close()
 
 
 def atualizar_utilizador(
-    user_id, username, nome, email, role, password=None, email_password=None
+    user_id, username, nome, email, role, password=None
 ):
     """Atualizar dados de um utilizador"""
     conn = obter_conexao()
@@ -592,10 +292,7 @@ def atualizar_utilizador(
         params = [username, nome, email, role]
         if password:
             fields.append("password = ?")
-            params.append(password)
-        if email_password:
-            fields.append("email_password = ?")
-            params.append(email_password)
+            params.append(hash_password(password))
         params.append(user_id)
         c.execute(
             f"UPDATE utilizador SET {', '.join(fields)} WHERE id = ?",
@@ -628,14 +325,42 @@ def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
     try:
         utilizador_id = st.session_state.get("user_id")
         processo_id, numero_processo = criar_processo()
-        c.execute("""
-            INSERT INTO rfq (processo_id, fornecedor_id, data, referencia,
-                           nome_solicitante, email_solicitante, estado, utilizador_id)
-            VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
-        """, (processo_id, fornecedor_id, data.isoformat(), referencia,
-              nome_solicitante, email_solicitante, utilizador_id))
-
-        rfq_id = c.lastrowid
+        if engine.dialect.name == "sqlite":
+            c.execute(
+                """
+                INSERT INTO rfq (processo_id, fornecedor_id, data, referencia,
+                               nome_solicitante, email_solicitante, estado, utilizador_id)
+                VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
+                """,
+                (
+                    processo_id,
+                    fornecedor_id,
+                    data.isoformat(),
+                    referencia,
+                    nome_solicitante,
+                    email_solicitante,
+                    utilizador_id,
+                ),
+            )
+            rfq_id = c.lastrowid
+        else:
+            c.execute(
+                """
+                INSERT INTO rfq (processo_id, fornecedor_id, data, referencia,
+                               nome_solicitante, email_solicitante, estado, utilizador_id)
+                VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?) RETURNING id
+                """,
+                (
+                    processo_id,
+                    fornecedor_id,
+                    data.isoformat(),
+                    referencia,
+                    nome_solicitante,
+                    email_solicitante,
+                    utilizador_id,
+                ),
+            )
+            rfq_id = c.fetchone()[0]
 
         # Inserir artigos
         for ordem, art in enumerate(artigos, 1):
@@ -658,8 +383,11 @@ def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
         return rfq_id, numero_processo
     except Exception as e:
         conn.rollback()
-        st.error(f"Erro ao criar RFQ: {str(e)}")
-        return None
+        if "UNIQUE" in str(e).upper():
+            st.error("Erro ao criar RFQ: referência já existente.")
+        else:
+            st.error(f"Erro ao criar RFQ: {str(e)}")
+        return None, None
     finally:
         conn.close()
 
@@ -1008,11 +736,13 @@ def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
 
         # Credenciais do utilizador atual
         current_user = obter_utilizador_por_id(st.session_state.get("user_id"))
-        if current_user and current_user[4] and current_user[6]:
+        email_password = os.environ.get("EMAIL_PASSWORD")
+        if current_user and current_user[4] and email_password:
             email_user = current_user[4]
-            email_password = current_user[6]
         else:
-            st.error("Configure o seu email e palavra-passe no perfil antes de enviar emails.")
+            st.error(
+                "Configure o seu email no perfil e defina a palavra-passe na variável de ambiente EMAIL_PASSWORD."
+            )
             return False
 
         print(f"🔧 Configurações SMTP: {smtp_server}:{smtp_port}")
@@ -1106,11 +836,13 @@ def enviar_email_pedido_fornecedor(rfq_id):
             smtp_port = EMAIL_CONFIG['smtp_port']
 
         current_user = obter_utilizador_por_id(st.session_state.get("user_id"))
-        if current_user and current_user[4] and current_user[6]:
+        email_password = os.environ.get("EMAIL_PASSWORD")
+        if current_user and current_user[4] and email_password:
             email_user = current_user[4]
-            email_password = current_user[6]
         else:
-            st.error("Configure o seu email e palavra-passe no perfil antes de enviar emails.")
+            st.error(
+                "Configure o seu email no perfil e defina a palavra-passe na variável de ambiente EMAIL_PASSWORD."
+            )
             return False
 
         # Construir email
@@ -1151,10 +883,17 @@ def guardar_pdf_upload(rfq_id, tipo_pdf, nome_ficheiro, bytes_):
     try:
         conn = obter_conexao()
         c = conn.cursor()
-        c.execute("""
-            INSERT OR REPLACE INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes, nome_ficheiro)
+        c.execute(
+            """
+            INSERT INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes, nome_ficheiro)
             VALUES (?, ?, ?, ?, ?)
-        """, (str(rfq_id), tipo_pdf, bytes_, len(bytes_), nome_ficheiro))
+            ON CONFLICT (rfq_id, tipo_pdf) DO UPDATE SET
+                pdf_data = excluded.pdf_data,
+                tamanho_bytes = excluded.tamanho_bytes,
+                nome_ficheiro = excluded.nome_ficheiro
+            """,
+            (str(rfq_id), tipo_pdf, bytes_, len(bytes_), nome_ficheiro),
+        )
         conn.commit()
         conn.close()
         return True
@@ -1587,8 +1326,11 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
 
         c.execute(
             """
-            INSERT OR REPLACE INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes)
+            INSERT INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes)
             VALUES (?, ?, ?, ?)
+            ON CONFLICT (rfq_id, tipo_pdf) DO UPDATE SET
+                pdf_data = excluded.pdf_data,
+                tamanho_bytes = excluded.tamanho_bytes
         """,
             (str(rfq_id), "pedido", pdf_bytes, len(pdf_bytes)),
         )
@@ -1663,10 +1405,15 @@ def gerar_pdf_cliente(rfq_id):
         )
 
         # 4. Armazenar PDF
-        c.execute("""INSERT OR REPLACE INTO pdf_storage 
+        c.execute(
+            """INSERT INTO pdf_storage
                   (rfq_id, tipo_pdf, pdf_data, tamanho_bytes)
-                  VALUES (?, ?, ?, ?)""",
-                  (str(rfq_id), "cliente", pdf_bytes, len(pdf_bytes)))
+                  VALUES (?, ?, ?, ?)
+                  ON CONFLICT (rfq_id, tipo_pdf) DO UPDATE SET
+                      pdf_data = excluded.pdf_data,
+                      tamanho_bytes = excluded.tamanho_bytes""",
+            (str(rfq_id), "cliente", pdf_bytes, len(pdf_bytes)),
+        )
         
         conn.commit()
         return True
@@ -1767,20 +1514,6 @@ def obter_estatisticas_db():
         print(f"Erro ao obter estatísticas: {e}")
         return {}
 
-def backup_database(backup_path=None):
-    """Criar backup da base de dados"""
-    try:
-        if not backup_path:
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_path = f"backup_cotacoes_{timestamp}.db"
-        
-        shutil.copy2(DB_PATH, backup_path)
-        return backup_path
-    except Exception as e:
-        print(f"Erro ao criar backup: {e}")
-        return None
-
 # ========================== INICIALIZAÇÃO DO SISTEMA ==========================
 
 def inicializar_sistema():
@@ -1818,7 +1551,6 @@ if 'logged_in' not in st.session_state:
     st.session_state.user_id = None
     st.session_state.username = None
     st.session_state.user_email = None
-    st.session_state.user_email_pass = None
 
 
 def login_screen():
@@ -1836,18 +1568,18 @@ def login_screen():
         unsafe_allow_html=True,
     )
     with st.form("login_form"):
-        username = st.text_input("Utilizador")
+        # ``strip`` evita falhas de autenticação devido a espaços acidentais
+        username = st.text_input("Utilizador").strip()
         password = st.text_input("Palavra-passe", type="password")
         submitted = st.form_submit_button("Entrar")
     if submitted:
         user = obter_utilizador_por_username(username)
-        if user and user[2] == password:
+        if user and verify_password(password, user[2]):
             st.session_state.logged_in = True
             st.session_state.role = user[5]
             st.session_state.user_id = user[0]
             st.session_state.username = user[1]
             st.session_state.user_email = user[4]
-            st.session_state.user_email_pass = user[6]
             st.rerun()
         else:
             st.error("Credenciais inválidas")
@@ -1954,7 +1686,6 @@ with st.sidebar:
         st.session_state.user_id = None
         st.session_state.username = None
         st.session_state.user_email = None
-        st.session_state.user_email_pass = None
         st.rerun()
 
     st.markdown("---")
@@ -2741,48 +2472,32 @@ elif menu_option == "👤 Perfil":
     st.title("👤 Meu Perfil")
     user = obter_utilizador_por_id(st.session_state.get("user_id"))
     if user:
-        tab_email, tab_palavra_passe = st.tabs(["Email", "Palavra-passe do Sistema"])
+        st.subheader("Email")
+        st.text_input("Email", value=user[4], disabled=True)
+        st.info(
+            "A palavra-passe do email é definida na variável de ambiente EMAIL_PASSWORD."
+        )
 
-        with tab_email:
-            with st.form("email_form"):
-                st.text_input("Email", value=user[4], disabled=True)
-                email_pw = st.text_input("Palavra-passe do Email", type="password")
-                sub_email = st.form_submit_button("Atualizar Palavra-passe do Email")
-            if sub_email:
+        st.subheader("Alterar Palavra-passe do Sistema")
+        with st.form("palavra_passe_form"):
+            nova_pw = st.text_input("Nova Palavra-passe", type="password")
+            confirmar_pw = st.text_input("Confirmar Palavra-passe", type="password")
+            sub_pw = st.form_submit_button("Alterar Palavra-passe")
+        if sub_pw:
+            if not nova_pw or nova_pw != confirmar_pw:
+                st.error("Palavras-passe não coincidem")
+            else:
                 if atualizar_utilizador(
                     user[0],
                     user[1],
                     user[3],
                     user[4],
                     user[5],
-                    None,
-                    email_pw or None,
+                    nova_pw,
                 ):
-                    st.success("Palavra-passe do email atualizada com sucesso!")
+                    st.success("Palavra-passe atualizada com sucesso!")
                 else:
-                    st.error("Erro ao atualizar palavra-passe do email")
-
-        with tab_palavra_passe:
-            with st.form("palavra_passe_form"):
-                nova_pw = st.text_input("Nova Palavra-passe", type="password")
-                confirmar_pw = st.text_input("Confirmar Palavra-passe", type="password")
-                sub_pw = st.form_submit_button("Alterar Palavra-passe")
-            if sub_pw:
-                if not nova_pw or nova_pw != confirmar_pw:
-                    st.error("Palavras-passe não coincidem")
-                else:
-                    if atualizar_utilizador(
-                        user[0],
-                        user[1],
-                        user[3],
-                        user[4],
-                        user[5],
-                        nova_pw,
-                        None,
-                    ):
-                        st.success("Palavra-passe atualizada com sucesso!")
-                    else:
-                        st.error("Erro ao atualizar palavra-passe")
+                    st.error("Erro ao atualizar palavra-passe")
     else:
         st.error("Utilizador não encontrado")
 
@@ -2878,14 +2593,13 @@ elif menu_option == "⚙️ Configurações":
                     username = st.text_input("Username *")
                     nome = st.text_input("Nome")
                     email_user = st.text_input("Email")
-                    email_pass = st.text_input("Palavra-passe do Email", type="password")
                     role = st.selectbox("Role", ["admin", "gestor", "user"])
                     password = st.text_input("Palavra-passe *", type="password")
 
                     if st.form_submit_button("➕ Adicionar"):
                         if username and password:
                             if inserir_utilizador(
-                                username, password, nome, email_user, role, email_pass
+                                username, password, nome, email_user, role
                             ):
                                 st.success(f"Utilizador {username} adicionado!")
                                 st.rerun()
@@ -2904,9 +2618,6 @@ elif menu_option == "⚙️ Configurações":
                             username_edit = st.text_input("Username", user[1])
                             nome_edit = st.text_input("Nome", user[2] or "")
                             email_edit = st.text_input("Email", user[3] or "")
-                            email_pass_edit = st.text_input(
-                                "Palavra-passe do Email", type="password"
-                            )
                             role_edit = st.selectbox(
                                 "Role",
                                 ["admin", "gestor", "user"],
@@ -2924,7 +2635,6 @@ elif menu_option == "⚙️ Configurações":
                                         email_edit,
                                         role_edit,
                                         password_edit or None,
-                                        email_pass_edit or None,
                                     ):
                                         st.success("Utilizador atualizado")
                                         st.rerun()
