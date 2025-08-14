@@ -1172,9 +1172,22 @@ class ClientQuotationPDF(InquiryPDF):
         table_cfg = self.cfg.get("table", {})
         headers = table_cfg.get(
             "headers",
-            ["#", "Item No.", "Description", "Qty", "Unit Price", "Total", "Lead Time", "Weight"],
+            [
+                "#",
+                "Item No.",
+                "Description",
+                "Qty",
+                "Unit Price",
+                "Total",
+                "HS Code",
+                "Origin",
+                "Lead Time",
+                "Weight",
+            ],
         )
-        widths = table_cfg.get("widths", [8, 18, 88, 12, 18, 20, 12, 14])
+        widths = table_cfg.get(
+            "widths", [8, 18, 50, 12, 18, 20, 16, 12, 12, 14]
+        )
         font = table_cfg.get("font", "Arial")
         style = table_cfg.get("font_style", "B")
         size = table_cfg.get("font_size", 9)
@@ -1204,7 +1217,9 @@ class ClientQuotationPDF(InquiryPDF):
 
     def add_item(self, idx, item):
         table_cfg = self.cfg.get("table", {})
-        widths = table_cfg.get("widths", [8, 18, 88, 12, 18, 20, 12, 14])
+        widths = table_cfg.get(
+            "widths", [8, 18, 50, 12, 18, 20, 16, 12, 12, 14]
+        )
         row_font = table_cfg.get("font", "Arial")
         row_size = table_cfg.get("row_font_size", 8)
         self.set_font(row_font, "", row_size)
@@ -1213,13 +1228,9 @@ class ClientQuotationPDF(InquiryPDF):
         quantidade = int(item["quantidade_final"])
         total = preco_venda * quantidade
 
-        desc_parts = [item["descricao"]]
-        if item.get("pais_origem"):
-            desc_parts.append(f"Origin: {item['pais_origem']}")
-        if item.get("hs_code"):
-            desc_parts.append(f"HS Code: {item['hs_code']}")
-        desc = "\n".join(desc_parts)
-        lines = self.split_text(desc, 45)
+        desc = item.get("descricao") or ""
+        max_desc_len = int(widths[2] * 0.9)
+        lines = self.split_text(desc, max_desc_len)
         line_count = len(lines)
         row_height = line_count * 6
 
@@ -1240,8 +1251,22 @@ class ClientQuotationPDF(InquiryPDF):
                 self.cell(widths[3], 6, str(quantidade), border=border, align="C")
                 self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=border, align="R")
                 self.cell(widths[5], 6, f"EUR {total:.2f}", border=border, align="R")
-                self.cell(widths[6], 6, f"{item.get('prazo_entrega', 30)}d", border=border, align="C")
-                self.cell(widths[7], 6, f"{(item.get('peso') or 0):.1f}kg", border=border, align="C")
+                self.cell(widths[6], 6, item.get("hs_code", ""), border=border, align="C")
+                self.cell(widths[7], 6, item.get("pais_origem", ""), border=border, align="C")
+                self.cell(
+                    widths[8],
+                    6,
+                    f"{item.get('prazo_entrega', 30)}d",
+                    border=border,
+                    align="C",
+                )
+                self.cell(
+                    widths[9],
+                    6,
+                    f"{(item.get('peso') or 0):.1f}kg",
+                    border=border,
+                    align="C",
+                )
             else:
                 for w in widths[3:]:
                     self.cell(w, 6, "", border=border)
