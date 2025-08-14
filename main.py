@@ -1179,14 +1179,12 @@ class ClientQuotationPDF(InquiryPDF):
                 "Qty",
                 "Unit Price",
                 "Total",
-                "HS Code",
-                "Origin",
                 "Lead Time",
                 "Weight",
             ],
         )
         widths = table_cfg.get(
-            "widths", [8, 18, 50, 12, 18, 20, 16, 12, 12, 14]
+            "widths", [8, 18, 78, 12, 18, 20, 12, 14]
         )
         font = table_cfg.get("font", "Arial")
         style = table_cfg.get("font_style", "B")
@@ -1218,7 +1216,7 @@ class ClientQuotationPDF(InquiryPDF):
     def add_item(self, idx, item):
         table_cfg = self.cfg.get("table", {})
         widths = table_cfg.get(
-            "widths", [8, 18, 50, 12, 18, 20, 16, 12, 12, 14]
+            "widths", [8, 18, 78, 12, 18, 20, 12, 14]
         )
         row_font = table_cfg.get("font", "Arial")
         row_size = table_cfg.get("row_font_size", 8)
@@ -1231,6 +1229,12 @@ class ClientQuotationPDF(InquiryPDF):
         desc = item.get("descricao") or ""
         max_desc_len = int(widths[2] * 0.9)
         lines = self.split_text(desc, max_desc_len)
+        hs_code = item.get("hs_code")
+        origem = item.get("pais_origem")
+        if hs_code:
+            lines.append(f"HS Code: {hs_code}")
+        if origem:
+            lines.append(f"Origin: {origem}")
         line_count = len(lines)
         row_height = line_count * 6
 
@@ -1251,17 +1255,15 @@ class ClientQuotationPDF(InquiryPDF):
                 self.cell(widths[3], 6, str(quantidade), border=border, align="C")
                 self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=border, align="R")
                 self.cell(widths[5], 6, f"EUR {total:.2f}", border=border, align="R")
-                self.cell(widths[6], 6, item.get("hs_code", ""), border=border, align="C")
-                self.cell(widths[7], 6, item.get("pais_origem", ""), border=border, align="C")
                 self.cell(
-                    widths[8],
+                    widths[6],
                     6,
                     f"{item.get('prazo_entrega', 30)}d",
                     border=border,
                     align="C",
                 )
                 self.cell(
-                    widths[9],
+                    widths[7],
                     6,
                     f"{(item.get('peso') or 0):.1f}kg",
                     border=border,
