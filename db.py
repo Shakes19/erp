@@ -210,6 +210,17 @@ def criar_base_dados_completa():
         """
     )
 
+    # Tabela para custos adicionais por processo (envio/embalagem)
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS resposta_custos (
+            rfq_id INTEGER PRIMARY KEY,
+            custo_envio REAL DEFAULT 0.0,
+            FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
+        )
+        """
+    )
+
     # Tabela para armazenamento de PDFs
     c.execute(
         """
@@ -285,7 +296,7 @@ def criar_base_dados_completa():
         if col not in cols:
             c.execute(f"ALTER TABLE configuracao_empresa ADD COLUMN {col} TEXT")
 
-    # Tabela de utilizadores do sistema (sem email_password)
+    # Tabela de utilizadores do sistema (inclui palavra-passe de email)
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS utilizador (
@@ -294,10 +305,17 @@ def criar_base_dados_completa():
             password TEXT NOT NULL,
             nome TEXT,
             email TEXT,
-            role TEXT NOT NULL
+            role TEXT NOT NULL,
+            email_password TEXT
         )
         """
     )
+
+    # Garantir que a coluna email_password exista em bases de dados antigas
+    c.execute("PRAGMA table_info(utilizador)")
+    user_columns = [row[1] for row in c.fetchall()]
+    if "email_password" not in user_columns:
+        c.execute("ALTER TABLE utilizador ADD COLUMN email_password TEXT")
 
     # Inserir utilizador administrador padrão se a tabela estiver vazia
     c.execute("SELECT COUNT(*) FROM utilizador")
