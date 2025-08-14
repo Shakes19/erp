@@ -1152,9 +1152,9 @@ class ClientQuotationPDF(InquiryPDF):
         table_cfg = self.cfg.get("table", {})
         headers = table_cfg.get(
             "headers",
-            ["#", "Item No.", "Description", "Qty", "Unit Price", "Total", "HS Code", "Origin", "Lead Time", "Weight"],
+            ["#", "Item No.", "Description", "Qty", "Unit Price", "Total", "Lead Time", "Weight"],
         )
-        widths = table_cfg.get("widths", [8, 18, 55, 12, 18, 20, 18, 15, 12, 14])
+        widths = table_cfg.get("widths", [8, 18, 88, 12, 18, 20, 12, 14])
         font = table_cfg.get("font", "Arial")
         style = table_cfg.get("font_style", "B")
         size = table_cfg.get("font_size", 9)
@@ -1184,7 +1184,7 @@ class ClientQuotationPDF(InquiryPDF):
 
     def add_item(self, idx, item):
         table_cfg = self.cfg.get("table", {})
-        widths = table_cfg.get("widths", [8, 18, 55, 12, 18, 20, 18, 15, 12, 14])
+        widths = table_cfg.get("widths", [8, 18, 88, 12, 18, 20, 12, 14])
         row_font = table_cfg.get("font", "Arial")
         row_size = table_cfg.get("row_font_size", 8)
         self.set_font(row_font, "", row_size)
@@ -1193,8 +1193,13 @@ class ClientQuotationPDF(InquiryPDF):
         quantidade = int(item["quantidade_final"])
         total = preco_venda * quantidade
 
-        desc = item["descricao"]
-        lines = self.split_text(desc, 30)
+        desc_parts = [item["descricao"]]
+        if item.get("pais_origem"):
+            desc_parts.append(f"Origin: {item['pais_origem']}")
+        if item.get("hs_code"):
+            desc_parts.append(f"HS Code: {item['hs_code']}")
+        desc = "\n".join(desc_parts)
+        lines = self.split_text(desc, 45)
         line_count = len(lines)
         row_height = line_count * 6
 
@@ -1215,10 +1220,8 @@ class ClientQuotationPDF(InquiryPDF):
                 self.cell(widths[3], 6, str(quantidade), border=border, align="C")
                 self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=border, align="R")
                 self.cell(widths[5], 6, f"EUR {total:.2f}", border=border, align="R")
-                self.cell(widths[6], 6, (item.get("hs_code") or "")[:10], border=border, align="C")
-                self.cell(widths[7], 6, (item.get("pais_origem") or "")[:8], border=border, align="C")
-                self.cell(widths[8], 6, f"{item.get('prazo_entrega', 30)}d", border=border, align="C")
-                self.cell(widths[9], 6, f"{(item.get('peso') or 0):.1f}kg", border=border, align="C")
+                self.cell(widths[6], 6, f"{item.get('prazo_entrega', 30)}d", border=border, align="C")
+                self.cell(widths[7], 6, f"{(item.get('peso') or 0):.1f}kg", border=border, align="C")
             else:
                 for w in widths[3:]:
                     self.cell(w, 6, "", border=border)
@@ -1268,6 +1271,7 @@ class ClientQuotationPDF(InquiryPDF):
         }
         self.add_page()
         self.add_title()
+        self.add_reference(rfq_info["referencia"])
         self.table_header()
         total_geral = 0.0
         peso_total = 0.0
@@ -1316,7 +1320,7 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
             if empresa.get("iban"):
                 config["bank_details"] = [{"IBAN / Account No.": empresa["iban"]}]
             if empresa.get("nif"):
-                config["legal_info"] = [f"NIF: {empresa['nif']}"]
+                config.setdefault("legal_info", []).append(f"NIF: {empresa['nif']}")
 
         # Dados do fornecedor
         c.execute(
@@ -1374,8 +1378,12 @@ def gerar_pdf_cliente(rfq_id):
         
         # 1. Obter dados da RFQ
         c.execute(
-            """SELECT rfq.*, COALESCE(fornecedor.nome, 'Fornecedor desconhecido')
-                   FROM rfq LEFT JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id
+            """SELECT rfq.*,
+                       COALESCE(fornecedor.nome, 'Fornecedor desconhecido') AS fornecedor_nome,
+                       processo.numero
+                   FROM rfq
+                   LEFT JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id
+                   LEFT JOIN processo ON rfq.processo_id = processo.id
                    WHERE rfq.id = ?""",
             (rfq_id,),
         )
@@ -1422,13 +1430,12 @@ def gerar_pdf_cliente(rfq_id):
             if empresa.get("iban"):
                 config["bank_details"] = [{"IBAN / Account No.": empresa["iban"]}]
             if empresa.get("nif"):
-                config["legal_info"] = [f"NIF: {empresa['nif']}"]
+                config.setdefault("legal_info", []).append(f"NIF: {empresa['nif']}")
         pdf_cliente = ClientQuotationPDF(config)
         pdf_bytes = pdf_cliente.gerar(
             rfq_info={
-                'data': rfq_data[2],
-                'referencia': rfq_data[4],
-                'fornecedor': rfq_data[13]
+                'data': datetime.fromisoformat(rfq_data[2]).strftime('%d/%m/%Y') if rfq_data[2] else '',
+                'referencia': rfq_data[14] or '',
             },
             solicitante_info={
                 'nome': rfq_data[6] or '',
@@ -1471,22 +1478,18 @@ def obter_pdf_da_db(rfq_id, tipo_pdf="pedido"):
 
 
 def exibir_pdf(label, data_pdf):
-    """Mostra PDF usando PDF.js viewer"""
+    """Mostra PDF tentando múltiplos métodos de embed"""
     if not data_pdf:
         st.warning("PDF não disponível")
         return
-    
+
     b64 = base64.b64encode(data_pdf).decode()
-    
+
     with st.expander(label):
-        # Usando PDF.js viewer público do Mozilla
-        pdf_viewer_url = f"https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}"
-        
         pdf_html = f"""
-        <iframe src="{pdf_viewer_url}" 
-                width="100%" height="600" 
-                style="border:none;">
-        </iframe>
+        <object data="data:application/pdf;base64,{b64}" type="application/pdf" width="100%" height="600">
+            <iframe src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}" width="100%" height="600" style="border:none;"></iframe>
+        </object>
         """
         st.markdown(pdf_html, unsafe_allow_html=True)
 
@@ -1956,10 +1959,10 @@ elif menu_option == "📩 Responder Cotações":
                 align-items: center;
                 justify-content: center;
             }
-            /* Limit the inner dialog content to 1000px */
+            /* Limit the inner dialog content to 1200px */
             [data-testid="stDialog"] > div {
-                width: 1000px;
-                max-width: 1000px;
+                width: 1200px;
+                max-width: 1200px;
             }
             </style>
             """,
