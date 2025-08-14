@@ -1,9 +1,9 @@
 """Database utilities for the ERP system.
 
-Originally this project targeted a local SQLite database.  The module now
-supports both SQLite and PostgreSQL through SQLAlchemy, selecting the engine
-based on environment variables.  A single SQLAlchemy engine is exposed so every
-part of the application talks to the same database layer.
+This module provides a small wrapper around a local SQLite database using
+SQLAlchemy.  All data is stored in a file on the same machine that hosts the
+application, ensuring the project can run entirely offline without any remote
+database dependencies.
 """
 
 import os
@@ -15,85 +15,28 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 # Connection information ----------------------------------------------------
-# ``DATABASE_URL`` takes precedence.  When not provided, a local SQLite file is
-# used instead.  ``DB_PATH`` is retained for backwards compatibility and for
-# features that operate directly on the SQLite file (e.g. backups).
-DB_URL = os.environ.get("DATABASE_URL")
+# ``DB_PATH`` points to the SQLite database file.  It can be overridden via an
+# environment variable for testing, but the application always uses a local
+# SQLite database.
 DB_PATH = os.environ.get("DB_PATH", "cotacoes.db")
 
-if DB_URL:
-    # When a full database URL is provided (e.g. PostgreSQL) enable ``pool_pre_ping``
-    # so SQLAlchemy validates pooled connections before use.  This avoids the
-    # overhead of constantly creating new connections and can noticeably speed up
-    # page loads in the Streamlit app when the database is remote.
-    engine = create_engine(DB_URL, pool_pre_ping=True)
-else:
-    engine = create_engine(
-        f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False}
-    )
+engine = create_engine(
+    f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False}
+)
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-
-
-class _CursorWrapper:
-    """DB-API cursor that adapts SQLite-style ``?`` placeholders.
-
-    The application was originally written for SQLite using ``?`` as the
-    placeholder marker.  When running against other backends (notably
-    PostgreSQL/psycopg2 which expects ``%s``) this causes syntax errors.  The
-    wrapper transparently converts the placeholders so existing queries work
-    on both engines.
-    """
-
-    def __init__(self, cursor, paramstyle):
-        self._cursor = cursor
-        self._paramstyle = paramstyle
-
-    def execute(self, query, params=None):
-        if params and self._paramstyle in {"pyformat", "format"}:
-            query = query.replace("?", "%s")
-        return self._cursor.execute(query, params or ())
-
-    def executemany(self, query, seq_of_params):
-        if self._paramstyle in {"pyformat", "format"}:
-            query = query.replace("?", "%s")
-        return self._cursor.executemany(query, seq_of_params)
-
-    def __getattr__(self, name):  # pragma: no cover - simple delegation
-        return getattr(self._cursor, name)
-
-
-class _ConnectionWrapper:
-    def __init__(self, conn, paramstyle):
-        self._conn = conn
-        self._paramstyle = paramstyle
-
-    def cursor(self):
-        return _CursorWrapper(self._conn.cursor(), self._paramstyle)
-
-    def __getattr__(self, name):  # pragma: no cover - simple delegation
-        return getattr(self._conn, name)
-
 
 def get_connection():
     """Return a DB-API connection bound to the global engine.
 
-    For SQLite databases, foreign keys and a busy timeout are enabled on every
-    connection.  For other backends (e.g. PostgreSQL) a lightweight wrapper is
-    returned that converts SQLite-style ``?`` placeholders to the paramstyle
-    expected by the backend (e.g. ``%s`` for psycopg2).
+    Foreign keys and a busy timeout are enabled on every connection to improve
+    reliability when multiple requests access the database simultaneously.
     """
 
     conn = engine.raw_connection()
-    if engine.dialect.name == "sqlite":
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA busy_timeout = 5000")
-        return conn
-
-    # Non-SQLite backends may use a different paramstyle.  Wrap the connection
-    # so calls to ``cursor.execute`` still accept queries written with ``?``
-    # placeholders.
-    return _ConnectionWrapper(conn, engine.dialect.paramstyle)
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 5000")
+    return conn
 
 
 def hash_password(password: str) -> str:
@@ -127,19 +70,12 @@ def verify_password(password: str, hashed: str | bytes | None) -> bool:
 
 
 def criar_base_dados_completa():
-    """Create all database tables and apply basic PRAGMAs.
+    """Create all database tables and apply basic PRAGMAs for SQLite.
 
-    For PostgreSQL (or any non-SQLite backend) this function becomes a no-op, as
-    it assumes the schema is managed externally.  When using SQLite, WAL mode and
-    a global busy timeout are enabled to improve concurrency.  A default
-    administrator account (username/password ``admin``) is also created if the
-    user table is empty.
+    WAL mode and a global busy timeout are enabled to improve concurrency.  A
+    default administrator account (username/password ``admin``) is also created
+    if the user table is empty.
     """
-
-    if engine.dialect.name != "sqlite":
-        # Schema creation for PostgreSQL is expected to be handled via separate
-        # migration tools; nothing to do here.
-        return True
 
     # Ensure directory exists for the SQLite database
     db_dir = os.path.dirname(DB_PATH)
@@ -396,14 +332,7 @@ def criar_base_dados_completa():
 
 
 def backup_database(backup_path: str | None = None):
-    """Create a consistent backup of the database.
-
-    Currently only SQLite backups are supported.  For PostgreSQL this function
-    raises ``NotImplementedError`` and the backup should be handled externally.
-    """
-
-    if engine.dialect.name != "sqlite":
-        raise NotImplementedError("Backups are only supported for SQLite databases")
+    """Create a consistent backup of the SQLite database."""
 
     if not backup_path:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -416,7 +345,6 @@ def backup_database(backup_path: str | None = None):
     source.close()
     dest.close()
     return backup_path
-
 
 def criar_processo(descricao: str = ""):
     """Cria um novo processo com número sequencial anual."""
@@ -433,29 +361,16 @@ def criar_processo(descricao: str = ""):
         max_seq = result.scalar()
         numero = f"{prefixo}{(max_seq or 0) + 1}"
 
-        # ``INSERT .. RETURNING`` is used when supported (e.g. PostgreSQL) so the
-        # generated ID can be obtained reliably.  For SQLite the ``RETURNING``
-        # clause is also available in modern versions; if unavailable ``lastrowid``
-        # is used as a fallback.
-        if engine.dialect.name == "postgresql":
-            insert_result = session.execute(
-                text(
-                    "INSERT INTO processo (numero, descricao) VALUES (:numero, :descricao) RETURNING id"
-                ),
-                {"numero": numero, "descricao": descricao},
-            )
-            processo_id = insert_result.scalar_one()
-        else:
-            insert_result = session.execute(
-                text(
-                    "INSERT INTO processo (numero, descricao) VALUES (:numero, :descricao)"
-                ),
-                {"numero": numero, "descricao": descricao},
-            )
-            try:
-                processo_id = insert_result.lastrowid
-            except AttributeError:  # pragma: no cover - defensive fallback
-                processo_id = session.execute(text("SELECT last_insert_rowid()")).scalar()
+        insert_result = session.execute(
+            text(
+                "INSERT INTO processo (numero, descricao) VALUES (:numero, :descricao)"
+            ),
+            {"numero": numero, "descricao": descricao},
+        )
+        try:
+            processo_id = insert_result.lastrowid
+        except AttributeError:  # pragma: no cover - defensive fallback
+            processo_id = session.execute(text("SELECT last_insert_rowid()")).scalar()
 
         session.commit()
         return processo_id, numero
