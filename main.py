@@ -76,6 +76,8 @@ def _format_iso_date(value):
 
 LOGO_PATH = "assets/logo.png"
 logo_image = Image.open(LOGO_PATH)
+with open(LOGO_PATH, "rb") as image_file:
+    LOGO_BASE64 = base64.b64encode(image_file.read()).decode()
 
 st.set_page_config(
     page_title="myERP",
@@ -1641,7 +1643,14 @@ if 'logged_in' not in st.session_state:
 
 
 def login_screen():
-    st.markdown(f"<p style='text-align:center'><img src='{LOGO_PATH}' width='120'/></p>", unsafe_allow_html=True)
+    st.markdown(
+        f"<p style='text-align:center'><img src='data:image/png;base64,{LOGO_BASE64}' width='120'/></p>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<p style='text-align:center;'>Sistema myERP v4.0<br/>© 2025 Ricardo Nogueira</p>",
+        unsafe_allow_html=True,
+    )
     st.markdown("<h1 style='text-align:center;'>🔐 Login</h1>", unsafe_allow_html=True)
     # Estilizar o formulário para ser mais amplo e centralizado
     st.markdown(
