@@ -2827,9 +2827,9 @@ elif menu_option == "⚙️ Configurações":
                 SET margem_percentual = ?
                 WHERE fornecedor_id IS NULL AND marca IS NULL
             """, (nova_margem_global,))
-            conn.commit()
-            conn.close()
-            st.success("Margem padrão atualizada!")
+                conn.commit()
+                conn.close()
+                st.success("Margem padrão atualizada!")
 
         with tab3:
             if st.session_state.get("role") != "admin":
