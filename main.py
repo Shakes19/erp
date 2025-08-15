@@ -1660,14 +1660,6 @@ if 'logged_in' not in st.session_state:
 
 
 def login_screen():
-    st.markdown(
-        f"<p style='text-align:center'><img src='data:image/png;base64,{LOGO_BASE64}' width='120'/></p>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<p style='text-align:center;'>Sistema myERP v4.0<br/>© 2025 Ricardo Nogueira</p>",
-        unsafe_allow_html=True,
-    )
     st.markdown("<h1 style='text-align:center;'>🔐 Login</h1>", unsafe_allow_html=True)
     # Estilizar o formulário para ser mais amplo e centralizado
     st.markdown(
@@ -1697,6 +1689,14 @@ def login_screen():
             st.rerun()
         else:
             st.error("Credenciais inválidas")
+    st.markdown(
+        f"<p style='text-align:center'><img src='data:image/png;base64,{LOGO_BASE64}' width='120'/></p>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<p style='text-align:center;'>Sistema myERP v4.0<br/>© 2025 Ricardo Nogueira</p>",
+        unsafe_allow_html=True,
+    )
 
 
 if not st.session_state.logged_in:
@@ -1880,13 +1880,13 @@ elif menu_option == "📝 Nova Cotação":
     with st.form(key="nova_cotacao_form"):
         col1, col2 = st.columns(2)
         with col1:
-            nome_solicitante = st.text_input("Nome do solicitante")
+            nome_solicitante = st.text_input("Cliente")
         with col2:
-            email_solicitante = st.text_input("Email do solicitante")
+            email_solicitante = st.text_input("Email do Cliente")
 
         col_ref, col_pdf = st.columns(2)
         with col_ref:
-            referencia_input = st.text_input("Referência *")
+            referencia_input = st.text_input("Referência Cliente")
         with col_pdf:
             upload_pedido_cliente = st.file_uploader(
                 "📎 Pedido do cliente (PDF)",
@@ -2190,8 +2190,10 @@ elif menu_option == "📩 Responder Cotações":
             opcoes_user.update({(u[2] or u[1]): u[0] for u in utilizadores})
             utilizador_sel_pend = st.selectbox("Utilizador", list(opcoes_user.keys()), key="utilizador_pend")
         with col4:
+            st.markdown("<div style='display:flex;justify-content:center;'>", unsafe_allow_html=True)
             if st.button("🔄 Atualizar", key="refresh_pend"):
                 st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
 
         fornecedor_id_pend = opcoes_forn[fornecedor_sel_pend]
         utilizador_id_pend = opcoes_user[utilizador_sel_pend]
@@ -2285,8 +2287,10 @@ elif menu_option == "📩 Responder Cotações":
             opcoes_user.update({(u[2] or u[1]): u[0] for u in utilizadores})
             utilizador_sel_resp = st.selectbox("Utilizador", list(opcoes_user.keys()), key="utilizador_resp")
         with col4:
+            st.markdown("<div style='display:flex;justify-content:center;'>", unsafe_allow_html=True)
             if st.button("🔄 Atualizar", key="refresh_resp"):
                 st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
 
         fornecedor_id_resp = opcoes_forn[fornecedor_sel_resp]
         utilizador_id_resp = opcoes_user[utilizador_sel_resp]
@@ -2603,47 +2607,52 @@ elif menu_option == "👤 Perfil":
     st.title("👤 Meu Perfil")
     user = obter_utilizador_por_id(st.session_state.get("user_id"))
     if user:
-        st.subheader("Configuração de Email")
-        with st.form("email_form"):
-            email_edit = st.text_input("Username", value=user[4] or "")
-            email_pw_edit = st.text_input(
-                "Palavra-passe do Email", value=user[6] or "", type="password"
-            )
-            sub_email = st.form_submit_button("Guardar Email")
-        if sub_email:
-            if atualizar_utilizador(
-                user[0],
-                user[1],
-                user[3],
-                email_edit,
-                user[5],
-                None,
-                email_pw_edit,
-            ):
-                st.success("Dados de email atualizados com sucesso!")
-            else:
-                st.error("Erro ao atualizar dados de email")
+        tab_pw, tab_email = st.tabs([
+            "Alterar Palavra-passe do Sistema",
+            "Configuração de Email",
+        ])
 
-        st.subheader("Alterar Palavra-passe do Sistema")
-        with st.form("palavra_passe_form"):
-            nova_pw = st.text_input("Nova Palavra-passe", type="password")
-            confirmar_pw = st.text_input("Confirmar Palavra-passe", type="password")
-            sub_pw = st.form_submit_button("Alterar Palavra-passe")
-        if sub_pw:
-            if not nova_pw or nova_pw != confirmar_pw:
-                st.error("Palavras-passe não coincidem")
-            else:
+        with tab_pw:
+            with st.form("palavra_passe_form"):
+                nova_pw = st.text_input("Nova Palavra-passe", type="password")
+                confirmar_pw = st.text_input("Confirmar Palavra-passe", type="password")
+                sub_pw = st.form_submit_button("Alterar Palavra-passe")
+            if sub_pw:
+                if not nova_pw or nova_pw != confirmar_pw:
+                    st.error("Palavras-passe não coincidem")
+                else:
+                    if atualizar_utilizador(
+                        user[0],
+                        user[1],
+                        user[3],
+                        user[4],
+                        user[5],
+                        nova_pw,
+                    ):
+                        st.success("Palavra-passe atualizada com sucesso!")
+                    else:
+                        st.error("Erro ao atualizar palavra-passe")
+
+        with tab_email:
+            with st.form("email_form"):
+                email_edit = st.text_input("Username", value=user[4] or "")
+                email_pw_edit = st.text_input(
+                    "Palavra-passe do Email", value=user[6] or "", type="password"
+                )
+                sub_email = st.form_submit_button("Guardar Email")
+            if sub_email:
                 if atualizar_utilizador(
                     user[0],
                     user[1],
                     user[3],
-                    user[4],
+                    email_edit,
                     user[5],
-                    nova_pw,
+                    None,
+                    email_pw_edit,
                 ):
-                    st.success("Palavra-passe atualizada com sucesso!")
+                    st.success("Dados de email atualizados com sucesso!")
                 else:
-                    st.error("Erro ao atualizar palavra-passe")
+                    st.error("Erro ao atualizar dados de email")
     else:
         st.error("Utilizador não encontrado")
 
@@ -2716,104 +2725,104 @@ elif menu_option == "⚙️ Configurações":
                                         st.error("Erro ao atualizar fornecedor")
                             with col_b:
                                 if st.form_submit_button("🗑️ Eliminar"):
-                                    if eliminar_fornecedor_db(forn[0]):
-                                        st.success("Fornecedor eliminado")
+                                        if eliminar_fornecedor_db(forn[0]):
+                                            st.success("Fornecedor eliminado")
+                                            st.rerun()
+                                        else:
+                                            st.error("Erro ao eliminar fornecedor")
+    
+                        marcas = obter_marcas_fornecedor(forn[0])
+                        st.write(f"**Marcas:** {', '.join(marcas) if marcas else 'Nenhuma'}")
+        
+        with tab2:
+            st.subheader("Configuração de Marcas e Margens")
+    
+            fornecedores = listar_fornecedores()
+    
+            if fornecedores:
+                fornecedor_sel = st.selectbox(
+                    "Selecionar Fornecedor",
+                    options=fornecedores,
+                    format_func=lambda x: x[1],
+                    key="forn_marcas"
+                )
+    
+                if fornecedor_sel:
+                    col1, col2 = st.columns(2)
+    
+                    with col1:
+                        st.markdown("### Adicionar Marca")
+                        with st.form("add_marca_form"):
+                            nova_marca = st.text_input("Nome da Marca")
+                            margem_marca = st.number_input(
+                                "Margem (%)",
+                                min_value=0.0,
+                                max_value=100.0,
+                                value=15.0,
+                                step=0.5
+                            )
+    
+                            if st.form_submit_button("➕ Adicionar Marca"):
+                                if nova_marca:
+                                    if adicionar_marca_fornecedor(fornecedor_sel[0], nova_marca):
+                                        configurar_margem_marca(fornecedor_sel[0], nova_marca, margem_marca)
+                                        st.success(f"Marca {nova_marca} adicionada!")
                                         st.rerun()
                                     else:
-                                        st.error("Erro ao eliminar fornecedor")
-
-                    marcas = obter_marcas_fornecedor(forn[0])
-                    st.write(f"**Marcas:** {', '.join(marcas) if marcas else 'Nenhuma'}")
+                                        st.error("Marca já existe para este fornecedor")
     
-    with tab2:
-        st.subheader("Configuração de Marcas e Margens")
-
-        fornecedores = listar_fornecedores()
-
-        if fornecedores:
-            fornecedor_sel = st.selectbox(
-                "Selecionar Fornecedor",
-                options=fornecedores,
-                format_func=lambda x: x[1],
-                key="forn_marcas"
+                    with col2:
+                        st.markdown("### Marcas Existentes")
+                        marcas = obter_marcas_fornecedor(fornecedor_sel[0])
+    
+                        if marcas:
+                            for marca in marcas:
+                                margem = obter_margem_para_marca(fornecedor_sel[0], marca)
+    
+                                with st.expander(f"{marca} - {margem:.1f}%"):
+                                    nova_margem = st.number_input(
+                                        "Nova Margem (%)",
+                                        min_value=0.0,
+                                        max_value=100.0,
+                                        value=margem,
+                                        step=0.5,
+                                        key=f"margem_{fornecedor_sel[0]}_{marca}"
+                                    )
+    
+                                    col1, col2 = st.columns(2)
+    
+                                    with col1:
+                                        if st.button("💾 Atualizar", key=f"upd_{fornecedor_sel[0]}_{marca}"):
+                                            if configurar_margem_marca(fornecedor_sel[0], marca, nova_margem):
+                                                st.success("Margem atualizada!")
+                                                st.rerun()
+    
+                                    with col2:
+                                        if st.button("🗑️ Remover", key=f"del_{fornecedor_sel[0]}_{marca}"):
+                                            if remover_marca_fornecedor(fornecedor_sel[0], marca):
+                                                st.success("Marca removida!")
+                                                st.rerun()
+                        else:
+                            st.info("Nenhuma marca configurada")
+    
+            st.markdown("---")
+    
+            # Margem padrão
+            st.subheader("Margem Padrão Global")
+    
+            margem_global = obter_margem_para_marca(None, None)
+            nova_margem_global = st.number_input(
+                "Margem Padrão (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=margem_global,
+                step=0.5
             )
-
-            if fornecedor_sel:
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    st.markdown("### Adicionar Marca")
-                    with st.form("add_marca_form"):
-                        nova_marca = st.text_input("Nome da Marca")
-                        margem_marca = st.number_input(
-                            "Margem (%)",
-                            min_value=0.0,
-                            max_value=100.0,
-                            value=15.0,
-                            step=0.5
-                        )
-
-                        if st.form_submit_button("➕ Adicionar Marca"):
-                            if nova_marca:
-                                if adicionar_marca_fornecedor(fornecedor_sel[0], nova_marca):
-                                    configurar_margem_marca(fornecedor_sel[0], nova_marca, margem_marca)
-                                    st.success(f"Marca {nova_marca} adicionada!")
-                                    st.rerun()
-                                else:
-                                    st.error("Marca já existe para este fornecedor")
-
-                with col2:
-                    st.markdown("### Marcas Existentes")
-                    marcas = obter_marcas_fornecedor(fornecedor_sel[0])
-
-                    if marcas:
-                        for marca in marcas:
-                            margem = obter_margem_para_marca(fornecedor_sel[0], marca)
-
-                            with st.expander(f"{marca} - {margem:.1f}%"):
-                                nova_margem = st.number_input(
-                                    "Nova Margem (%)",
-                                    min_value=0.0,
-                                    max_value=100.0,
-                                    value=margem,
-                                    step=0.5,
-                                    key=f"margem_{fornecedor_sel[0]}_{marca}"
-                                )
-
-                                col1, col2 = st.columns(2)
-
-                                with col1:
-                                    if st.button("💾 Atualizar", key=f"upd_{fornecedor_sel[0]}_{marca}"):
-                                        if configurar_margem_marca(fornecedor_sel[0], marca, nova_margem):
-                                            st.success("Margem atualizada!")
-                                            st.rerun()
-
-                                with col2:
-                                    if st.button("🗑️ Remover", key=f"del_{fornecedor_sel[0]}_{marca}"):
-                                        if remover_marca_fornecedor(fornecedor_sel[0], marca):
-                                            st.success("Marca removida!")
-                                            st.rerun()
-                    else:
-                        st.info("Nenhuma marca configurada")
-
-        st.markdown("---")
-
-        # Margem padrão
-        st.subheader("Margem Padrão Global")
-
-        margem_global = obter_margem_para_marca(None, None)
-        nova_margem_global = st.number_input(
-            "Margem Padrão (%)",
-            min_value=0.0,
-            max_value=100.0,
-            value=margem_global,
-            step=0.5
-        )
-
-        if st.button("💾 Guardar Margem Padrão"):
-            conn = obter_conexao()
-            c = conn.cursor()
-            c.execute("""
+    
+            if st.button("💾 Guardar Margem Padrão"):
+                conn = obter_conexao()
+                c = conn.cursor()
+                c.execute("""
                 UPDATE configuracao_margens
                 SET margem_percentual = ?
                 WHERE fornecedor_id IS NULL AND marca IS NULL
@@ -2822,218 +2831,218 @@ elif menu_option == "⚙️ Configurações":
             conn.close()
             st.success("Margem padrão atualizada!")
 
-    with tab3:
-        if st.session_state.get("role") != "admin":
-            st.warning("Apenas administradores podem gerir utilizadores.")
-        else:
-            st.subheader("Gestão de Utilizadores")
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.markdown("### Adicionar Utilizador")
-                with st.form("novo_user_form"):
-                    username = st.text_input("Username *")
-                    nome = st.text_input("Nome")
-                    email_user = st.text_input("Email")
-                    email_pw_user = st.text_input("Password Email", type="password")
-                    role = st.selectbox("Role", ["admin", "gestor", "user"])
-                    password = st.text_input("Palavra-passe *", type="password")
-
-                    if st.form_submit_button("➕ Adicionar"):
-                        if username and password:
-                            if inserir_utilizador(
-                                username, password, nome, email_user, role, email_pw_user
-                            ):
-                                st.success(f"Utilizador {username} adicionado!")
-                                st.rerun()
+        with tab3:
+            if st.session_state.get("role") != "admin":
+                st.warning("Apenas administradores podem gerir utilizadores.")
+            else:
+                st.subheader("Gestão de Utilizadores")
+    
+                col1, col2 = st.columns(2)
+    
+                with col1:
+                    st.markdown("### Adicionar Utilizador")
+                    with st.form("novo_user_form"):
+                        username = st.text_input("Username *")
+                        nome = st.text_input("Nome")
+                        email_user = st.text_input("Email")
+                        email_pw_user = st.text_input("Password Email", type="password")
+                        role = st.selectbox("Role", ["admin", "gestor", "user"])
+                        password = st.text_input("Palavra-passe *", type="password")
+    
+                        if st.form_submit_button("➕ Adicionar"):
+                            if username and password:
+                                if inserir_utilizador(
+                                    username, password, nome, email_user, role, email_pw_user
+                                ):
+                                    st.success(f"Utilizador {username} adicionado!")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao adicionar utilizador")
                             else:
-                                st.error("Erro ao adicionar utilizador")
-                        else:
-                            st.error("Username e palavra-passe são obrigatórios")
-
-            with col2:
-                st.markdown("### Utilizadores Registados")
-                utilizadores = listar_utilizadores()
-
-                for user in utilizadores:
-                    with st.expander(user[1]):
-                        with st.form(f"edit_user_{user[0]}"):
-                            username_edit = st.text_input("Username", user[1])
-                            nome_edit = st.text_input("Nome", user[2] or "")
-                            email_edit = st.text_input("Email", user[3] or "")
-                            email_pw_edit = st.text_input("Password Email", user[5] or "", type="password")
-                            role_edit = st.selectbox(
-                                "Role",
-                                ["admin", "gestor", "user"],
-                                index=["admin", "gestor", "user"].index(user[4]),
-                            )
-                            password_edit = st.text_input("Palavra-passe", type="password")
-
-                            col_a, col_b = st.columns(2)
-                            with col_a:
-                                if st.form_submit_button("💾 Guardar"):
-                                    if atualizar_utilizador(
-                                        user[0],
-                                        username_edit,
-                                        nome_edit,
-                                        email_edit,
-                                        role_edit,
-                                        password_edit or None,
-                                        email_pw_edit or None,
-                                    ):
-                                        st.success("Utilizador atualizado")
-                                        st.rerun()
-                                    else:
-                                        st.error("Erro ao atualizar utilizador")
-                            with col_b:
-                                if st.form_submit_button("🗑️ Eliminar"):
-                                    if eliminar_utilizador(user[0]):
-                                        st.success("Utilizador eliminado")
-                                        st.rerun()
-                                    else:
-                                        st.error("Erro ao eliminar utilizador")
-            st.rerun()
+                                st.error("Username e palavra-passe são obrigatórios")
     
-    with tab4:
-        st.subheader("Configuração de Email")
-        
-        # Obter configuração atual
-        conn = obter_conexao()
-        c = conn.cursor()
-        c.execute("SELECT * FROM configuracao_email WHERE ativo = TRUE")
-        config_atual = c.fetchone()
-        conn.close()
-        
-        with st.form("config_email_form"):
-            smtp_server = st.text_input(
-                "Servidor SMTP",
-                value=config_atual[1] if config_atual else "smtp.gmail.com"
-            )
-            smtp_port = st.number_input(
-                "Porta SMTP",
-                value=config_atual[2] if config_atual else 587
-            )
-
-            if st.form_submit_button("💾 Guardar Configuração"):
-                conn = obter_conexao()
-                c = conn.cursor()
-
-                # Desativar configurações anteriores
-                c.execute("UPDATE configuracao_email SET ativo = FALSE")
-
-                # Inserir nova configuração
-                c.execute(
-                    """
-                    INSERT INTO configuracao_email (smtp_server, smtp_port, ativo)
-                    VALUES (?, ?, TRUE)
-                    """,
-                    (smtp_server, smtp_port),
-                )
-
-                conn.commit()
-                conn.close()
-
-                st.success("Configuração de email guardada!")
-
-        st.info("Nota: Para Gmail, usa uma 'App Password' em vez da palavra-passe normal")
+                with col2:
+                    st.markdown("### Utilizadores Registados")
+                    utilizadores = listar_utilizadores()
     
-    with tab5:
-        st.subheader("Backup e Restauro")
+                    for user in utilizadores:
+                        with st.expander(user[1]):
+                            with st.form(f"edit_user_{user[0]}"):
+                                username_edit = st.text_input("Username", user[1])
+                                nome_edit = st.text_input("Nome", user[2] or "")
+                                email_edit = st.text_input("Email", user[3] or "")
+                                email_pw_edit = st.text_input("Password Email", user[5] or "", type="password")
+                                role_edit = st.selectbox(
+                                    "Role",
+                                    ["admin", "gestor", "user"],
+                                    index=["admin", "gestor", "user"].index(user[4]),
+                                )
+                                password_edit = st.text_input("Palavra-passe", type="password")
+    
+                                col_a, col_b = st.columns(2)
+                                with col_a:
+                                    if st.form_submit_button("💾 Guardar"):
+                                        if atualizar_utilizador(
+                                            user[0],
+                                            username_edit,
+                                            nome_edit,
+                                            email_edit,
+                                            role_edit,
+                                            password_edit or None,
+                                            email_pw_edit or None,
+                                        ):
+                                            st.success("Utilizador atualizado")
+                                            st.rerun()
+                                        else:
+                                            st.error("Erro ao atualizar utilizador")
+                                with col_b:
+                                    if st.form_submit_button("🗑️ Eliminar"):
+                                        if eliminar_utilizador(user[0]):
+                                            st.success("Utilizador eliminado")
+                                            st.rerun()
+                                        else:
+                                            st.error("Erro ao eliminar utilizador")
+                st.rerun()
         
-        if st.button("💾 Criar Backup"):
-            backup_path = backup_database()
-            if backup_path:
-                st.success(f"Backup criado: {backup_path}")
-                
-                # Ler o ficheiro de backup para download
-                with open(backup_path, 'rb') as f:
-                    backup_data = f.read()
-                
-                st.download_button(
-                    "⬇️ Download Backup",
-                    data=backup_data,
-                    file_name=backup_path,
-                    mime="application/octet-stream"
+        with tab4:
+            st.subheader("Configuração de Email")
+            
+            # Obter configuração atual
+            conn = obter_conexao()
+            c = conn.cursor()
+            c.execute("SELECT * FROM configuracao_email WHERE ativo = TRUE")
+            config_atual = c.fetchone()
+            conn.close()
+            
+            with st.form("config_email_form"):
+                smtp_server = st.text_input(
+                    "Servidor SMTP",
+                    value=config_atual[1] if config_atual else "smtp.gmail.com"
                 )
+                smtp_port = st.number_input(
+                    "Porta SMTP",
+                    value=config_atual[2] if config_atual else 587
+                )
+    
+                if st.form_submit_button("💾 Guardar Configuração"):
+                    conn = obter_conexao()
+                    c = conn.cursor()
+    
+                    # Desativar configurações anteriores
+                    c.execute("UPDATE configuracao_email SET ativo = FALSE")
+    
+                    # Inserir nova configuração
+                    c.execute(
+                        """
+                        INSERT INTO configuracao_email (smtp_server, smtp_port, ativo)
+                        VALUES (?, ?, TRUE)
+                        """,
+                        (smtp_server, smtp_port),
+                    )
+    
+                    conn.commit()
+                    conn.close()
+    
+                    st.success("Configuração de email guardada!")
+    
+            st.info("Nota: Para Gmail, usa uma 'App Password' em vez da palavra-passe normal")
         
-        st.markdown("---")
-        
-        st.warning("⚠️ Restaurar backup irá substituir todos os dados atuais!")
-        
-        uploaded_backup = st.file_uploader(
-            "Selecionar ficheiro de backup",
-            type=['db']
-        )
-        
-        if uploaded_backup:
-            if st.button("⚠️ Restaurar Backup", type="secondary"):
-                # Guardar ficheiro temporário
-                temp_path = "temp_restore.db"
-                with open(temp_path, 'wb') as f:
-                    f.write(uploaded_backup.getvalue())
-
-                # Fazer backup atual antes de restaurar
-                backup_database("backup_antes_restauro.db")
-
-                # Restaurar
+        with tab5:
+            st.subheader("Backup e Restauro")
+            
+            if st.button("💾 Criar Backup"):
+                backup_path = backup_database()
+                if backup_path:
+                    st.success(f"Backup criado: {backup_path}")
+                    
+                    # Ler o ficheiro de backup para download
+                    with open(backup_path, 'rb') as f:
+                        backup_data = f.read()
+                    
+                    st.download_button(
+                        "⬇️ Download Backup",
+                        data=backup_data,
+                        file_name=backup_path,
+                        mime="application/octet-stream"
+                    )
+            
+            st.markdown("---")
+            
+            st.warning("⚠️ Restaurar backup irá substituir todos os dados atuais!")
+            
+            uploaded_backup = st.file_uploader(
+                "Selecionar ficheiro de backup",
+                type=['db']
+            )
+            
+            if uploaded_backup:
+                if st.button("⚠️ Restaurar Backup", type="secondary"):
+                    # Guardar ficheiro temporário
+                    temp_path = "temp_restore.db"
+                    with open(temp_path, 'wb') as f:
+                        f.write(uploaded_backup.getvalue())
+    
+                    # Fazer backup atual antes de restaurar
+                    backup_database("backup_antes_restauro.db")
+    
+                    # Restaurar
+                    try:
+                        shutil.copy2(temp_path, DB_PATH)
+                        os.remove(temp_path)
+                        st.success("Backup restaurado com sucesso!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao restaurar: {e}")
+    
+        with tab6:
+            st.subheader("Layout dos PDFs")
+            tipo_layout = st.selectbox("Tipo de PDF", ["pedido", "cliente"])
+            config_atual = load_pdf_config(tipo_layout)
+            config_texto = st.text_area(
+                "Configuração (JSON)",
+                json.dumps(config_atual, ensure_ascii=False, indent=2),
+                height=400,
+                key=f"layout_{tipo_layout}"
+            )
+            if st.button("💾 Guardar Layout"):
                 try:
-                    shutil.copy2(temp_path, DB_PATH)
-                    os.remove(temp_path)
-                    st.success("Backup restaurado com sucesso!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao restaurar: {e}")
-
-    with tab6:
-        st.subheader("Layout dos PDFs")
-        tipo_layout = st.selectbox("Tipo de PDF", ["pedido", "cliente"])
-        config_atual = load_pdf_config(tipo_layout)
-        config_texto = st.text_area(
-            "Configuração (JSON)",
-            json.dumps(config_atual, ensure_ascii=False, indent=2),
-            height=400,
-            key=f"layout_{tipo_layout}"
-        )
-        if st.button("💾 Guardar Layout"):
-            try:
-                nova_config = json.loads(config_texto)
-                save_pdf_config(tipo_layout, nova_config)
-                st.success("Layout atualizado com sucesso!")
-            except json.JSONDecodeError as e:
-                st.error(f"Erro no JSON: {e}")
-        st.caption(
-            "Altere textos, tamanhos de letra e posições editando o JSON acima."
-        )
-
-    with tab7:
-        st.subheader("Dados da Empresa")
-        conn = obter_conexao()
-        c = conn.cursor()
-        c.execute(
-            "SELECT nome, morada, nif, iban, telefone, email, website FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
-        )
-        dados = c.fetchone()
-        conn.close()
-        with st.form("empresa_form"):
-            nome_emp = st.text_input("Nome", dados[0] if dados else "")
-            morada_emp = st.text_area("Morada", dados[1] if dados else "")
-            nif_emp = st.text_input("NIF", dados[2] if dados else "")
-            iban_emp = st.text_input("IBAN", dados[3] if dados else "")
-            telefone_emp = st.text_input("Telefone", dados[4] if dados else "")
-            email_emp = st.text_input("Email", dados[5] if dados else "")
-            website_emp = st.text_input("Website", dados[6] if dados else "")
-            if st.form_submit_button("💾 Guardar"):
-                conn = obter_conexao()
-                c = conn.cursor()
-                c.execute("DELETE FROM configuracao_empresa")
-                c.execute(
-                    "INSERT INTO configuracao_empresa (nome, morada, nif, iban, telefone, email, website) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (nome_emp, morada_emp, nif_emp, iban_emp, telefone_emp, email_emp, website_emp),
-                )
-                conn.commit()
-                conn.close()
-                st.success("Dados da empresa guardados!")
+                    nova_config = json.loads(config_texto)
+                    save_pdf_config(tipo_layout, nova_config)
+                    st.success("Layout atualizado com sucesso!")
+                except json.JSONDecodeError as e:
+                    st.error(f"Erro no JSON: {e}")
+            st.caption(
+                "Altere textos, tamanhos de letra e posições editando o JSON acima."
+            )
+    
+        with tab7:
+            st.subheader("Dados da Empresa")
+            conn = obter_conexao()
+            c = conn.cursor()
+            c.execute(
+                "SELECT nome, morada, nif, iban, telefone, email, website FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
+            )
+            dados = c.fetchone()
+            conn.close()
+            with st.form("empresa_form"):
+                nome_emp = st.text_input("Nome", dados[0] if dados else "")
+                morada_emp = st.text_area("Morada", dados[1] if dados else "")
+                nif_emp = st.text_input("NIF", dados[2] if dados else "")
+                iban_emp = st.text_input("IBAN", dados[3] if dados else "")
+                telefone_emp = st.text_input("Telefone", dados[4] if dados else "")
+                email_emp = st.text_input("Email", dados[5] if dados else "")
+                website_emp = st.text_input("Website", dados[6] if dados else "")
+                if st.form_submit_button("💾 Guardar"):
+                    conn = obter_conexao()
+                    c = conn.cursor()
+                    c.execute("DELETE FROM configuracao_empresa")
+                    c.execute(
+                        "INSERT INTO configuracao_empresa (nome, morada, nif, iban, telefone, email, website) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (nome_emp, morada_emp, nif_emp, iban_emp, telefone_emp, email_emp, website_emp),
+                    )
+                    conn.commit()
+                    conn.close()
+                    st.success("Dados da empresa guardados!")
 
 # Footer
 st.markdown("---")
