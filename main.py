@@ -75,6 +75,7 @@ def _format_iso_date(value):
 
 
 LOGO_PATH = "assets/logo.png"
+LINKEDIN_PATH = "assets/linkedin.png"
 logo_image = Image.open(LOGO_PATH)
 with open(LOGO_PATH, "rb") as image_file:
     LOGO_BASE64 = base64.b64encode(image_file.read()).decode()
@@ -1054,6 +1055,22 @@ class InquiryPDF(FPDF):
         self.set_font("Helvetica", "", 9)
         self.multi_cell(col_w, 4, "\n".join(legal_info), align="R")
 
+        # Créditos de desenvolvimento e link para LinkedIn
+        self.set_y(-10)
+        y = self.get_y()
+        self.set_font("Helvetica", "", 8)
+        self.cell(0, 4, "Software desenvolvido por Ricardo Nogueira", align="C")
+        try:
+            self.image(
+                LINKEDIN_PATH,
+                x=self.w - 20,
+                y=y,
+                w=4,
+                link="https://www.linkedin.com/in/ricardo-nogueiraa/",
+            )
+        except Exception:
+            pass
+
     # ------------------------------------------------------------------
     #  Corpo do documento
     # ------------------------------------------------------------------
@@ -1786,12 +1803,16 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("---")
-    st.markdown("""
+    st.markdown(
+        f"""
         <div style="text-align: center; font-size: 12px;">
+            <p><img src='data:image/png;base64,{LOGO_BASE64}' width='80'/></p>
             <p>Sistema myERP v4.0</p>
             <p>© 2025 Ricardo Nogueira</p>
         </div>
-    """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
 
 # ========================== PÁGINAS DO SISTEMA ==========================
 
