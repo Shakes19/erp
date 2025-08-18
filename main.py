@@ -8,12 +8,8 @@ import json
 from io import BytesIO
 import os
 import shutil
-import smtplib
+import imghdr
 from streamlit_option_menu import option_menu
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
 from db import (
     criar_processo,
     criar_base_dados_completa,
@@ -24,6 +20,13 @@ from db import (
     DB_PATH,
     engine,
 )
+from services.pdf_service import (
+    load_pdf_config,
+    save_pdf_config,
+    obter_config_empresa,
+    obter_pdf_da_db,
+)
+from services.email_service import send_email
 
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
 
@@ -33,32 +36,6 @@ EMAIL_CONFIG = {
     'smtp_port': 587
 }
 
-@st.cache_data(show_spinner=False)
-def load_pdf_config(tipo):
-    """Carrega configurações de layout do PDF a partir de ``pdf_layout.json``.
-
-    Os resultados são memorizados para evitar leituras repetidas do ficheiro
-    durante a navegação entre páginas.
-    """
-    try:
-        with open('pdf_layout.json', 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        return data.get(tipo, {})
-    except Exception:
-        return {}
-
-def save_pdf_config(tipo, config):
-    """Guarda configurações de layout no ficheiro pdf_layout.json"""
-    try:
-        with open('pdf_layout.json', 'r', encoding='utf-8') as f:
-            data = json.load(f)
-    except Exception:
-        data = {}
-    data[tipo] = config
-    with open('pdf_layout.json', 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    # limpar cache para refletir as alterações imediatamente
-    load_pdf_config.clear()
 
 
 def _format_iso_date(value):
@@ -82,9 +59,15 @@ def _format_iso_date(value):
 
 
 LOGO_PATH = "assets/logo.png"
-logo_image = Image.open(LOGO_PATH)
-with open(LOGO_PATH, "rb") as image_file:
-    LOGO_BASE64 = base64.b64encode(image_file.read()).decode()
+
+@st.cache_data(show_spinner=False)
+def load_logo():
+    img = Image.open(LOGO_PATH)
+    with open(LOGO_PATH, "rb") as image_file:
+        b64 = base64.b64encode(image_file.read()).decode()
+    return img, b64
+
+logo_image, LOGO_BASE64 = load_logo()
 
 st.set_page_config(
     page_title="myERP",
@@ -95,32 +78,6 @@ st.set_page_config(
 # ========================== GESTÃO DA BASE DE DADOS ==========================
 
 
-@st.cache_data(show_spinner=False)
-def obter_config_empresa():
-    """Obtém dados da empresa para uso nos PDFs.
-
-    A informação é memorizada para evitar consultas repetidas à base de dados
-    em cada transição de página.
-    """
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute(
-        "SELECT nome, morada, nif, iban, telefone, email, website, logo FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
-    )
-    row = c.fetchone()
-    conn.close()
-    if row:
-        return {
-            "nome": row[0],
-            "morada": row[1],
-            "nif": row[2],
-            "iban": row[3],
-            "telefone": row[4],
-            "email": row[5],
-            "website": row[6],
-            "logo": row[7],
-        }
-    return None
 
 # ========================== FUNÇÕES DE GESTÃO DE FORNECEDORES ==========================
 
@@ -830,13 +787,6 @@ def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
 
         print(f"🔧 Configurações SMTP: {smtp_server}:{smtp_port}")
         
-        # Criar mensagem
-        msg = MIMEMultipart()
-        msg['From'] = email_user
-        msg['To'] = email_destino
-        msg['Subject'] = f"Orçamento - Ref: {referencia}"
-        
-        # Corpo do email
         corpo = f"""
         Estimado(a) {nome_solicitante},
 
@@ -849,27 +799,21 @@ def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
         Com os melhores cumprimentos,
         Ricardo Nogueira
         """
-        
-        msg.attach(MIMEText(corpo, 'plain'))
-        
-        # Anexar PDF
-        part = MIMEBase('application', 'octet-stream')
-        part.set_payload(pdf_bytes)
-        encoders.encode_base64(part)
-        part.add_header(
-            'Content-Disposition',
-            f'attachment; filename="orcamento_{referencia}.pdf"'
-        )
-        msg.attach(part)
-        
-        # Enviar email
+
         print(f"🚀 Tentando enviar email para {email_destino}...")
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.starttls()
-            server.login(email_user, email_password)
-            server.send_message(msg)
-            print("✅ Email enviado com sucesso!")
-            return True
+        send_email(
+            email_destino,
+            f"Orçamento - Ref: {referencia}",
+            corpo,
+            pdf_bytes=pdf_bytes,
+            pdf_filename=f"orcamento_{referencia}.pdf",
+            smtp_server=smtp_server,
+            smtp_port=smtp_port,
+            email_user=email_user,
+            email_password=email_password,
+        )
+        print("✅ Email enviado com sucesso!")
+        return True
 
     except Exception as e:
         print(f"❌ Erro ao enviar email: {str(e)}")
@@ -934,11 +878,6 @@ def enviar_email_pedido_fornecedor(rfq_id):
             return False
 
         # Construir email
-        msg = MIMEMultipart()
-        msg['From'] = email_user
-        msg['To'] = fornecedor_email
-        msg['Subject'] = f"Pedido de Cotação - Ref: {referencia}"
-
         corpo = f"""
 Estimado(a) {fornecedor_nome},
 
@@ -948,19 +887,17 @@ Agradecemos o envio do preço, prazo de entrega, HS Code, país de origem e peso
 Com os melhores cumprimentos,
 Ricardo Nogueira
 """
-        msg.attach(MIMEText(corpo, 'plain'))
-
-        part = MIMEBase('application', 'octet-stream')
-        part.set_payload(pdf_bytes)
-        encoders.encode_base64(part)
-        part.add_header('Content-Disposition', f'attachment; filename="pedido_{referencia}.pdf"')
-        msg.attach(part)
-
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.starttls()
-            server.login(email_user, email_password)
-            server.send_message(msg)
-
+        send_email(
+            fornecedor_email,
+            f"Pedido de Cotação - Ref: {referencia}",
+            corpo,
+            pdf_bytes=pdf_bytes,
+            pdf_filename=f"pedido_{referencia}.pdf",
+            smtp_server=smtp_server,
+            smtp_port=smtp_port,
+            email_user=email_user,
+            email_password=email_password,
+        )
         return True
     except Exception as e:
         st.error(f"Falha ao enviar email ao fornecedor: {e}")
@@ -1038,11 +975,13 @@ class InquiryPDF(FPDF):
 
         # Bloco da empresa (logo + contactos) no lado direito
         if logo_bytes:
+            img_type = imghdr.what(None, logo_bytes) or "png"
             self.image(
                 BytesIO(logo_bytes),
                 logo_cfg.get("x", self.w - 15 - 70),
                 logo_cfg.get("y", 15),
                 logo_cfg.get("w", 70),
+                type=img_type.upper(),
             )
         elif os.path.exists(logo_path):
             self.image(
