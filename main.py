@@ -2893,7 +2893,6 @@ elif menu_option == "⚙️ Configurações":
                                             st.rerun()
                                         else:
                                             st.error("Erro ao eliminar utilizador")
-                st.rerun()
         
         with tab4:
             st.subheader("Configuração de Email")
