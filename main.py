@@ -105,7 +105,7 @@ def obter_config_empresa():
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
-        "SELECT nome, morada, nif, iban, telefone, email, website FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
+        "SELECT nome, morada, nif, iban, telefone, email, website, logo FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
     )
     row = c.fetchone()
     conn.close()
@@ -118,6 +118,7 @@ def obter_config_empresa():
             "telefone": row[4],
             "email": row[5],
             "website": row[6],
+            "logo": row[7],
         }
     return None
 
@@ -1008,6 +1009,7 @@ class InquiryPDF(FPDF):
         header_cfg = self.cfg.get("header", {})
         logo_cfg = header_cfg.get("logo", {})
         logo_path = logo_cfg.get("path", self.cfg.get("logo_path", "logo.jpeg"))
+        logo_bytes = self.cfg.get("logo_bytes")
 
         # Grelha de metadados no lado esquerdo
         meta = self.recipient.get("metadata", {})
@@ -1035,7 +1037,14 @@ class InquiryPDF(FPDF):
             self.cell(80, 5, str(line), ln=1)
 
         # Bloco da empresa (logo + contactos) no lado direito
-        if os.path.exists(logo_path):
+        if logo_bytes:
+            self.image(
+                BytesIO(logo_bytes),
+                logo_cfg.get("x", self.w - 15 - 70),
+                logo_cfg.get("y", 15),
+                logo_cfg.get("w", 70),
+            )
+        elif os.path.exists(logo_path):
             self.image(
                 logo_path,
                 logo_cfg.get("x", self.w - 15 - 70),
@@ -1418,6 +1427,8 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
                 config["bank_details"] = [{"IBAN / Account No.": empresa["iban"]}]
             if empresa.get("nif"):
                 config.setdefault("legal_info", []).append(f"NIF: {empresa['nif']}")
+            if empresa.get("logo"):
+                config["logo_bytes"] = empresa["logo"]
 
         # Dados do fornecedor
         c.execute(
@@ -1528,6 +1539,8 @@ def gerar_pdf_cliente(rfq_id):
                 config["bank_details"] = [{"IBAN / Account No.": empresa["iban"]}]
             if empresa.get("nif"):
                 config.setdefault("legal_info", []).append(f"NIF: {empresa['nif']}")
+            if empresa.get("logo"):
+                config["logo_bytes"] = empresa["logo"]
         pdf_cliente = ClientQuotationPDF(config)
         pdf_bytes = pdf_cliente.gerar(
             rfq_info={
@@ -1574,19 +1587,20 @@ def obter_pdf_da_db(rfq_id, tipo_pdf="pedido"):
     return result[0] if result else None
 
 
-def exibir_pdf(label, data_pdf):
-    """Mostra PDF tentando múltiplos métodos de embed"""
+def exibir_pdf(label, data_pdf, *, height: int = 600, expanded: bool = False):
+    """Mostra PDF com fallback para pdf.js e opção de abrir em nova aba."""
     if not data_pdf:
         st.warning("PDF não disponível")
         return
 
     b64 = base64.b64encode(data_pdf).decode()
 
-    with st.expander(label):
+    with st.expander(label, expanded=expanded):
         pdf_html = f"""
-        <object data="data:application/pdf;base64,{b64}" type="application/pdf" width="100%" height="600">
-            <iframe src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}" width="100%" height="600" style="border:none;"></iframe>
+        <object data="data:application/pdf;base64,{b64}" type="application/pdf" width="100%" height="{height}">
+            <iframe src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}" width="100%" height="{height}" style="border:none;"></iframe>
         </object>
+        <div style="text-align:right;margin-top:4px;"><a href="data:application/pdf;base64,{b64}" target="_blank">🔎 Abrir em nova aba</a></div>
         """
         st.markdown(pdf_html, unsafe_allow_html=True)
 
@@ -1915,6 +1929,8 @@ elif menu_option == "📝 Nova Cotação":
                 type=['pdf'],
                 key='upload_pedido_cliente'
             )
+            if upload_pedido_cliente is not None:
+                exibir_pdf("👁️ PDF carregado", upload_pedido_cliente.getvalue(), expanded=True)
 
         st.markdown("### 📦 Artigos")
 
@@ -2075,12 +2091,18 @@ elif menu_option == "📩 Responder Cotações":
         detalhes = obter_detalhes_cotacao(cotacao['id'])
         st.info(f"**Respondendo Cotação {cotacao['processo']}**")
 
+        pdf_pedido = obter_pdf_da_db(cotacao['id'], "pedido")
+        if pdf_pedido:
+            exibir_pdf("📄 Pedido", pdf_pedido, height=800, expanded=True)
+
         with st.form(f"resposta_form_{cotacao['id']}"):
             upload_resposta_forn = st.file_uploader(
                 "📎 Resposta do fornecedor (PDF)",
                 type=['pdf'],
                 key=f"upload_resp_{cotacao['id']}"
             )
+            if upload_resposta_forn is not None:
+                exibir_pdf("👁️ PDF carregado", upload_resposta_forn.getvalue(), expanded=True)
             respostas = []
 
             for i, artigo in enumerate(detalhes['artigos'], 1):
@@ -3051,7 +3073,7 @@ elif menu_option == "⚙️ Configurações":
             conn = obter_conexao()
             c = conn.cursor()
             c.execute(
-                "SELECT nome, morada, nif, iban, telefone, email, website FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
+                "SELECT nome, morada, nif, iban, telefone, email, website, logo FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
             )
             dados = c.fetchone()
             conn.close()
@@ -3063,13 +3085,19 @@ elif menu_option == "⚙️ Configurações":
                 telefone_emp = st.text_input("Telefone", dados[4] if dados else "")
                 email_emp = st.text_input("Email", dados[5] if dados else "")
                 website_emp = st.text_input("Website", dados[6] if dados else "")
+                logo_bytes = dados[7] if dados and len(dados) > 7 else None
+                logo_upload = st.file_uploader("Logo", type=["png", "jpg", "jpeg"], key="logo_empresa")
+                if logo_upload is not None:
+                    logo_bytes = logo_upload.getvalue()
+                if logo_bytes:
+                    st.image(logo_bytes, width=120)
                 if st.form_submit_button("💾 Guardar"):
                     conn = obter_conexao()
                     c = conn.cursor()
                     c.execute("DELETE FROM configuracao_empresa")
                     c.execute(
-                        "INSERT INTO configuracao_empresa (nome, morada, nif, iban, telefone, email, website) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (nome_emp, morada_emp, nif_emp, iban_emp, telefone_emp, email_emp, website_emp),
+                        "INSERT INTO configuracao_empresa (nome, morada, nif, iban, telefone, email, website, logo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (nome_emp, morada_emp, nif_emp, iban_emp, telefone_emp, email_emp, website_emp, logo_bytes),
                     )
                     conn.commit()
                     conn.close()
