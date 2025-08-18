@@ -5,7 +5,7 @@
       "font": "Arial",
       "font_style": "B",
       "font_size": 16,
-      "logo": {"path": "logo.jpeg", "x": 160, "y": 10, "w": 40},
+      "logo": {"path": "assets/logo.png", "x": 160, "y": 10, "w": 40},
       "line_height": 10,
       "spacing": 5
     },
@@ -26,7 +26,7 @@
       "font": "Arial",
       "font_style": "B",
       "font_size": 16,
-      "logo": {"path": "logo.jpeg", "x": 160, "y": 10, "w": 40},
+      "logo": {"path": "assets/logo.png", "x": 160, "y": 10, "w": 40},
       "line_height": 10,
       "spacing": 5
     },

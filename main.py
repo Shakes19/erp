@@ -2844,14 +2844,13 @@ elif menu_option == "⚙️ Configurações":
                         username = st.text_input("Username *")
                         nome = st.text_input("Nome")
                         email_user = st.text_input("Email")
-                        email_pw_user = st.text_input("Password Email", type="password")
                         role = st.selectbox("Role", ["admin", "gestor", "user"])
                         password = st.text_input("Palavra-passe *", type="password")
-    
+
                         if st.form_submit_button("➕ Adicionar"):
                             if username and password:
                                 if inserir_utilizador(
-                                    username, password, nome, email_user, role, email_pw_user
+                                    username, password, nome, email_user, role
                                 ):
                                     st.success(f"Utilizador {username} adicionado!")
                                     st.rerun()
