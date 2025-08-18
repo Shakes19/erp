@@ -75,7 +75,6 @@ def _format_iso_date(value):
 
 
 LOGO_PATH = "assets/logo.png"
-LINKEDIN_PATH = "assets/linkedin.png"
 logo_image = Image.open(LOGO_PATH)
 with open(LOGO_PATH, "rb") as image_file:
     LOGO_BASE64 = base64.b64encode(image_file.read()).decode()
@@ -1055,18 +1054,15 @@ class InquiryPDF(FPDF):
         self.set_font("Helvetica", "", 9)
         self.multi_cell(col_w, 4, "\n".join(legal_info), align="R")
 
-        # Créditos de desenvolvimento e link para LinkedIn
+        # Logo do myERP com hyperlink
         self.set_y(-10)
-        y = self.get_y()
-        self.set_font("Helvetica", "", 8)
-        self.cell(0, 4, "Software desenvolvido por Ricardo Nogueira", align="C")
         try:
             self.image(
-                LINKEDIN_PATH,
-                x=self.w - 20,
-                y=y,
-                w=4,
-                link="https://www.linkedin.com/in/ricardo-nogueiraa/",
+                LOGO_PATH,
+                x=(self.w - 20) / 2,
+                y=self.get_y(),
+                w=20,
+                link="https://erpktb.streamlit.app/",
             )
         except Exception:
             pass
@@ -1787,11 +1783,6 @@ with st.sidebar:
     )
     
     st.markdown("---")
-
-    # Estatísticas rápidas
-    stats = obter_estatisticas_db()
-    st.metric("Cotações Pendentes", stats.get('rfq_pendentes', 0))
-    st.metric("Cotações Respondidas", stats.get('rfq_respondidas', 0))
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("Sair", icon="🚪", key="sidebar_logout", use_container_width=True):
