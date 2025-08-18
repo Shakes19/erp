@@ -774,12 +774,15 @@ def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
         # Obter configurações de email (servidor/porta)
         conn = obter_conexao()
         c = conn.cursor()
-        c.execute("""
-            SELECT smtp_server, smtp_port
-            FROM configuracao_email
-            WHERE ativo = TRUE
-            LIMIT 1
-        """)
+        try:
+            c.execute(
+                "SELECT smtp_server, smtp_port FROM configuracao_email WHERE ativo = TRUE LIMIT 1"
+            )
+        except sqlite3.OperationalError:
+            # Column "ativo" may not existir em bases de dados antigas
+            c.execute(
+                "SELECT smtp_server, smtp_port FROM configuracao_email LIMIT 1"
+            )
         config = c.fetchone()
         conn.close()
 
@@ -881,7 +884,12 @@ def enviar_email_pedido_fornecedor(rfq_id):
         # Configuração SMTP
         conn = obter_conexao()
         c = conn.cursor()
-        c.execute("SELECT smtp_server, smtp_port FROM configuracao_email WHERE ativo = TRUE LIMIT 1")
+        try:
+            c.execute(
+                "SELECT smtp_server, smtp_port FROM configuracao_email WHERE ativo = TRUE LIMIT 1"
+            )
+        except sqlite3.OperationalError:
+            c.execute("SELECT smtp_server, smtp_port FROM configuracao_email LIMIT 1")
         config = c.fetchone()
         conn.close()
 
@@ -2900,7 +2908,10 @@ elif menu_option == "⚙️ Configurações":
             # Obter configuração atual
             conn = obter_conexao()
             c = conn.cursor()
-            c.execute("SELECT * FROM configuracao_email WHERE ativo = TRUE")
+            try:
+                c.execute("SELECT * FROM configuracao_email WHERE ativo = TRUE")
+            except sqlite3.OperationalError:
+                c.execute("SELECT * FROM configuracao_email")
             config_atual = c.fetchone()
             conn.close()
             
@@ -2917,22 +2928,30 @@ elif menu_option == "⚙️ Configurações":
                 if st.form_submit_button("💾 Guardar Configuração"):
                     conn = obter_conexao()
                     c = conn.cursor()
-    
-                    # Desativar configurações anteriores
-                    c.execute("UPDATE configuracao_email SET ativo = FALSE")
-    
-                    # Inserir nova configuração
-                    c.execute(
-                        """
-                        INSERT INTO configuracao_email (smtp_server, smtp_port, ativo)
-                        VALUES (?, ?, TRUE)
-                        """,
-                        (smtp_server, smtp_port),
-                    )
-    
+
+                    try:
+                        # Desativar configurações anteriores
+                        c.execute("UPDATE configuracao_email SET ativo = FALSE")
+
+                        # Inserir nova configuração
+                        c.execute(
+                            """
+                            INSERT INTO configuracao_email (smtp_server, smtp_port, ativo)
+                            VALUES (?, ?, TRUE)
+                            """,
+                            (smtp_server, smtp_port),
+                        )
+                    except sqlite3.OperationalError:
+                        # Coluna "ativo" ausente - manter apenas uma configuração
+                        c.execute("DELETE FROM configuracao_email")
+                        c.execute(
+                            "INSERT INTO configuracao_email (smtp_server, smtp_port) VALUES (?, ?)",
+                            (smtp_server, smtp_port),
+                        )
+
                     conn.commit()
                     conn.close()
-    
+
                     st.success("Configuração de email guardada!")
     
             st.info("Nota: Para Gmail, usa uma 'App Password' em vez da palavra-passe normal")
