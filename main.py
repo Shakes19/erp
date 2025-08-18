@@ -33,11 +33,16 @@ EMAIL_CONFIG = {
     'smtp_port': 587
 }
 
+@st.cache_data(show_spinner=False)
 def load_pdf_config(tipo):
-    """Carrega configurações de layout do PDF a partir de pdf_layout.json"""
+    """Carrega configurações de layout do PDF a partir de ``pdf_layout.json``.
+
+    Os resultados são memorizados para evitar leituras repetidas do ficheiro
+    durante a navegação entre páginas.
+    """
     try:
         with open('pdf_layout.json', 'r', encoding='utf-8') as f:
-            data=json.load(f)
+            data = json.load(f)
         return data.get(tipo, {})
     except Exception:
         return {}
@@ -52,6 +57,8 @@ def save_pdf_config(tipo, config):
     data[tipo] = config
     with open('pdf_layout.json', 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    # limpar cache para refletir as alterações imediatamente
+    load_pdf_config.cache_clear()
 
 
 def _format_iso_date(value):
@@ -88,8 +95,13 @@ st.set_page_config(
 # ========================== GESTÃO DA BASE DE DADOS ==========================
 
 
+@st.cache_data(show_spinner=False)
 def obter_config_empresa():
-    """Obtém dados da empresa para uso nos PDFs"""
+    """Obtém dados da empresa para uso nos PDFs.
+
+    A informação é memorizada para evitar consultas repetidas à base de dados
+    em cada transição de página.
+    """
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
@@ -111,8 +123,13 @@ def obter_config_empresa():
 
 # ========================== FUNÇÕES DE GESTÃO DE FORNECEDORES ==========================
 
+@st.cache_data(show_spinner=False)
 def listar_fornecedores():
-    """Obter todos os fornecedores"""
+    """Obter todos os fornecedores.
+
+    Resultados memorizados para reduzir acessos à base de dados quando o
+    utilizador navega entre páginas.
+    """
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
@@ -135,11 +152,15 @@ def inserir_fornecedor(nome, email="", telefone="", morada="", nif=""):
         if resultado:
             return resultado[0]
         else:
-            c.execute("""
-                INSERT INTO fornecedor (nome, email, telefone, morada, nif) 
+            c.execute(
+                """
+                INSERT INTO fornecedor (nome, email, telefone, morada, nif)
                 VALUES (?, ?, ?, ?, ?)
-            """, (nome, email, telefone, morada, nif))
+                """,
+                (nome, email, telefone, morada, nif),
+            )
             conn.commit()
+            listar_fornecedores.cache_clear()
             return c.lastrowid
     finally:
         conn.close()
@@ -159,6 +180,7 @@ def atualizar_fornecedor(fornecedor_id, nome, email="", telefone="", morada="", 
             (nome, email, telefone, morada, nif, fornecedor_id),
         )
         conn.commit()
+        listar_fornecedores.cache_clear()
         return True
     except Exception:
         return False
@@ -172,6 +194,7 @@ def eliminar_fornecedor_db(fornecedor_id):
     c = conn.cursor()
     c.execute("DELETE FROM fornecedor WHERE id = ?", (fornecedor_id,))
     conn.commit()
+    listar_fornecedores.cache_clear()
     removidos = c.rowcount
     conn.close()
     return removidos > 0
@@ -3050,6 +3073,7 @@ elif menu_option == "⚙️ Configurações":
                     )
                     conn.commit()
                     conn.close()
+                    obter_config_empresa.cache_clear()
                     st.success("Dados da empresa guardados!")
 
 # Footer
