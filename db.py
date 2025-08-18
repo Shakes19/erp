@@ -284,7 +284,8 @@ def criar_base_dados_completa():
             iban TEXT,
             telefone TEXT,
             email TEXT,
-            website TEXT
+            website TEXT,
+            logo BLOB
         )
         """
     )
@@ -292,9 +293,14 @@ def criar_base_dados_completa():
     # Garantir colunas adicionais
     c.execute("PRAGMA table_info(configuracao_empresa)")
     cols = [row[1] for row in c.fetchall()]
-    for col in ["telefone", "email", "website"]:
+    for col, col_type in [
+        ("telefone", "TEXT"),
+        ("email", "TEXT"),
+        ("website", "TEXT"),
+        ("logo", "BLOB"),
+    ]:
         if col not in cols:
-            c.execute(f"ALTER TABLE configuracao_empresa ADD COLUMN {col} TEXT")
+            c.execute(f"ALTER TABLE configuracao_empresa ADD COLUMN {col} {col_type}")
 
     # Tabela de utilizadores do sistema (inclui palavra-passe de email)
     c.execute(
