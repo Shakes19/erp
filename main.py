@@ -58,7 +58,7 @@ def save_pdf_config(tipo, config):
     with open('pdf_layout.json', 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     # limpar cache para refletir as alterações imediatamente
-    load_pdf_config.cache_clear()
+    load_pdf_config.clear()
 
 
 def _format_iso_date(value):
@@ -160,7 +160,7 @@ def inserir_fornecedor(nome, email="", telefone="", morada="", nif=""):
                 (nome, email, telefone, morada, nif),
             )
             conn.commit()
-            listar_fornecedores.cache_clear()
+            listar_fornecedores.clear()
             return c.lastrowid
     finally:
         conn.close()
@@ -180,7 +180,7 @@ def atualizar_fornecedor(fornecedor_id, nome, email="", telefone="", morada="", 
             (nome, email, telefone, morada, nif, fornecedor_id),
         )
         conn.commit()
-        listar_fornecedores.cache_clear()
+        listar_fornecedores.clear()
         return True
     except Exception:
         return False
@@ -194,7 +194,7 @@ def eliminar_fornecedor_db(fornecedor_id):
     c = conn.cursor()
     c.execute("DELETE FROM fornecedor WHERE id = ?", (fornecedor_id,))
     conn.commit()
-    listar_fornecedores.cache_clear()
+    listar_fornecedores.clear()
     removidos = c.rowcount
     conn.close()
     return removidos > 0
@@ -3073,7 +3073,7 @@ elif menu_option == "⚙️ Configurações":
                     )
                     conn.commit()
                     conn.close()
-                    obter_config_empresa.cache_clear()
+                    obter_config_empresa.clear()
                     st.success("Dados da empresa guardados!")
 
 # Footer
