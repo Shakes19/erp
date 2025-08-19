@@ -10,6 +10,7 @@ import shutil
 import imghdr
 import tempfile
 from PIL import Image
+import pandas as pd
 from streamlit_option_menu import option_menu
 from db import (
     criar_processo,
@@ -2096,8 +2097,8 @@ elif menu_option == "📩 Responder Cotações":
             }
             /* Expand inner dialog content */
             [data-testid="stDialog"] > div {
-                width: 90%;
-                max-width: 90%;
+                width: 95%;
+                max-width: 95%;
             }
             </style>
             """,
@@ -2105,36 +2106,6 @@ elif menu_option == "📩 Responder Cotações":
         )
         detalhes = obter_detalhes_cotacao(cotacao['id'])
         st.info(f"**Respondendo Cotação {cotacao['processo']}**")
-
-        novo_pedido_cliente = st.file_uploader(
-            "📎 Substituir Pedido Cliente (PDF)",
-            type=['pdf'],
-            key=f"upload_pedido_cli_{cotacao['id']}"
-        )
-        if novo_pedido_cliente is not None:
-            guardar_pdf_upload(
-                cotacao['id'],
-                'cliente',
-                novo_pedido_cliente.name,
-                novo_pedido_cliente.getvalue()
-            )
-            st.success("PDF de pedido cliente atualizado!")
-            st.rerun()
-
-        novo_resp_forn = st.file_uploader(
-            "📎 Substituir Resposta Fornecedor (PDF)",
-            type=['pdf'],
-            key=f"upload_resp_forn_{cotacao['id']}"
-        )
-        if novo_resp_forn is not None:
-            guardar_pdf_upload(
-                cotacao['id'],
-                'anexo_fornecedor',
-                novo_resp_forn.name,
-                novo_resp_forn.getvalue()
-            )
-            st.success("PDF de resposta fornecedor atualizado!")
-            st.rerun()
 
         with st.form(f"resposta_form_{cotacao['id']}"):
             respostas = []
@@ -2408,75 +2379,80 @@ elif menu_option == "📩 Responder Cotações":
                                     mime="application/pdf",
                                     key=f"anexo_resp_{cotacao['id']}_{tipo}"
                                 )
-                        # PDF interno
-                        pdf_interno = obter_pdf_da_db(cotacao['id'], "pedido")
-                        if pdf_interno:
-                            st.download_button(
-                                "📄 PDF Interno",
-                                data=pdf_interno,
-                                file_name=f"interno_{cotacao['processo']}.pdf",
-                                mime="application/pdf",
-                                key=f"pdf_int_{cotacao['id']}"
-                            )
 
-                        # PDF cliente
+                        pdf_interno = obter_pdf_da_db(cotacao['id'], "pedido")
                         pdf_cliente = obter_pdf_da_db(cotacao['id'], "cliente")
-                        if pdf_cliente:
-                            st.download_button(
-                                "💰 PDF Cliente",
-                                data=pdf_cliente,
-                                file_name=f"cliente_{cotacao['processo']}.pdf",
-                                mime="application/pdf",
-                                key=f"pdf_cli_{cotacao['id']}"
-                            )
-                        
-                        # Reenviar email
-                        if st.button("📧 Reenviar", key=f"reenviar_{cotacao['id']}"):
-                            if cotacao['email_solicitante']:
-                                # Verificar se o PDF existe antes de tentar enviar
-                                pdf_status = verificar_pdfs(cotacao['id'])
-                                
-                                if not pdf_status['cliente']:
-                                    st.warning("PDF do cliente não encontrado. Gerando novo PDF...")
-                                    if gerar_pdf_cliente(cotacao['id']):  # Tenta gerar novamente
-                                        st.success("PDF gerado com sucesso!")
-                                        # Após gerar com sucesso, tenta enviar
+
+                        col_pdf_int, col_pdf_cli, col_reenv, col_del = st.columns(4)
+
+                        with col_pdf_int:
+                            if pdf_interno:
+                                st.download_button(
+                                    "📄 PDF Interno",
+                                    data=pdf_interno,
+                                    file_name=f"interno_{cotacao['processo']}.pdf",
+                                    mime="application/pdf",
+                                    key=f"pdf_int_{cotacao['id']}",
+                                )
+
+                        with col_pdf_cli:
+                            if pdf_cliente:
+                                st.download_button(
+                                    "💰 PDF Cliente",
+                                    data=pdf_cliente,
+                                    file_name=f"cliente_{cotacao['processo']}.pdf",
+                                    mime="application/pdf",
+                                    key=f"pdf_cli_{cotacao['id']}",
+                                )
+
+                        with col_reenv:
+                            if st.button("📧 Reenviar", key=f"reenviar_{cotacao['id']}"):
+                                if cotacao['email_solicitante']:
+                                    # Verificar se o PDF existe antes de tentar enviar
+                                    pdf_status = verificar_pdfs(cotacao['id'])
+
+                                    if not pdf_status['cliente']:
+                                        st.warning("PDF do cliente não encontrado. Gerando novo PDF...")
+                                        if gerar_pdf_cliente(cotacao['id']):  # Tenta gerar novamente
+                                            st.success("PDF gerado com sucesso!")
+                                            # Após gerar com sucesso, tenta enviar
+                                            if enviar_email_orcamento(
+                                                cotacao['email_solicitante'],
+                                                cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else "Cliente",
+                                                cotacao['referencia'],
+                                                cotacao['id'],
+                                            ):
+                                                st.success("✅ E-mail reenviado com sucesso!")
+                                            else:
+                                                st.error("Falha no reenvio")
+                                        else:
+                                            st.error("Falha ao gerar PDF. Não foi possível enviar o e-mail.")
+                                    else:
+                                        # PDF já existe, tenta enviar diretamente
                                         if enviar_email_orcamento(
                                             cotacao['email_solicitante'],
                                             cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else "Cliente",
                                             cotacao['referencia'],
-                                            cotacao['id']
+                                            cotacao['id'],
                                         ):
                                             st.success("✅ E-mail reenviado com sucesso!")
                                         else:
                                             st.error("Falha no reenvio")
-                                    else:
-                                        st.error("Falha ao gerar PDF. Não foi possível enviar o e-mail.")
                                 else:
-                                    # PDF já existe, tenta enviar diretamente
-                                    if enviar_email_orcamento(
-                                        cotacao['email_solicitante'],
-                                        cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else "Cliente",
-                                        cotacao['referencia'],
-                                        cotacao['id']
-                                    ):
-                                        st.success("✅ E-mail reenviado com sucesso!")
-                                    else:
-                                        st.error("Falha no reenvio")
-                            else:
-                                st.warning("Nenhum e-mail do solicitante registrado")
-                        
-                        if st.button("🗑️ Eliminar", key=f"del_resp_{cotacao['id']}"):
-                            if eliminar_cotacao(cotacao['id']):
-                                st.success("Cotação eliminada!")
-                                st.rerun()
+                                    st.warning("Nenhum e-mail do solicitante registrado")
+
+                        with col_del:
+                            if st.button("🗑️ Eliminar", key=f"del_resp_{cotacao['id']}"):
+                                if eliminar_cotacao(cotacao['id']):
+                                    st.success("Cotação eliminada!")
+                                    st.rerun()
         else:
             st.info("Não há cotações respondidas")
 
 elif menu_option == "📊 Relatórios":
     st.title("📊 Relatórios e Análises")
     
-    tab1, tab2, tab3 = st.tabs(["Estatísticas Gerais", "Por Fornecedor", "Por Utilizador"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Estatísticas Gerais", "Por Fornecedor", "Por Utilizador", "Temporal"])
     
     with tab1:
         st.subheader("Estatísticas Gerais")
@@ -2626,6 +2602,46 @@ elif menu_option == "📊 Relatórios":
                 conn.close()
         else:
             st.info("Nenhum utilizador registado")
+    with tab4:
+        st.subheader("Evolução Temporal")
+
+        conn = obter_conexao()
+        c = conn.cursor()
+
+        c.execute("SELECT data, COUNT(*) FROM rfq GROUP BY data ORDER BY data")
+        rows = c.fetchall()
+        if rows:
+            df = pd.DataFrame(rows, columns=["data", "total"])
+            df["data"] = pd.to_datetime(df["data"])
+            st.line_chart(df.set_index("data")["total"], height=300)
+        else:
+            st.info("Sem dados diários")
+
+        c.execute("SELECT strftime('%Y-%m', data) as mes, COUNT(*) FROM rfq GROUP BY mes ORDER BY mes")
+        rows = c.fetchall()
+        if rows:
+            df_mes = pd.DataFrame(rows, columns=["mes", "total"])
+            st.bar_chart(df_mes.set_index("mes")["total"], height=300)
+        else:
+            st.info("Sem dados mensais")
+
+        c.execute(
+            """
+            SELECT strftime('%Y-%m', r.data) as mes,
+                   AVG(rf.preco_venda * rf.quantidade_final) as media
+            FROM rfq r
+            JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
+            GROUP BY mes
+            ORDER BY mes
+            """
+        )
+        rows = c.fetchall()
+        conn.close()
+        if rows:
+            df_val = pd.DataFrame(rows, columns=["mes", "media"])
+            st.line_chart(df_val.set_index("mes")["media"], height=300)
+        else:
+            st.info("Sem dados de valores médios")
 
 elif menu_option == "📄 PDFs":
     st.title("📄 Gestão de PDFs")
