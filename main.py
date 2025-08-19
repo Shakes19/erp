@@ -2569,14 +2569,28 @@ elif menu_option == "📄 PDFs":
             options=cotacoes,
             format_func=lambda c: f"{c['processo']} - {c['referencia']}"
         )
-        tipo_pdf = st.selectbox("Tipo de PDF", ["pedido", "cliente"], key="tipo_pdf_gest")
-        pdf_atual = obter_pdf_da_db(cot_sel["id"], tipo_pdf)
-        if pdf_atual:
-            exibir_pdf("PDF Atual", pdf_atual)
-        else:
-            st.info("PDF não encontrado")
+
+        pdf_types = [
+            ("Pedido Cliente", "anexo_cliente", "📥"),
+            ("Pedido Cotação", "pedido", "📤"),
+            ("Resposta Fornecedor", "anexo_fornecedor", "📥"),
+            ("Resposta Cliente", "cliente", "📤"),
+        ]
+
+        for label, tipo, emoji in pdf_types:
+            pdf_bytes = obter_pdf_da_db(cot_sel["id"], tipo)
+            if pdf_bytes:
+                exibir_pdf(f"{emoji} {label}", pdf_bytes)
+            else:
+                st.info(f"{label} não encontrado")
 
         if st.session_state.get("role") == "admin":
+            label_selec = st.selectbox(
+                "Tipo de PDF a substituir",
+                [lbl for lbl, _, _ in pdf_types],
+                key="tipo_pdf_gest",
+            )
+            tipo_pdf = next(t for lbl, t, _ in pdf_types if lbl == label_selec)
             novo_pdf = st.file_uploader("Substituir PDF", type=["pdf"], key="upload_pdf_gest")
             if novo_pdf and st.button("💾 Guardar PDF"):
                 if guardar_pdf_upload(cot_sel["id"], tipo_pdf, novo_pdf.name, novo_pdf.getvalue()):
