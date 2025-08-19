@@ -2969,7 +2969,6 @@ elif menu_option == "⚙️ Configurações":
                         if nome_emp:
                             inserir_empresa(nome_emp, morada_emp)
                             st.success(f"Empresa {nome_emp} adicionada!")
-                            st.rerun()
                         else:
                             st.error("Nome é obrigatório")
 
