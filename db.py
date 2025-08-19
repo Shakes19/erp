@@ -104,16 +104,35 @@ def criar_base_dados_completa():
         """
     )
 
+    # Tabela de clientes (empresas)
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cliente_empresa (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL UNIQUE,
+            morada TEXT
+        )
+        """
+    )
+
     # Tabela de clientes
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS cliente (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT NOT NULL UNIQUE,
-            email TEXT
+            email TEXT,
+            empresa_id INTEGER,
+            FOREIGN KEY (empresa_id) REFERENCES cliente_empresa(id) ON DELETE SET NULL
         )
         """
     )
+
+    # Garantir coluna empresa_id
+    c.execute("PRAGMA table_info(cliente)")
+    cliente_cols = [row[1] for row in c.fetchall()]
+    if "empresa_id" not in cliente_cols:
+        c.execute("ALTER TABLE cliente ADD COLUMN empresa_id INTEGER")
 
     # Tabela de marcas por fornecedor
     c.execute(
@@ -148,6 +167,7 @@ def criar_base_dados_completa():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             processo_id INTEGER,
             fornecedor_id INTEGER NOT NULL,
+            cliente_id INTEGER,
             data TEXT NOT NULL,
             estado TEXT DEFAULT 'pendente',
             referencia TEXT NOT NULL UNIQUE,
@@ -160,6 +180,7 @@ def criar_base_dados_completa():
             data_atualizacao TEXT DEFAULT CURRENT_TIMESTAMP,
             utilizador_id INTEGER,
             FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
+            FOREIGN KEY (cliente_id) REFERENCES cliente(id) ON DELETE SET NULL,
             FOREIGN KEY (utilizador_id) REFERENCES utilizador(id) ON DELETE SET NULL,
             FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE SET NULL
         )
@@ -173,6 +194,8 @@ def criar_base_dados_completa():
         c.execute("ALTER TABLE rfq ADD COLUMN utilizador_id INTEGER")
     if "processo_id" not in rfq_columns:
         c.execute("ALTER TABLE rfq ADD COLUMN processo_id INTEGER")
+    if "cliente_id" not in rfq_columns:
+        c.execute("ALTER TABLE rfq ADD COLUMN cliente_id INTEGER")
 
     # Tabela de artigos
     c.execute(

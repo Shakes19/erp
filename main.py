@@ -224,6 +224,17 @@ def obter_fornecedor_por_marca(marca):
 # ========================== FUNÇÕES DE GESTÃO DE CLIENTES ==========================
 
 @st.cache_data(show_spinner=False)
+def listar_empresas():
+    """Obter todas as empresas de clientes"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute("SELECT id, nome, morada FROM cliente_empresa ORDER BY nome")
+    empresas = c.fetchall()
+    conn.close()
+    return empresas
+
+
+@st.cache_data(show_spinner=False)
 def listar_clientes():
     """Obter todos os clientes.
 
@@ -237,7 +248,14 @@ def listar_clientes():
     conn = obter_conexao()
     c = conn.cursor()
     try:
-        c.execute("SELECT id, nome, email FROM cliente ORDER BY nome")
+        c.execute(
+            """
+            SELECT c.id, c.nome, c.email, c.empresa_id, e.nome
+            FROM cliente c
+            LEFT JOIN cliente_empresa e ON c.empresa_id = e.id
+            ORDER BY c.nome
+            """
+        )
         clientes = c.fetchall()
     except sqlite3.OperationalError as e:
         conn.close()
@@ -251,7 +269,52 @@ def listar_clientes():
     return clientes
 
 
-def inserir_cliente(nome, email=""):
+def inserir_empresa(nome, morada=""):
+    """Inserir nova empresa de cliente"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    try:
+        c.execute("SELECT id FROM cliente_empresa WHERE nome = ?", (nome,))
+        existente = c.fetchone()
+        if existente:
+            return existente[0]
+        c.execute(
+            "INSERT INTO cliente_empresa (nome, morada) VALUES (?, ?)",
+            (nome, morada),
+        )
+        conn.commit()
+        listar_empresas.clear()
+        return c.lastrowid
+    finally:
+        conn.close()
+
+
+def atualizar_empresa(empresa_id, nome, morada=""):
+    """Atualizar dados de uma empresa"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE cliente_empresa SET nome = ?, morada = ? WHERE id = ?",
+        (nome, morada, empresa_id),
+    )
+    conn.commit()
+    conn.close()
+    listar_empresas.clear()
+    return True
+
+
+def eliminar_empresa_db(empresa_id):
+    """Eliminar empresa"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute("DELETE FROM cliente_empresa WHERE id = ?", (empresa_id,))
+    conn.commit()
+    conn.close()
+    listar_empresas.clear()
+    return True
+
+
+def inserir_cliente(nome, email="", empresa_id=None):
     """Inserir novo cliente"""
     conn = obter_conexao()
     c = conn.cursor()
@@ -261,8 +324,8 @@ def inserir_cliente(nome, email=""):
         if existente:
             return existente[0]
         c.execute(
-            "INSERT INTO cliente (nome, email) VALUES (?, ?)",
-            (nome, email),
+            "INSERT INTO cliente (nome, email, empresa_id) VALUES (?, ?, ?)",
+            (nome, email, empresa_id),
         )
         conn.commit()
         listar_clientes.clear()
@@ -271,13 +334,13 @@ def inserir_cliente(nome, email=""):
         conn.close()
 
 
-def atualizar_cliente(cliente_id, nome, email=""):
+def atualizar_cliente(cliente_id, nome, email="", empresa_id=None):
     """Atualizar dados de um cliente"""
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
-        "UPDATE cliente SET nome = ?, email = ? WHERE id = ?",
-        (nome, email, cliente_id),
+        "UPDATE cliente SET nome = ?, email = ?, empresa_id = ? WHERE id = ?",
+        (nome, email, empresa_id, cliente_id),
     )
     conn.commit()
     conn.close()
@@ -394,8 +457,7 @@ def eliminar_utilizador(user_id):
 
 # ========================== FUNÇÕES DE GESTÃO DE RFQs ==========================
 
-def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
-              email_solicitante=""):
+def criar_rfq(fornecedor_id, data, artigos, referencia, cliente_id=None):
     """Criar nova RFQ"""
     conn = obter_conexao()
     c = conn.cursor()
@@ -403,20 +465,40 @@ def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
     try:
         utilizador_id = st.session_state.get("user_id")
         processo_id, numero_processo = criar_processo()
+
+        nome_solicitante = ""
+        email_solicitante = ""
+        empresa_solicitante = ""
+        if cliente_id:
+            c.execute(
+                """
+                SELECT c.nome, c.email, e.nome
+                FROM cliente c
+                LEFT JOIN cliente_empresa e ON c.empresa_id = e.id
+                WHERE c.id = ?
+                """,
+                (cliente_id,),
+            )
+            row = c.fetchone()
+            if row:
+                nome_solicitante, email_solicitante, empresa_solicitante = row
+
         if engine.dialect.name == "sqlite":
             c.execute(
                 """
-                INSERT INTO rfq (processo_id, fornecedor_id, data, referencia,
-                               nome_solicitante, email_solicitante, estado, utilizador_id)
-                VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?)
+                INSERT INTO rfq (processo_id, fornecedor_id, cliente_id, data, referencia,
+                               nome_solicitante, email_solicitante, empresa_solicitante, estado, utilizador_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendente', ?)
                 """,
                 (
                     processo_id,
                     fornecedor_id,
+                    cliente_id,
                     data.isoformat(),
                     referencia,
                     nome_solicitante,
                     email_solicitante,
+                    empresa_solicitante,
                     utilizador_id,
                 ),
             )
@@ -424,17 +506,19 @@ def criar_rfq(fornecedor_id, data, artigos, referencia, nome_solicitante="",
         else:
             c.execute(
                 """
-                INSERT INTO rfq (processo_id, fornecedor_id, data, referencia,
-                               nome_solicitante, email_solicitante, estado, utilizador_id)
-                VALUES (?, ?, ?, ?, ?, ?, 'pendente', ?) RETURNING id
+                INSERT INTO rfq (processo_id, fornecedor_id, cliente_id, data, referencia,
+                               nome_solicitante, email_solicitante, empresa_solicitante, estado, utilizador_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendente', ?) RETURNING id
                 """,
                 (
                     processo_id,
                     fornecedor_id,
+                    cliente_id,
                     data.isoformat(),
                     referencia,
                     nome_solicitante,
                     email_solicitante,
+                    empresa_solicitante,
                     utilizador_id,
                 ),
             )
@@ -1376,6 +1460,10 @@ class ClientQuotationPDF(InquiryPDF):
 
     def gerar(self, rfq_info, solicitante_info, itens_resposta):
         addr_lines = []
+        if solicitante_info.get("empresa_nome"):
+            addr_lines.append(solicitante_info["empresa_nome"])
+        if solicitante_info.get("empresa_morada"):
+            addr_lines.append(solicitante_info["empresa_morada"])
         if solicitante_info.get("nome"):
             addr_lines.append(solicitante_info["nome"])
         if solicitante_info.get("email"):
@@ -1494,17 +1582,20 @@ def gerar_pdf_cliente(rfq_id):
     """Gerar PDF para cliente com tratamento de erros"""
     try:
         conn = obter_conexao()
+        conn.row_factory = sqlite3.Row
         c = conn.cursor()
-        
-        # 1. Obter dados da RFQ
+
+        # 1. Obter dados da RFQ e do cliente
         c.execute(
-            """SELECT rfq.*,
-                       COALESCE(fornecedor.nome, 'Fornecedor desconhecido') AS fornecedor_nome,
-                       processo.numero
-                   FROM rfq
-                   LEFT JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id
-                   LEFT JOIN processo ON rfq.processo_id = processo.id
-                   WHERE rfq.id = ?""",
+            """
+            SELECT rfq.referencia, rfq.data, rfq.nome_solicitante, rfq.email_solicitante,
+                   ce.nome AS empresa_nome, ce.morada AS empresa_morada,
+                   c.nome AS cliente_nome, c.email AS cliente_email
+            FROM rfq
+            LEFT JOIN cliente c ON rfq.cliente_id = c.id
+            LEFT JOIN cliente_empresa ce ON c.empresa_id = ce.id
+            WHERE rfq.id = ?
+            """,
             (rfq_id,),
         )
         rfq_data = c.fetchone()
@@ -1556,12 +1647,14 @@ def gerar_pdf_cliente(rfq_id):
         pdf_cliente = ClientQuotationPDF(config)
         pdf_bytes = pdf_cliente.gerar(
             rfq_info={
-                'data': _format_iso_date(rfq_data[2]),
-                'referencia': rfq_data[14] or '',
+                'data': _format_iso_date(rfq_data["data"]),
+                'referencia': rfq_data["referencia"] or '',
             },
             solicitante_info={
-                'nome': rfq_data[6] or '',
-                'email': rfq_data[7] or ''
+                'empresa_nome': rfq_data["empresa_nome"] or '',
+                'empresa_morada': rfq_data["empresa_morada"] or '',
+                'nome': rfq_data["cliente_nome"] or rfq_data["nome_solicitante"] or '',
+                'email': rfq_data["cliente_email"] or rfq_data["email_solicitante"] or '',
             },
             itens_resposta=itens_resposta
         )
@@ -2038,9 +2131,11 @@ elif menu_option == "📝 Nova Cotação":
 
             if artigos_validos and fornecedor_id:
                 rfq_id, numero_processo = criar_rfq(
-                    fornecedor_id, data, artigos_validos, referencia_input,
-                    nome_solicitante,
-                    email_solicitante
+                    fornecedor_id,
+                    data,
+                    artigos_validos,
+                    referencia_input,
+                    cliente_sel[0] if cliente_sel else None,
                 )
 
                 if rfq_id:
@@ -2396,7 +2491,7 @@ elif menu_option == "📩 Responder Cotações":
                         pdf_interno = obter_pdf_da_db(cotacao['id'], "pedido")
                         pdf_cliente = obter_pdf_da_db(cotacao['id'], "cliente")
 
-                        col_pdf_int, col_pdf_cli, col_reenv, col_del = st.columns(4)
+                        col_pdf_int, col_reenv = st.columns(2)
 
                         with col_pdf_int:
                             if pdf_interno:
@@ -2406,16 +2501,6 @@ elif menu_option == "📩 Responder Cotações":
                                     file_name=f"interno_{cotacao['processo']}.pdf",
                                     mime="application/pdf",
                                     key=f"pdf_int_{cotacao['id']}",
-                                )
-
-                        with col_pdf_cli:
-                            if pdf_cliente:
-                                st.download_button(
-                                    "💰 PDF Cliente",
-                                    data=pdf_cliente,
-                                    file_name=f"cliente_{cotacao['processo']}.pdf",
-                                    mime="application/pdf",
-                                    key=f"pdf_cli_{cotacao['id']}",
                                 )
 
                         with col_reenv:
@@ -2453,6 +2538,18 @@ elif menu_option == "📩 Responder Cotações":
                                             st.error("Falha no reenvio")
                                 else:
                                     st.warning("Nenhum e-mail do solicitante registrado")
+
+                        col_pdf_cli, col_del = st.columns(2)
+
+                        with col_pdf_cli:
+                            if pdf_cliente:
+                                st.download_button(
+                                    "💰 PDF Cliente",
+                                    data=pdf_cliente,
+                                    file_name=f"cliente_{cotacao['processo']}.pdf",
+                                    mime="application/pdf",
+                                    key=f"pdf_cli_{cotacao['id']}",
+                                )
 
                         with col_del:
                             if st.button("🗑️ Eliminar", key=f"del_resp_{cotacao['id']}"):
@@ -2836,6 +2933,43 @@ elif menu_option == "⚙️ Configurações":
         with tab_clientes:
             st.subheader("Gestão de Clientes")
 
+            st.markdown("### Gestão de Empresas")
+            emp_col1, emp_col2 = st.columns(2)
+
+            with emp_col1:
+                with st.form("nova_empresa_form"):
+                    nome_emp = st.text_input("Nome Empresa *")
+                    morada_emp = st.text_input("Morada")
+                    if st.form_submit_button("➕ Adicionar Empresa"):
+                        if nome_emp:
+                            inserir_empresa(nome_emp, morada_emp)
+                            st.success(f"Empresa {nome_emp} adicionada!")
+                            st.rerun()
+                        else:
+                            st.error("Nome é obrigatório")
+
+            with emp_col2:
+                st.markdown("### Empresas Registadas")
+                empresas = listar_empresas()
+                for emp in empresas:
+                    with st.expander(emp[1]):
+                        with st.form(f"edit_emp_{emp[0]}"):
+                            nome_edit = st.text_input("Nome", emp[1])
+                            morada_edit = st.text_input("Morada", emp[2] or "")
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                if st.form_submit_button("💾 Guardar"):
+                                    atualizar_empresa(emp[0], nome_edit, morada_edit)
+                                    st.success("Empresa atualizada")
+                                    st.rerun()
+                            with col_b:
+                                if st.form_submit_button("🗑️ Eliminar"):
+                                    eliminar_empresa_db(emp[0])
+                                    st.success("Empresa eliminada")
+                                    st.rerun()
+
+            st.markdown("---")
+
             col1, col2 = st.columns(2)
 
             with col1:
@@ -2843,29 +2977,47 @@ elif menu_option == "⚙️ Configurações":
                 with st.form("novo_cliente_form"):
                     nome = st.text_input("Nome *")
                     email = st.text_input("Email")
-
+                    empresas = listar_empresas()
+                    empresa_sel = st.selectbox(
+                        "Empresa *",
+                        empresas,
+                        format_func=lambda x: x[1],
+                    )
                     if st.form_submit_button("➕ Adicionar"):
-                        if nome:
-                            inserir_cliente(nome, email)
+                        if nome and empresa_sel:
+                            inserir_cliente(nome, email, empresa_sel[0])
                             st.success(f"Cliente {nome} adicionado!")
                             st.rerun()
                         else:
-                            st.error("Nome é obrigatório")
+                            st.error("Nome e Empresa são obrigatórios")
 
             with col2:
                 st.markdown("### Clientes Registados")
                 clientes = listar_clientes()
 
+                empresas = listar_empresas()
                 for cli in clientes:
                     with st.expander(cli[1]):
                         with st.form(f"edit_cli_{cli[0]}"):
                             nome_edit = st.text_input("Nome", cli[1])
                             email_edit = st.text_input("Email", cli[2] or "")
+                            idx_emp = 0
+                            for idx, emp in enumerate(empresas):
+                                if emp[0] == cli[3]:
+                                    idx_emp = idx
+                                    break
+                            empresa_sel = st.selectbox(
+                                "Empresa *",
+                                empresas,
+                                index=idx_emp,
+                                format_func=lambda x: x[1],
+                                key=f"emp_{cli[0]}",
+                            )
 
                             col_a, col_b = st.columns(2)
                             with col_a:
                                 if st.form_submit_button("💾 Guardar"):
-                                    atualizar_cliente(cli[0], nome_edit, email_edit)
+                                    atualizar_cliente(cli[0], nome_edit, email_edit, empresa_sel[0])
                                     st.success("Cliente atualizado")
                                     st.rerun()
                             with col_b:
