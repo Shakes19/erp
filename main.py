@@ -1913,16 +1913,16 @@ st.markdown("""
 # Menu lateral
 with st.sidebar:
     st.title("📋 Menu Principal")
-    st.markdown(
-        """
-        <style>
+        st.markdown(
+            """
+            <style>
         .nav-link:hover {
-            color: rgb(14, 17, 23) !important;
+            color: white !important;
         }
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
+            """,
+            unsafe_allow_html=True,
+        )
     opcoes_menu = [
         "🏠 Dashboard",
         "📝 Nova Cotação",
@@ -1947,12 +1947,12 @@ with st.sidebar:
                 "font-size": "14px",
                 "text-align": "left",
                 "margin": "2px",
-                "--hover-color": "#eee",
+                "--hover-color": "rgb(14, 17, 23)",
                 "white-space": "nowrap",
                 "padding": "4px 2px",
                 "line-height": "24px",
             },
-            "nav-link-selected": {"background-color": "rgb(14, 17, 23)"},
+            "nav-link-selected": {"background-color": "rgb(14, 17, 23)", "color": "white"},
             "icon": {"display": "none"},
         },
     )
