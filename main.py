@@ -1913,16 +1913,16 @@ st.markdown("""
 # Menu lateral
 with st.sidebar:
     st.title("📋 Menu Principal")
-        st.markdown(
-            """
-            <style>
+    st.markdown(
+        """
+        <style>
         .nav-link:hover {
             color: white !important;
         }
         </style>
-            """,
-            unsafe_allow_html=True,
-        )
+        """,
+        unsafe_allow_html=True,
+    )
     opcoes_menu = [
         "🏠 Dashboard",
         "📝 Nova Cotação",
