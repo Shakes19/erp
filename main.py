@@ -224,14 +224,29 @@ def obter_fornecedor_por_marca(marca):
 
 @st.cache_data(show_spinner=False)
 def listar_clientes():
-    """Obter todos os clientes"""
+    """Obter todos os clientes.
+
+    Antes desta correção, se a base de dados ainda não tivesse sido
+    inicializada a chamada falhava com ``sqlite3.OperationalError`` ao
+    tentar aceder à tabela ``cliente``.  Isto acontecia, por exemplo,
+    quando o utilizador executava o programa sem ter criado as tabelas
+    previamente.  Agora a função verifica essa condição e cria a base de
+    dados quando necessário, devolvendo uma lista vazia."""
+
     conn = obter_conexao()
     c = conn.cursor()
-    c.execute(
-        "SELECT id, nome, email FROM cliente ORDER BY nome"
-    )
-    clientes = c.fetchall()
-    conn.close()
+    try:
+        c.execute("SELECT id, nome, email FROM cliente ORDER BY nome")
+        clientes = c.fetchall()
+    except sqlite3.OperationalError as e:
+        conn.close()
+        if "no such table" in str(e).lower():
+            criar_base_dados_completa()
+            clientes = []
+        else:
+            raise
+    else:
+        conn.close()
     return clientes
 
 
