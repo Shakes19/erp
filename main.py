@@ -2097,18 +2097,28 @@ elif menu_option == "📩 Responder Cotações":
             }
             /* Expand inner dialog content */
             [data-testid="stDialog"] > div {
-                width: 95%;
-                max-width: 95%;
+                width: 100%;
+                max-width: 100%;
+            }
+            /* Scale form content */
+            [data-testid="stDialog"] form {
+                transform: scale(1.3);
+                transform-origin: top left;
             }
             </style>
             """,
             unsafe_allow_html=True,
         )
         detalhes = obter_detalhes_cotacao(cotacao['id'])
-        st.info(f"**Respondendo Cotação {cotacao['processo']}**")
+        st.info(f"**Responder a Cotação {cotacao['processo']}**")
 
         with st.form(f"resposta_form_{cotacao['id']}"):
             respostas = []
+            pdf_resposta = st.file_uploader(
+                "Resposta do Fornecedor (PDF)",
+                type=["pdf"],
+                key=f"pdf_{cotacao['id']}"
+            )
 
             for i, artigo in enumerate(detalhes['artigos'], 1):
                 st.subheader(f"Artigo {i}: {artigo['artigo_num'] if artigo['artigo_num'] else 'S/N'}")
@@ -2205,6 +2215,9 @@ elif menu_option == "📩 Responder Cotações":
 
             if respostas_validas:
                 if guardar_respostas(cotacao['id'], respostas_validas, custo_envio):
+                    if pdf_resposta is not None:
+                        with open(f"resposta_fornecedor_{cotacao['id']}.pdf", "wb") as f:
+                            f.write(pdf_resposta.getbuffer())
                     st.success("✅ Resposta guardada e email enviado com sucesso!")
                     st.rerun()
             else:
