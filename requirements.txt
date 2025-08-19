@@ -8,4 +8,4 @@ schedule
 sqlalchemy
 bcrypt
 Pillow
-imghdr
+standard-imghdr
