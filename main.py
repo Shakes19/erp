@@ -62,12 +62,9 @@ LOGO_PATH = "assets/logo.png"
 
 @st.cache_data(show_spinner=False)
 def load_logo():
-    img = Image.open(LOGO_PATH)
-    with open(LOGO_PATH, "rb") as image_file:
-        b64 = base64.b64encode(image_file.read()).decode()
-    return img, b64
+    return Image.open(LOGO_PATH)
 
-logo_image, LOGO_BASE64 = load_logo()
+logo_image = load_logo()
 
 st.set_page_config(
     page_title="myERP",
@@ -1670,7 +1667,7 @@ def login_screen():
         else:
             st.error("Credenciais inválidas")
     st.markdown(
-        f"<p style='text-align:center'><img src='data:image/png;base64,{LOGO_BASE64}' width='120'/></p>",
+        f"<p style='text-align:center'><img src='{LOGO_PATH}' width='120'/></p>",
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -1781,7 +1778,7 @@ with st.sidebar:
     st.markdown(
         f"""
         <div style="text-align: center; font-size: 12px;">
-            <p><img src='data:image/png;base64,{LOGO_BASE64}' width='80'/></p>
+            <p><img src='{LOGO_PATH}' width='80'/></p>
             <p>Sistema myERP v4.0</p>
             <p>© 2025 Ricardo Nogueira</p>
         </div>
