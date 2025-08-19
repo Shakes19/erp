@@ -2,7 +2,6 @@ import streamlit as st
 import sqlite3
 from datetime import datetime, date
 from fpdf import FPDF
-from PIL import Image
 import base64
 import json
 from io import BytesIO
@@ -60,15 +59,9 @@ def _format_iso_date(value):
 
 LOGO_PATH = "assets/logo.png"
 
-@st.cache_data(show_spinner=False)
-def load_logo():
-    return Image.open(LOGO_PATH)
-
-logo_image = load_logo()
-
 st.set_page_config(
     page_title="myERP",
-    page_icon=logo_image,
+    page_icon=LOGO_PATH,
     layout="wide"
 )
 
