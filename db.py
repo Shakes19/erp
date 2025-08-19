@@ -86,7 +86,13 @@ def criar_base_dados_completa():
     c = conn.cursor()
 
     # Improve concurrency
-    c.execute("PRAGMA journal_mode=WAL")
+    try:
+        c.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.OperationalError:
+        # Some environments (e.g. in-memory or read-only databases) do not
+        # support switching to WAL mode.  Ignore the error so initialisation can
+        # proceed in these cases.
+        pass
     c.execute("PRAGMA busy_timeout=5000")
 
     # Tabela de fornecedores
