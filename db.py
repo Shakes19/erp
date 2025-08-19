@@ -104,6 +104,17 @@ def criar_base_dados_completa():
         """
     )
 
+    # Tabela de clientes
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cliente (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL UNIQUE,
+            email TEXT
+        )
+        """
+    )
+
     # Tabela de marcas por fornecedor
     c.execute(
         """
@@ -345,6 +356,7 @@ def criar_base_dados_completa():
         "CREATE INDEX IF NOT EXISTS idx_resposta_artigo ON resposta_fornecedor(artigo_id)",
         "CREATE INDEX IF NOT EXISTS idx_fornecedor_nome ON fornecedor(nome)",
         "CREATE INDEX IF NOT EXISTS idx_fornecedor_marca ON fornecedor_marca(fornecedor_id, marca)",
+        "CREATE INDEX IF NOT EXISTS idx_cliente_nome ON cliente(nome)",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_utilizador_username ON utilizador(username)",
     ]
     for idx in indices:

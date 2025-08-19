@@ -8,6 +8,8 @@ from io import BytesIO
 import os
 import shutil
 import imghdr
+import tempfile
+from PIL import Image
 from streamlit_option_menu import option_menu
 from db import (
     criar_processo,
@@ -61,8 +63,8 @@ LOGO_PATH = "assets/logo.png"
 
 st.set_page_config(
     page_title="myERP",
-    page_icon=LOGO_PATH,
-    layout="wide"
+    page_icon=Image.open(LOGO_PATH),
+    layout="wide",
 )
 
 # ========================== GESTÃO DA BASE DE DADOS ==========================
@@ -216,6 +218,66 @@ def obter_fornecedor_por_marca(marca):
     res = c.fetchone()
     conn.close()
     return res
+
+
+# ========================== FUNÇÕES DE GESTÃO DE CLIENTES ==========================
+
+@st.cache_data(show_spinner=False)
+def listar_clientes():
+    """Obter todos os clientes"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id, nome, email FROM cliente ORDER BY nome"
+    )
+    clientes = c.fetchall()
+    conn.close()
+    return clientes
+
+
+def inserir_cliente(nome, email=""):
+    """Inserir novo cliente"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    try:
+        c.execute("SELECT id FROM cliente WHERE nome = ?", (nome,))
+        existente = c.fetchone()
+        if existente:
+            return existente[0]
+        c.execute(
+            "INSERT INTO cliente (nome, email) VALUES (?, ?)",
+            (nome, email),
+        )
+        conn.commit()
+        listar_clientes.clear()
+        return c.lastrowid
+    finally:
+        conn.close()
+
+
+def atualizar_cliente(cliente_id, nome, email=""):
+    """Atualizar dados de um cliente"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE cliente SET nome = ?, email = ? WHERE id = ?",
+        (nome, email, cliente_id),
+    )
+    conn.commit()
+    conn.close()
+    listar_clientes.clear()
+    return True
+
+
+def eliminar_cliente_db(cliente_id):
+    """Eliminar cliente"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute("DELETE FROM cliente WHERE id = ?", (cliente_id,))
+    conn.commit()
+    conn.close()
+    listar_clientes.clear()
+    return True
 
 
 # ========================== FUNÇÕES DE GESTÃO DE UTILIZADORES ==========================
@@ -966,13 +1028,18 @@ class InquiryPDF(FPDF):
         # Bloco da empresa (logo + contactos) no lado direito
         if logo_bytes:
             img_type = imghdr.what(None, logo_bytes) or "png"
-            self.image(
-                BytesIO(logo_bytes),
-                logo_cfg.get("x", self.w - 15 - 70),
-                logo_cfg.get("y", 15),
-                logo_cfg.get("w", 70),
-                type=img_type.upper(),
-            )
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{img_type}") as tmp:
+                tmp.write(logo_bytes)
+                tmp_path = tmp.name
+            try:
+                self.image(
+                    tmp_path,
+                    logo_cfg.get("x", self.w - 15 - 70),
+                    logo_cfg.get("y", 15),
+                    logo_cfg.get("w", 70),
+                )
+            finally:
+                os.remove(tmp_path)
         elif os.path.exists(logo_path):
             self.image(
                 logo_path,
@@ -1843,11 +1910,15 @@ elif menu_option == "📝 Nova Cotação":
         data = st.date_input("Data da cotação", datetime.today())
 
     with st.form(key="nova_cotacao_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            nome_solicitante = st.text_input("Cliente")
-        with col2:
-            email_solicitante = st.text_input("Email do Cliente")
+        clientes = listar_clientes()
+        cliente_sel = st.selectbox(
+            "Cliente",
+            options=clientes,
+            format_func=lambda x: x[1] if x else "",
+            key="cliente_select_nova",
+        )
+        nome_solicitante = cliente_sel[1] if cliente_sel else ""
+        email_solicitante = cliente_sel[2] if cliente_sel else ""
 
         col_ref, col_pdf = st.columns(2)
         with col_ref:
@@ -2008,10 +2079,10 @@ elif menu_option == "📩 Responder Cotações":
                 align-items: center;
                 justify-content: center;
             }
-            /* Limit the inner dialog content to 1200px */
+            /* Expand inner dialog content */
             [data-testid="stDialog"] > div {
-                width: 1200px;
-                max-width: 1200px;
+                width: 90%;
+                max-width: 90%;
             }
             </style>
             """,
@@ -2020,51 +2091,35 @@ elif menu_option == "📩 Responder Cotações":
         detalhes = obter_detalhes_cotacao(cotacao['id'])
         st.info(f"**Respondendo Cotação {cotacao['processo']}**")
 
-        tab_view, tab_replace = st.tabs(["Visualizar PDFs", "Substituir PDFs"])
-
-        with tab_view:
-            pdf_pedido = obter_pdf_da_db(cotacao['id'], "pedido")
-            if pdf_pedido:
-                exibir_pdf("📄 Pedido Interno", pdf_pedido, height=800, expanded=True)
-
-            pdf_cliente = obter_pdf_da_db(cotacao['id'], "cliente")
-            if pdf_cliente:
-                exibir_pdf("📄 Pedido Cliente", pdf_cliente, height=800, expanded=True)
-
-            pdf_resp_forn = obter_pdf_da_db(cotacao['id'], "anexo_fornecedor")
-            if pdf_resp_forn:
-                exibir_pdf("📄 Resposta Fornecedor", pdf_resp_forn, height=800, expanded=True)
-
-        with tab_replace:
-            novo_pedido_cliente = st.file_uploader(
-                "📎 Substituir Pedido Cliente (PDF)",
-                type=['pdf'],
-                key=f"upload_pedido_cli_{cotacao['id']}"
+        novo_pedido_cliente = st.file_uploader(
+            "📎 Substituir Pedido Cliente (PDF)",
+            type=['pdf'],
+            key=f"upload_pedido_cli_{cotacao['id']}"
+        )
+        if novo_pedido_cliente is not None:
+            guardar_pdf_upload(
+                cotacao['id'],
+                'cliente',
+                novo_pedido_cliente.name,
+                novo_pedido_cliente.getvalue()
             )
-            if novo_pedido_cliente is not None:
-                guardar_pdf_upload(
-                    cotacao['id'],
-                    'cliente',
-                    novo_pedido_cliente.name,
-                    novo_pedido_cliente.getvalue()
-                )
-                st.success("PDF de pedido cliente atualizado!")
-                st.rerun()
+            st.success("PDF de pedido cliente atualizado!")
+            st.rerun()
 
-            novo_resp_forn = st.file_uploader(
-                "📎 Substituir Resposta Fornecedor (PDF)",
-                type=['pdf'],
-                key=f"upload_resp_forn_{cotacao['id']}"
+        novo_resp_forn = st.file_uploader(
+            "📎 Substituir Resposta Fornecedor (PDF)",
+            type=['pdf'],
+            key=f"upload_resp_forn_{cotacao['id']}"
+        )
+        if novo_resp_forn is not None:
+            guardar_pdf_upload(
+                cotacao['id'],
+                'anexo_fornecedor',
+                novo_resp_forn.name,
+                novo_resp_forn.getvalue()
             )
-            if novo_resp_forn is not None:
-                guardar_pdf_upload(
-                    cotacao['id'],
-                    'anexo_fornecedor',
-                    novo_resp_forn.name,
-                    novo_resp_forn.getvalue()
-                )
-                st.success("PDF de resposta fornecedor atualizado!")
-                st.rerun()
+            st.success("PDF de resposta fornecedor atualizado!")
+            st.rerun()
 
         with st.form(f"resposta_form_{cotacao['id']}"):
             respostas = []
@@ -2575,26 +2630,30 @@ elif menu_option == "📄 PDFs":
             ("Resposta Cliente", "cliente", "📤"),
         ]
 
-        for label, tipo, emoji in pdf_types:
-            pdf_bytes = obter_pdf_da_db(cot_sel["id"], tipo)
-            if pdf_bytes:
-                exibir_pdf(f"{emoji} {label}", pdf_bytes)
-            else:
-                st.info(f"{label} não encontrado")
+        tab_view, tab_replace = st.tabs(["Visualizar PDFs", "Substituir PDFs"])
 
-        if st.session_state.get("role") == "admin":
-            label_selec = st.selectbox(
-                "Tipo de PDF a substituir",
-                [lbl for lbl, _, _ in pdf_types],
-                key="tipo_pdf_gest",
-            )
-            tipo_pdf = next(t for lbl, t, _ in pdf_types if lbl == label_selec)
-            novo_pdf = st.file_uploader("Substituir PDF", type=["pdf"], key="upload_pdf_gest")
-            if novo_pdf and st.button("💾 Guardar PDF"):
-                if guardar_pdf_upload(cot_sel["id"], tipo_pdf, novo_pdf.name, novo_pdf.getvalue()):
-                    st.success("PDF atualizado com sucesso!")
-        else:
-            st.info("Apenas administradores podem atualizar o PDF.")
+        with tab_view:
+            for label, tipo, emoji in pdf_types:
+                pdf_bytes = obter_pdf_da_db(cot_sel["id"], tipo)
+                if pdf_bytes:
+                    exibir_pdf(f"{emoji} {label}", pdf_bytes)
+                else:
+                    st.info(f"{label} não encontrado")
+
+        with tab_replace:
+            if st.session_state.get("role") == "admin":
+                label_selec = st.selectbox(
+                    "Tipo de PDF a substituir",
+                    [lbl for lbl, _, _ in pdf_types],
+                    key="tipo_pdf_gest",
+                )
+                tipo_pdf = next(t for lbl, t, _ in pdf_types if lbl == label_selec)
+                novo_pdf = st.file_uploader("Substituir PDF", type=["pdf"], key="upload_pdf_gest")
+                if novo_pdf and st.button("💾 Guardar PDF"):
+                    if guardar_pdf_upload(cot_sel["id"], tipo_pdf, novo_pdf.name, novo_pdf.getvalue()):
+                        st.success("PDF atualizado com sucesso!")
+            else:
+                st.info("Apenas administradores podem atualizar o PDF.")
     else:
         st.info("Nenhuma cotação disponível")
 
@@ -2656,8 +2715,9 @@ elif menu_option == "⚙️ Configurações":
         st.error("Sem permissão para aceder a esta área")
     else:
         st.title("⚙️ Configurações do Sistema")
-        tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        tab_fornecedores, tab_clientes, tab_marcas, tab_users, tab_email, tab_backup, tab_layout, tab_empresa = st.tabs([
             "Fornecedores",
+            "Clientes",
             "Marcas e Margens",
             "Utilizadores",
             "Email",
@@ -2667,7 +2727,7 @@ elif menu_option == "⚙️ Configurações":
         ])
 
 
-        with tab1:
+        with tab_fornecedores:
             st.subheader("Gestão de Fornecedores")
 
             col1, col2 = st.columns(2)
@@ -2729,7 +2789,48 @@ elif menu_option == "⚙️ Configurações":
                         marcas = obter_marcas_fornecedor(forn[0])
                         st.write(f"**Marcas:** {', '.join(marcas) if marcas else 'Nenhuma'}")
         
-        with tab2:
+        with tab_clientes:
+            st.subheader("Gestão de Clientes")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("### Adicionar Cliente")
+                with st.form("novo_cliente_form"):
+                    nome = st.text_input("Nome *")
+                    email = st.text_input("Email")
+
+                    if st.form_submit_button("➕ Adicionar"):
+                        if nome:
+                            inserir_cliente(nome, email)
+                            st.success(f"Cliente {nome} adicionado!")
+                            st.rerun()
+                        else:
+                            st.error("Nome é obrigatório")
+
+            with col2:
+                st.markdown("### Clientes Registados")
+                clientes = listar_clientes()
+
+                for cli in clientes:
+                    with st.expander(cli[1]):
+                        with st.form(f"edit_cli_{cli[0]}"):
+                            nome_edit = st.text_input("Nome", cli[1])
+                            email_edit = st.text_input("Email", cli[2] or "")
+
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                if st.form_submit_button("💾 Guardar"):
+                                    atualizar_cliente(cli[0], nome_edit, email_edit)
+                                    st.success("Cliente atualizado")
+                                    st.rerun()
+                            with col_b:
+                                if st.form_submit_button("🗑️ Eliminar"):
+                                    eliminar_cliente_db(cli[0])
+                                    st.success("Cliente eliminado")
+                                    st.rerun()
+
+        with tab_marcas:
             st.subheader("Configuração de Marcas e Margens")
     
             fornecedores = listar_fornecedores()
@@ -2826,7 +2927,7 @@ elif menu_option == "⚙️ Configurações":
                 conn.close()
                 st.success("Margem padrão atualizada!")
 
-        with tab3:
+        with tab_users:
             if st.session_state.get("role") != "admin":
                 st.warning("Apenas administradores podem gerir utilizadores.")
             else:
@@ -2897,7 +2998,7 @@ elif menu_option == "⚙️ Configurações":
                                         else:
                                             st.error("Erro ao eliminar utilizador")
         
-        with tab4:
+        with tab_email:
             st.subheader("Configuração de Email")
             
             # Obter configuração atual
@@ -2951,7 +3052,7 @@ elif menu_option == "⚙️ Configurações":
     
             st.info("Nota: Para Gmail, usa uma 'App Password' em vez da palavra-passe normal")
         
-        with tab5:
+        with tab_backup:
             st.subheader("Backup e Restauro")
             
             if st.button("💾 Criar Backup"):
@@ -2998,7 +3099,7 @@ elif menu_option == "⚙️ Configurações":
                     except Exception as e:
                         st.error(f"Erro ao restaurar: {e}")
     
-        with tab6:
+        with tab_layout:
             st.subheader("Layout dos PDFs")
             tipo_layout = st.selectbox("Tipo de PDF", ["pedido", "cliente"])
             config_atual = load_pdf_config(tipo_layout)
@@ -3019,7 +3120,7 @@ elif menu_option == "⚙️ Configurações":
                 "Altere textos, tamanhos de letra e posições editando o JSON acima."
             )
     
-        with tab7:
+        with tab_empresa:
             st.subheader("Dados da Empresa")
             conn = obter_conexao()
             c = conn.cursor()
