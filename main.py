@@ -1917,7 +1917,7 @@ with st.sidebar:
         """
         <style>
         .nav-link:hover {
-            color: #2e7d32 !important;
+            color: rgb(14, 17, 23) !important;
         }
         </style>
         """,
@@ -1952,7 +1952,7 @@ with st.sidebar:
                 "padding": "4px 2px",
                 "line-height": "24px",
             },
-            "nav-link-selected": {"background-color": "#d0f0c0"},
+            "nav-link-selected": {"background-color": "rgb(14, 17, 23)"},
             "icon": {"display": "none"},
         },
     )
