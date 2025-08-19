@@ -225,12 +225,28 @@ def obter_fornecedor_por_marca(marca):
 
 @st.cache_data(show_spinner=False)
 def listar_empresas():
-    """Obter todas as empresas de clientes"""
+    """Obter todas as empresas de clientes.
+
+    Tal como acontecia anteriormente com ``listar_clientes``, esta função
+    falhava com ``sqlite3.OperationalError`` quando a base de dados ainda não
+    estava inicializada (tabela ``cliente_empresa`` inexistente).  Agora o
+    erro é interceptado e a base de dados é criada automaticamente,
+    devolvendo uma lista vazia.
+    """
     conn = obter_conexao()
     c = conn.cursor()
-    c.execute("SELECT id, nome, morada FROM cliente_empresa ORDER BY nome")
-    empresas = c.fetchall()
-    conn.close()
+    try:
+        c.execute("SELECT id, nome, morada FROM cliente_empresa ORDER BY nome")
+        empresas = c.fetchall()
+    except sqlite3.OperationalError as e:
+        conn.close()
+        if "no such table" in str(e).lower():
+            criar_base_dados_completa()
+            empresas = []
+        else:
+            raise
+    else:
+        conn.close()
     return empresas
 
 
@@ -285,8 +301,17 @@ def inserir_empresa(nome, morada=""):
         conn.commit()
         listar_empresas.clear()
         return c.lastrowid
-    finally:
+    except sqlite3.OperationalError as e:
         conn.close()
+        if "no such table" in str(e).lower():
+            criar_base_dados_completa()
+            return inserir_empresa(nome, morada)
+        raise
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def atualizar_empresa(empresa_id, nome, morada=""):
