@@ -2030,18 +2030,53 @@ elif menu_option == "📩 Responder Cotações":
         detalhes = obter_detalhes_cotacao(cotacao['id'])
         st.info(f"**Respondendo Cotação {cotacao['processo']}**")
 
-        pdf_pedido = obter_pdf_da_db(cotacao['id'], "pedido")
-        if pdf_pedido:
-            exibir_pdf("📄 Pedido", pdf_pedido, height=800, expanded=True)
+        tab_view, tab_replace = st.tabs(["Visualizar PDFs", "Substituir PDFs"])
+
+        with tab_view:
+            pdf_pedido = obter_pdf_da_db(cotacao['id'], "pedido")
+            if pdf_pedido:
+                exibir_pdf("📄 Pedido Interno", pdf_pedido, height=800, expanded=True)
+
+            pdf_cliente = obter_pdf_da_db(cotacao['id'], "cliente")
+            if pdf_cliente:
+                exibir_pdf("📄 Pedido Cliente", pdf_cliente, height=800, expanded=True)
+
+            pdf_resp_forn = obter_pdf_da_db(cotacao['id'], "anexo_fornecedor")
+            if pdf_resp_forn:
+                exibir_pdf("📄 Resposta Fornecedor", pdf_resp_forn, height=800, expanded=True)
+
+        with tab_replace:
+            novo_pedido_cliente = st.file_uploader(
+                "📎 Substituir Pedido Cliente (PDF)",
+                type=['pdf'],
+                key=f"upload_pedido_cli_{cotacao['id']}"
+            )
+            if novo_pedido_cliente is not None:
+                guardar_pdf_upload(
+                    cotacao['id'],
+                    'cliente',
+                    novo_pedido_cliente.name,
+                    novo_pedido_cliente.getvalue()
+                )
+                st.success("PDF de pedido cliente atualizado!")
+                st.rerun()
+
+            novo_resp_forn = st.file_uploader(
+                "📎 Substituir Resposta Fornecedor (PDF)",
+                type=['pdf'],
+                key=f"upload_resp_forn_{cotacao['id']}"
+            )
+            if novo_resp_forn is not None:
+                guardar_pdf_upload(
+                    cotacao['id'],
+                    'anexo_fornecedor',
+                    novo_resp_forn.name,
+                    novo_resp_forn.getvalue()
+                )
+                st.success("PDF de resposta fornecedor atualizado!")
+                st.rerun()
 
         with st.form(f"resposta_form_{cotacao['id']}"):
-            upload_resposta_forn = st.file_uploader(
-                "📎 Resposta do fornecedor (PDF)",
-                type=['pdf'],
-                key=f"upload_resp_{cotacao['id']}"
-            )
-            if upload_resposta_forn is not None:
-                exibir_pdf("👁️ PDF carregado", upload_resposta_forn.getvalue(), expanded=True)
             respostas = []
 
             for i, artigo in enumerate(detalhes['artigos'], 1):
@@ -2138,13 +2173,6 @@ elif menu_option == "📩 Responder Cotações":
             respostas_validas = [r for r in respostas if r[1] > 0]
 
             if respostas_validas:
-                if upload_resposta_forn is not None:
-                    guardar_pdf_upload(
-                        cotacao['id'],
-                        'anexo_fornecedor',
-                        upload_resposta_forn.name,
-                        upload_resposta_forn.getvalue()
-                    )
                 if guardar_respostas(cotacao['id'], respostas_validas, custo_envio):
                     st.success("✅ Resposta guardada e email enviado com sucesso!")
                     st.rerun()
