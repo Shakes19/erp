@@ -945,7 +945,7 @@ class InquiryPDF(FPDF):
         """Cabeçalho com duas colunas e grelha de metadados"""
         header_cfg = self.cfg.get("header", {})
         logo_cfg = header_cfg.get("logo", {})
-        logo_path = logo_cfg.get("path", self.cfg.get("logo_path", "logo.jpeg"))
+        logo_path = logo_cfg.get("path", self.cfg.get("logo_path", LOGO_PATH))
         logo_bytes = self.cfg.get("logo_bytes")
 
         # Grelha de metadados no lado esquerdo
