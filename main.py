@@ -1781,7 +1781,18 @@ def extrair_dados_pdf(pdf_bytes):
         return ""
 
     referencia = linha_apos("Our reference:")
-    cliente = linha_apos("Contact:")
+
+    cliente = ""
+    match_data = re.search(r"\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2}", texto)
+    if match_data:
+        restante = texto[match_data.end():]
+        for linha in restante.splitlines():
+            linha = linha.strip()
+            if linha:
+                cliente = linha
+                break
+    if not cliente:
+        cliente = linha_apos("Contact:")
 
     descricao = ""
     artigo = ""
