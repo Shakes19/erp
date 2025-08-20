@@ -32,6 +32,8 @@ Sistema de gestão de cotações desenvolvido em **Python** com **Streamlit** e 
   - Criar RFQs com múltiplos artigos
   - Associar fornecedor e marca
   - Gerar PDF de pedido
+- **Smart Quotation**
+  - Upload de PDF com preenchimento automático da cotação
 - **Responder Cotações**
   - Inserir preços, prazos e dados logísticos
   - Cálculo automático de preços de venda baseado na margem
