@@ -1156,27 +1156,40 @@ class InquiryPDF(FPDF):
             self.cell(80, 5, str(line), ln=1)
 
         # Bloco da empresa (logo + contactos) no lado direito
+        max_h = 30  # altura máxima para evitar sobreposição com contactos
+        logo_w = logo_cfg.get("w", 70)
+        x_logo = logo_cfg.get("x", self.w - self.r_margin - logo_w)
+        y_logo = logo_cfg.get("y", 15)
+        def _draw_logo(path_or_bytes):
+            """Desenha logo redimensionando para altura máxima."""
+            if isinstance(path_or_bytes, bytes):
+                img = Image.open(BytesIO(path_or_bytes))
+            else:
+                img = Image.open(path_or_bytes)
+            w_px, h_px = img.size
+            ratio = h_px / w_px if w_px else 1
+            h_logo = logo_w * ratio
+            if h_logo > max_h:
+                logo_w_adj = max_h / ratio
+                h_logo = max_h
+            else:
+                logo_w_adj = logo_w
+            if isinstance(path_or_bytes, bytes):
+                img_type = imghdr.what(None, path_or_bytes) or "png"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=f".{img_type}") as tmp:
+                    tmp.write(path_or_bytes)
+                    tmp_path = tmp.name
+                try:
+                    self.image(tmp_path, x_logo, y_logo, logo_w_adj, h_logo)
+                finally:
+                    os.remove(tmp_path)
+            else:
+                self.image(path_or_bytes, x_logo, y_logo, logo_w_adj, h_logo)
+
         if logo_bytes:
-            img_type = imghdr.what(None, logo_bytes) or "png"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{img_type}") as tmp:
-                tmp.write(logo_bytes)
-                tmp_path = tmp.name
-            try:
-                self.image(
-                    tmp_path,
-                    logo_cfg.get("x", self.w - 15 - 70),
-                    logo_cfg.get("y", 15),
-                    logo_cfg.get("w", 70),
-                )
-            finally:
-                os.remove(tmp_path)
+            _draw_logo(logo_bytes)
         elif os.path.exists(logo_path):
-            self.image(
-                logo_path,
-                logo_cfg.get("x", self.w - 15 - 70),
-                logo_cfg.get("y", 15),
-                logo_cfg.get("w", 70),
-            )
+            _draw_logo(logo_path)
         company_lines = self.cfg.get(
             "company_lines",
             ["Ricardo Nogueira", "Rua Exemplo 123", "4455-123 Porto", "Portugal"],
@@ -1220,14 +1233,16 @@ class InquiryPDF(FPDF):
         self.set_font("Helvetica", "", 9)
         self.multi_cell(col_w, 4, "\n".join(legal_info), align="R")
 
-        # Logo do myERP com hyperlink
-        self.set_y(-10)
+        # Logo do myERP com hyperlink no canto inferior direito
         try:
+            logo_w = 20
+            x = self.w - self.r_margin - logo_w
+            y = self.h - self.b_margin - logo_w / 2
             self.image(
                 LOGO_PATH,
-                x=(self.w - 20) / 2,
-                y=self.get_y(),
-                w=20,
+                x=x,
+                y=y,
+                w=logo_w,
                 link="https://erpktb.streamlit.app/",
             )
         except Exception:
@@ -1372,7 +1387,7 @@ class ClientQuotationPDF(InquiryPDF):
         size = table_cfg.get("font_size", 9)
         self.set_font(font, style, size)
         for w, h in zip(widths, headers):
-            self.cell(w, 7, h, border=1, align="C")
+            self.cell(w, 7, h, border="B", align="C")
         self.ln()
 
     def split_text(self, text, max_length):
@@ -1412,10 +1427,13 @@ class ClientQuotationPDF(InquiryPDF):
         lines = self.split_text(desc, max_desc_len)
         hs_code = item.get("hs_code")
         origem = item.get("pais_origem")
-        if hs_code:
-            lines.append(f"HS Code: {hs_code}")
-        if origem:
-            lines.append(f"Origin: {origem}")
+        if hs_code or origem:
+            parts = []
+            if hs_code:
+                parts.append(f"HS Code: {hs_code}")
+            if origem:
+                parts.append(f"Origin: {origem}")
+            lines.append(" ".join(parts))
         line_count = len(lines)
         row_height = line_count * 6
 
@@ -1461,13 +1479,6 @@ class ClientQuotationPDF(InquiryPDF):
         label_w = totals_cfg.get("label_width", 131)
         total_w = totals_cfg.get("total_width", 20)
         extra_w = totals_cfg.get("extra_width", 39)
-        self.ln(5)
-        self.set_font(font, style, size)
-        self.cell(label_w, 8, "TOTAL:", border=1, align="R")
-        self.cell(total_w, 8, f"EUR {total_geral:.2f}", border=1, align="C")
-        self.cell(extra_w, 8, f"Total Weight: {peso_total:.1f}kg", border=1, align="C")
-        self.ln(10)
-
         conditions = self.cfg.get(
             "conditions",
             [
@@ -1476,9 +1487,21 @@ class ClientQuotationPDF(InquiryPDF):
                 "Payment terms: To be agreed",
             ],
         )
+        cond_h = 5 * len(conditions)
+        block_h = 8 + 5 + cond_h
+        start_y = self.h - self.b_margin - block_h
+        if self.get_y() > start_y:
+            self.add_page()
+            start_y = self.h - self.b_margin - block_h
+        self.set_y(start_y)
+        self.set_font(font, style, size)
+        self.cell(label_w, 8, "TOTAL:", border=1, align="R")
+        self.cell(total_w, 8, f"EUR {total_geral:.2f}", border=1, align="C")
+        self.cell(extra_w, 8, f"Total Weight: {peso_total:.1f}kg", border=1, align="C")
+        self.ln(5)
         self.set_font(font, "", size - 1)
         for cond in conditions:
-            self.cell(0, 5, cond, ln=True)
+            self.cell(0, 5, cond, ln=1)
 
     def gerar(self, rfq_info, solicitante_info, itens_resposta):
         addr_lines = []
@@ -1545,10 +1568,13 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
             if email_user:
                 linhas.append(email_user)
             config["company_lines"] = [l for l in linhas if l]
+            bank = {}
             if empresa.get("iban"):
-                config["bank_details"] = [{"IBAN / Account No.": empresa["iban"]}]
+                bank["IBAN / Account No."] = empresa["iban"]
             if empresa.get("nif"):
-                config.setdefault("legal_info", []).append(f"NIF: {empresa['nif']}")
+                bank["NIF"] = empresa["nif"]
+            if bank:
+                config["bank_details"] = [bank]
             if empresa.get("logo"):
                 config["logo_bytes"] = empresa["logo"]
 
@@ -1670,10 +1696,13 @@ def gerar_pdf_cliente(rfq_id):
             if empresa.get("website"):
                 linhas.append(empresa["website"])
             config["company_lines"] = [l for l in linhas if l]
+            bank = {}
             if empresa.get("iban"):
-                config["bank_details"] = [{"IBAN / Account No.": empresa["iban"]}]
+                bank["IBAN / Account No."] = empresa["iban"]
             if empresa.get("nif"):
-                config.setdefault("legal_info", []).append(f"NIF: {empresa['nif']}")
+                bank["NIF"] = empresa["nif"]
+            if bank:
+                config["bank_details"] = [bank]
             if empresa.get("logo"):
                 config["logo_bytes"] = empresa["logo"]
         pdf_cliente = ClientQuotationPDF(config)
