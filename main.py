@@ -1798,6 +1798,14 @@ def extrair_dados_pdf(pdf_bytes):
         cliente = linha_apos("Contact:")
     if not cliente:
         cliente = linha_apos("21079 Hamburg - Germany")
+    if "Gro\u00dfmoorring 9" in texto:
+        idx_addr = texto.find("Gro\u00dfmoorring 9")
+        linhas_antes = texto[:idx_addr].splitlines()
+        for linha in reversed(linhas_antes):
+            linha = linha.strip()
+            if linha:
+                cliente = linha
+                break
 
     descricao = ""
     artigo = ""
@@ -1812,6 +1820,23 @@ def extrair_dados_pdf(pdf_bytes):
                 break
     if not descricao:
         descricao = linha_apos("Piece")
+
+    linhas_pdf = texto.splitlines()
+    itens = []
+    padrao_item = re.compile(r"\b\d{3}\.00\b")
+    for i, linha in enumerate(linhas_pdf):
+        if padrao_item.search(linha):
+            codigo = padrao_item.search(linha).group()
+            desc = ""
+            for j in range(i - 1, -1, -1):
+                prev = linhas_pdf[j].strip()
+                if prev:
+                    desc = prev
+                    break
+            if desc:
+                itens.append({"codigo": codigo, "descricao": desc})
+    if not descricao and itens:
+        descricao = itens[0]["descricao"]
 
     quantidade = 1
     idx_qtd = texto.find("Quantity")
@@ -1831,6 +1856,7 @@ def extrair_dados_pdf(pdf_bytes):
         "descricao": descricao,
         "quantidade": quantidade,
         "marca": marca,
+        "itens": itens,
     }
 
 # ========================== FUNÇÕES DE UTILIDADE ==========================
