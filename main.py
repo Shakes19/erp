@@ -1788,11 +1788,16 @@ def extrair_dados_pdf(pdf_bytes):
         restante = texto[match_data.end():]
         for linha in restante.splitlines():
             linha = linha.strip()
-            if linha:
-                cliente = linha
-                break
+            if not linha:
+                continue
+            if "Hamburg - Germany" in linha:
+                continue
+            cliente = linha
+            break
     if not cliente:
         cliente = linha_apos("Contact:")
+    if not cliente:
+        cliente = linha_apos("21079 Hamburg - Germany")
 
     descricao = ""
     artigo = ""
@@ -1805,6 +1810,8 @@ def extrair_dados_pdf(pdf_bytes):
             if linha:
                 descricao = linha
                 break
+    if not descricao:
+        descricao = linha_apos("Piece")
 
     quantidade = 1
     idx_qtd = texto.find("Quantity")
