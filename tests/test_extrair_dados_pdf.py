@@ -91,3 +91,39 @@ def test_extrair_dados_pdf_grossmoorring():
     assert dados["itens"][0]["codigo"] == "001.00"
     assert dados["itens"][1]["descricao"] == "Descricao B"
     assert dados["itens"][1]["codigo"] == "002.00"
+
+
+def criar_pdf_alba_bytes():
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(0, 10, "Our reference:")
+    pdf.ln()
+    pdf.cell(0, 10, "20/08/2025")
+    pdf.ln()
+    pdf.cell(0, 10, "Info")
+    pdf.ln()
+    pdf.cell(0, 10, "Ricardo Nogueira")
+    pdf.ln()
+    pdf.cell(0, 10, "001.00 ALBA gearmotor (rear door)")
+    pdf.ln()
+    pdf.cell(0, 10, "49NC074")
+    pdf.ln()
+    pdf.cell(0, 10, "Piece")
+    pdf.ln()
+    pdf.cell(0, 10, "1")
+    pdf.ln()
+    pdf.cell(0, 10, "KTB-code:")
+    pdf.ln()
+    pdf.cell(0, 10, "1991080")
+    pdf.ln()
+    pdf.cell(0, 10, "i.A. Ricardo Nogueira")
+    pdf.ln()
+    pdf.cell(0, 10, "Sales Department")
+    return pdf.output(dest="S").encode("latin-1")
+
+
+def test_extrair_dados_pdf_alba():
+    dados = extrair_dados_pdf(criar_pdf_alba_bytes())
+    assert dados["nome"] == "Ricardo Nogueira"
+    assert dados["descricao"] == "ALBA gearmotor (rear door) 49NC074"
