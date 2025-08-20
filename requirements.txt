@@ -9,3 +9,4 @@ sqlalchemy
 bcrypt
 Pillow
 standard-imghdr
+pypdf

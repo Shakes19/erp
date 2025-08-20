@@ -9,6 +9,8 @@ import os
 import shutil
 import imghdr
 import tempfile
+import re
+from pypdf import PdfReader
 from PIL import Image
 import pandas as pd
 from streamlit_option_menu import option_menu
@@ -1758,6 +1760,53 @@ def verificar_pdfs(rfq_id):
         'cliente': cliente_existe
     }
 
+
+def extrair_dados_pdf(pdf_bytes):
+    """Extrai campos relevantes de um PDF de pedido de cotação."""
+    reader = PdfReader(BytesIO(pdf_bytes))
+    texto = ""
+    for page in reader.pages:
+        page_text = page.extract_text() or ""
+        texto += page_text + "\n"
+
+    def linha_apos(label):
+        idx = texto.find(label)
+        if idx == -1:
+            return ""
+        parte = texto[idx + len(label):].splitlines()[0]
+        return parte.strip()
+
+    referencia = linha_apos("Our reference:")
+    cliente = linha_apos("Contact:")
+    artigo = linha_apos("KTB-code:")
+
+    descricao = ""
+    idx_prod = texto.find("Product")
+    if idx_prod != -1:
+        linhas = texto[idx_prod:].splitlines()
+        if len(linhas) >= 2:
+            descricao = linhas[1].strip()
+
+    quantidade = 1
+    idx_qtd = texto.find("Quantity")
+    if idx_qtd != -1:
+        linhas = texto[idx_qtd:].splitlines()
+        if len(linhas) >= 2:
+            match = re.search(r"\d+", linhas[1])
+            if match:
+                quantidade = int(match.group(0))
+
+    marca = descricao.split()[0] if descricao else ""
+
+    return {
+        "referencia": referencia,
+        "cliente": cliente,
+        "artigo_num": artigo,
+        "descricao": descricao,
+        "quantidade": quantidade,
+        "marca": marca,
+    }
+
 # ========================== FUNÇÕES DE UTILIDADE ==========================
 
 def obter_estatisticas_db():
@@ -1928,6 +1977,7 @@ with st.sidebar:
     opcoes_menu = [
         "🏠 Dashboard",
         "📝 Nova Cotação",
+        "🤖 Smart Quotation",
         "📩 Responder Cotações",
         "📊 Relatórios",
         "📄 PDFs",
@@ -2200,6 +2250,83 @@ elif menu_option == "📝 Nova Cotação":
                     st.error("Erro ao criar cotação. Verifique se a referência já não existe.")
             else:
                 st.error("Por favor, adicione pelo menos um artigo com descrição")
+
+elif menu_option == "🤖 Smart Quotation":
+    st.title("🤖 Smart Quotation")
+
+    upload_pdf = st.file_uploader("📎 Pedido do cliente (PDF)", type=["pdf"], key="smart_pdf")
+    if upload_pdf is not None:
+        pdf_bytes = upload_pdf.getvalue()
+        exibir_pdf("👁️ PDF carregado", pdf_bytes, expanded=True)
+        dados = extrair_dados_pdf(pdf_bytes)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.text_input("Referência Cliente", value=dados["referencia"], disabled=True)
+        with col2:
+            st.text_input("Cliente", value=dados["cliente"], disabled=True)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.text_input("Nº Artigo", value=dados["artigo_num"], disabled=True)
+        with col2:
+            st.text_input("Quantidade", value=str(dados["quantidade"]), disabled=True)
+
+        st.text_area("Descrição", value=dados["descricao"], disabled=True, height=100)
+        st.text_input("Unidade", value="Peças", disabled=True)
+        st.text_input("Marca", value=dados["marca"], disabled=True)
+
+        if st.button("Submeter", type="primary"):
+            fornecedor_info = obter_fornecedor_por_marca(dados["marca"])
+            if not fornecedor_info:
+                st.error("Marca não encontrada. Configure a marca para um fornecedor.")
+            else:
+                fornecedor_id, _nome_fornecedor, _email = fornecedor_info
+                clientes = listar_clientes()
+                cliente_id = None
+                for cli in clientes:
+                    if cli[1].lower() == dados["cliente"].lower():
+                        cliente_id = cli[0]
+                        break
+
+                artigos = [
+                    {
+                        "artigo_num": dados["artigo_num"],
+                        "descricao": dados["descricao"],
+                        "quantidade": dados["quantidade"],
+                        "unidade": "Peças",
+                        "marca": dados["marca"],
+                    }
+                ]
+
+                rfq_id, numero_processo = criar_rfq(
+                    fornecedor_id,
+                    datetime.today(),
+                    artigos,
+                    dados["referencia"],
+                    cliente_id,
+                )
+
+                if rfq_id:
+                    guardar_pdf_upload(
+                        rfq_id,
+                        "anexo_cliente",
+                        upload_pdf.name,
+                        pdf_bytes,
+                    )
+                    st.success(
+                        f"✅ Cotação {numero_processo} (Ref: {dados['referencia']}) criada com sucesso!"
+                    )
+                    pdf_pedido = obter_pdf_da_db(rfq_id, "pedido")
+                    if pdf_pedido:
+                        st.download_button(
+                            "📄 Download PDF",
+                            data=pdf_pedido,
+                            file_name=f"cotacao_{rfq_id}.pdf",
+                            mime="application/pdf",
+                        )
+                else:
+                    st.error("Erro ao criar cotação.")
 
 elif menu_option == "📩 Responder Cotações":
     st.title("📩 Responder Cotações")
