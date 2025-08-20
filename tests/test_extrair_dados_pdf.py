@@ -8,7 +8,7 @@ def criar_pdf_bytes():
     pdf.set_font("Arial", size=12)
     pdf.cell(0, 10, "Our reference:")
     pdf.ln()
-    pdf.cell(0, 10, "Contact:")
+    pdf.cell(0, 10, "01/06/2024")
     pdf.ln()
     pdf.cell(0, 10, "Cliente XPTO")
     pdf.ln()
