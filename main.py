@@ -1773,19 +1773,27 @@ def extrair_dados_pdf(pdf_bytes):
         idx = texto.find(label)
         if idx == -1:
             return ""
-        parte = texto[idx + len(label):].splitlines()[0]
-        return parte.strip()
+        restante = texto[idx + len(label):]
+        for linha in restante.splitlines():
+            linha = linha.strip()
+            if linha:
+                return linha
+        return ""
 
     referencia = linha_apos("Our reference:")
     cliente = linha_apos("Contact:")
-    artigo = linha_apos("KTB-code:")
 
     descricao = ""
-    idx_prod = texto.find("Product")
-    if idx_prod != -1:
-        linhas = texto[idx_prod:].splitlines()
-        if len(linhas) >= 2:
-            descricao = linhas[1].strip()
+    artigo = ""
+    idx_ktb = texto.find("KTB-code:")
+    if idx_ktb != -1:
+        artigo = linha_apos("KTB-code:")
+        linhas_antes = texto[:idx_ktb].splitlines()
+        for linha in reversed(linhas_antes):
+            linha = linha.strip()
+            if linha:
+                descricao = linha
+                break
 
     quantidade = 1
     idx_qtd = texto.find("Quantity")
