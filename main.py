@@ -1604,7 +1604,6 @@ def gerar_pdf_cliente(rfq_id):
     """Gerar PDF para cliente com tratamento de erros"""
     try:
         conn = obter_conexao()
-        conn.row_factory = sqlite3.Row
         c = conn.cursor()
 
         # 1. Obter dados da RFQ e do cliente
@@ -1620,11 +1619,22 @@ def gerar_pdf_cliente(rfq_id):
             """,
             (rfq_id,),
         )
-        rfq_data = c.fetchone()
-        
-        if not rfq_data:
+        row = c.fetchone()
+
+        if not row:
             st.error("RFQ não encontrada")
             return False
+
+        rfq_data = {
+            "referencia": row[0],
+            "data": row[1],
+            "nome_solicitante": row[2],
+            "email_solicitante": row[3],
+            "empresa_nome": row[4],
+            "empresa_morada": row[5],
+            "cliente_nome": row[6],
+            "cliente_email": row[7],
+        }
 
         # 2. Obter respostas
         c.execute("""SELECT a.artigo_num, rf.descricao, rf.quantidade_final, 
