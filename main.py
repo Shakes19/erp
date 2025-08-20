@@ -1783,6 +1783,7 @@ def extrair_dados_pdf(pdf_bytes):
     referencia = linha_apos("Our reference:")
 
     cliente = ""
+    nome = ""
     match_data = re.search(r"\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2}", texto)
     if match_data:
         restante = texto[match_data.end():]
@@ -1807,36 +1808,55 @@ def extrair_dados_pdf(pdf_bytes):
                 cliente = linha
                 break
 
+    match_nome = re.search(r"i\.A\.\s*([^\n]+)", texto)
+    if match_nome:
+        nome = match_nome.group(1).strip()
+
     descricao = ""
     artigo = ""
     idx_ktb = texto.find("KTB-code:")
     if idx_ktb != -1:
         artigo = linha_apos("KTB-code:")
         linhas_antes = texto[:idx_ktb].splitlines()
+        padrao_item = re.compile(r"\b\d{3}\.00\b")
+        extra = ""
         for linha in reversed(linhas_antes):
             linha = linha.strip()
-            if linha:
-                descricao = linha
-                break
-    if not descricao:
-        descricao = linha_apos("Piece")
+            if not linha or linha.lower() in {"quantity %", "unit", "piece", "quantity"} or linha.isdigit():
+                continue
+            if re.match(r"^[A-Za-z0-9-]+$", linha) and not padrao_item.search(linha):
+                extra = linha + (" " + extra if extra else "")
+                continue
+            if padrao_item.search(linha):
+                linha = padrao_item.sub("", linha).strip()
+            descricao = linha
+            if extra:
+                descricao = f"{descricao} {extra}".strip()
+            break
 
     linhas_pdf = texto.splitlines()
     itens = []
     padrao_item = re.compile(r"\b\d{3}\.00\b")
     for i, linha in enumerate(linhas_pdf):
-        if padrao_item.search(linha):
-            codigo = padrao_item.search(linha).group()
-            desc = ""
-            for j in range(i - 1, -1, -1):
-                prev = linhas_pdf[j].strip()
-                if prev:
-                    desc = prev
-                    break
-            if desc:
-                itens.append({"codigo": codigo, "descricao": desc})
+        m = padrao_item.search(linha)
+        if m:
+            codigo = m.group()
+            desc = linha[m.end():].strip()
+            if not desc:
+                for j in range(i - 1, -1, -1):
+                    prev = linhas_pdf[j].strip()
+                    if prev and prev.lower() not in {"quantity %", "unit", "piece", "quantity"} and not prev.isdigit():
+                        desc = prev
+                        break
+            if i + 1 < len(linhas_pdf):
+                prox = linhas_pdf[i + 1].strip()
+                if re.match(r"^[A-Za-z0-9-]+$", prox):
+                    desc = f"{desc} {prox}".strip()
+            itens.append({"codigo": codigo, "descricao": desc})
     if not descricao and itens:
         descricao = itens[0]["descricao"]
+    if not descricao:
+        descricao = linha_apos("Piece")
 
     quantidade = 1
     idx_qtd = texto.find("Quantity")
@@ -1857,6 +1877,7 @@ def extrair_dados_pdf(pdf_bytes):
         "quantidade": quantidade,
         "marca": marca,
         "itens": itens,
+        "nome": nome,
     }
 
 # ========================== FUNÇÕES DE UTILIDADE ==========================
