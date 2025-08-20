@@ -1297,13 +1297,9 @@ class InquiryPDF(FPDF):
         quantidade = item.get("quantidade")
         quantidade_str = str(quantidade) if quantidade is not None else ""
         unidade = item.get("unidade") or ""
-        # Desenhar células
+        # Desenhar células sem grelha; apenas linha inferior no final do item
         for i in range(line_count):
-            border = "LR"
-            if i == 0:
-                border = "LTR"
-            if i == line_count - 1:
-                border = border.replace("R", "RB")
+            border = "B" if i == line_count - 1 else ""
             self.set_xy(x_start, y_start + i * line_height)
             self.cell(col_w[0], line_height, str(idx) if i == 0 else "", border=border, align="C")
             self.cell(col_w[1], line_height, part_no if i == 0 else "", border=border, align="C")
@@ -1428,11 +1424,7 @@ class ClientQuotationPDF(InquiryPDF):
             self.table_header()
 
         for i, line in enumerate(lines):
-            border = "LR"
-            if i == 0:
-                border = "LTR"
-            if i == line_count - 1:
-                border = border.replace("R", "RB")
+            border = "B" if i == line_count - 1 else ""
             self.cell(widths[0], 6, str(idx) if i == 0 else "", border=border, align="C")
             self.cell(widths[1], 6, (item.get("artigo_num") or "")[:10] if i == 0 else "", border=border)
             self.cell(widths[2], 6, line, border=border)
@@ -2796,7 +2788,12 @@ elif menu_option == "📩 Responder Cotações":
 elif menu_option == "📊 Relatórios":
     st.title("📊 Relatórios e Análises")
     
-    tab1, tab2, tab3 = st.tabs(["Estatísticas Gerais", "Por Fornecedor", "Por Utilizador"])
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "Estatísticas Gerais",
+        "Por Fornecedor",
+        "Por Utilizador",
+        "Evolução Cumulativa",
+    ])
     
     with tab1:
         st.subheader("Estatísticas Gerais")
@@ -2831,75 +2828,6 @@ elif menu_option == "📊 Relatórios":
                 st.info(f"🟡 Pendentes: {pendentes}")
         with col2:
             st.success(f"🟢 Respondidas: {respondidas}")
-        st.markdown("---")
-        st.subheader("Evolução Cumulativa")
-
-        conn = obter_conexao()
-        c = conn.cursor()
-
-        c.execute("SELECT data, COUNT(*) FROM rfq GROUP BY data ORDER BY data")
-        rows = c.fetchall()
-        if rows:
-            df = pd.DataFrame(rows, columns=["data", "total"])
-            df["data"] = pd.to_datetime(df["data"])
-            df = df.set_index("data").sort_index()
-            df["cumulativo"] = df["total"].cumsum()
-            st.markdown("**Cotações por Dia (Cumulativo)**")
-            st.line_chart(df["cumulativo"], height=300)
-        else:
-            st.info("Sem dados diários")
-
-        c.execute(
-            """
-            SELECT r.data,
-                   SUM(rf.preco_venda * rf.quantidade_final) as total
-            FROM rfq r
-            JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
-            GROUP BY r.data
-            ORDER BY r.data
-            """
-        )
-        rows = c.fetchall()
-        if rows:
-            df_val = pd.DataFrame(rows, columns=["data", "total"])
-            df_val["data"] = pd.to_datetime(df_val["data"])
-            df_val = df_val.set_index("data").sort_index()
-            df_val["cumulativo"] = df_val["total"].cumsum()
-            st.markdown("**Preço de Venda por Dia (Cumulativo)**")
-            st.line_chart(df_val["cumulativo"], height=300)
-        else:
-            st.info("Sem dados de preço de venda diário")
-
-        c.execute("SELECT strftime('%Y-%m', data) as mes, COUNT(*) FROM rfq GROUP BY mes ORDER BY mes")
-        rows = c.fetchall()
-        if rows:
-            df_mes = pd.DataFrame(rows, columns=["mes", "total"])
-            df_mes["cumulativo"] = df_mes["total"].cumsum()
-            st.markdown("**Cotações por Mês (Cumulativo)**")
-            st.line_chart(df_mes.set_index("mes")["cumulativo"], height=300)
-        else:
-            st.info("Sem dados mensais")
-
-        c.execute(
-            """
-            SELECT strftime('%Y-%m', r.data) as mes,
-                   SUM(rf.preco_venda * rf.quantidade_final) as total
-            FROM rfq r
-            JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
-            GROUP BY mes
-            ORDER BY mes
-            """
-        )
-        rows = c.fetchall()
-        conn.close()
-        if rows:
-            df_val_mes = pd.DataFrame(rows, columns=["mes", "total"])
-            df_val_mes["cumulativo"] = df_val_mes["total"].cumsum()
-            st.markdown("**Preço de Venda por Mês (Cumulativo)**")
-            st.line_chart(df_val_mes.set_index("mes")["cumulativo"], height=300)
-        else:
-            st.info("Sem dados de preço de venda mensal")
-
     with tab2:
         st.subheader("Análise por Fornecedor")
         
@@ -3014,6 +2942,75 @@ elif menu_option == "📊 Relatórios":
                 conn.close()
         else:
             st.info("Nenhum utilizador registado")
+
+    with tab4:
+        st.subheader("Evolução Cumulativa")
+
+        conn = obter_conexao()
+        c = conn.cursor()
+
+        c.execute("SELECT data, COUNT(*) FROM rfq GROUP BY data ORDER BY data")
+        rows = c.fetchall()
+        if rows:
+            df = pd.DataFrame(rows, columns=["data", "total"])
+            df["data"] = pd.to_datetime(df["data"])
+            df = df.set_index("data").sort_index()
+            df["cumulativo"] = df["total"].cumsum()
+            st.markdown("**Cotações por Dia (Cumulativo)**")
+            st.line_chart(df["cumulativo"], height=300)
+        else:
+            st.info("Sem dados diários")
+
+        c.execute(
+            """
+            SELECT r.data,
+                   SUM(rf.preco_venda * rf.quantidade_final) as total
+            FROM rfq r
+            JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
+            GROUP BY r.data
+            ORDER BY r.data
+            """
+        )
+        rows = c.fetchall()
+        if rows:
+            df_val = pd.DataFrame(rows, columns=["data", "total"])
+            df_val["data"] = pd.to_datetime(df_val["data"])
+            df_val = df_val.set_index("data").sort_index()
+            df_val["cumulativo"] = df_val["total"].cumsum()
+            st.markdown("**Preço de Venda por Dia (Cumulativo)**")
+            st.line_chart(df_val["cumulativo"], height=300)
+        else:
+            st.info("Sem dados de preço de venda diário")
+
+        c.execute("SELECT strftime('%Y-%m', data) as mes, COUNT(*) FROM rfq GROUP BY mes ORDER BY mes")
+        rows = c.fetchall()
+        if rows:
+            df_mes = pd.DataFrame(rows, columns=["mes", "total"])
+            df_mes["cumulativo"] = df_mes["total"].cumsum()
+            st.markdown("**Cotações por Mês (Cumulativo)**")
+            st.line_chart(df_mes.set_index("mes")["cumulativo"], height=300)
+        else:
+            st.info("Sem dados mensais")
+
+        c.execute(
+            """
+            SELECT strftime('%Y-%m', r.data) as mes,
+                   SUM(rf.preco_venda * rf.quantidade_final) as total
+            FROM rfq r
+            JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
+            GROUP BY mes
+            ORDER BY mes
+            """
+        )
+        rows = c.fetchall()
+        conn.close()
+        if rows:
+            df_val_mes = pd.DataFrame(rows, columns=["mes", "total"])
+            df_val_mes["cumulativo"] = df_val_mes["total"].cumsum()
+            st.markdown("**Preço de Venda por Mês (Cumulativo)**")
+            st.line_chart(df_val_mes.set_index("mes")["cumulativo"], height=300)
+        else:
+            st.info("Sem dados de preço de venda mensal")
 
 elif menu_option == "📄 PDFs":
     st.title("📄 Gestão de PDFs")
