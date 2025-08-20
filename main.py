@@ -61,10 +61,13 @@ def _format_iso_date(value):
 
 
 LOGO_PATH = "assets/logo.png"
+with open(LOGO_PATH, "rb") as _logo_file:
+    LOGO_BYTES = _logo_file.read()
+LOGO_IMAGE = Image.open(BytesIO(LOGO_BYTES))
 
 st.set_page_config(
     page_title="myERP",
-    page_icon=Image.open(LOGO_PATH),
+    page_icon=LOGO_IMAGE,
     layout="wide",
 )
 
@@ -1860,10 +1863,9 @@ def login_screen():
             st.rerun()
         else:
             st.error("Credenciais inválidas")
-    st.markdown(
-        f"<p style='text-align:center'><img src='{LOGO_PATH}' width='120'/></p>",
-        unsafe_allow_html=True,
-    )
+    col_logo = st.columns([1, 2, 1])[1]
+    with col_logo:
+        st.image(LOGO_BYTES, width=120)
     st.markdown(
         "<p style='text-align:center;'>Sistema myERP v4.0<br/>© 2025 Ricardo Nogueira</p>",
         unsafe_allow_html=True,
@@ -1969,14 +1971,14 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image(LOGO_BYTES, width=80)
     st.markdown(
-        f"""
-        <div style="text-align: center; font-size: 12px;">
-            <p><img src='{LOGO_PATH}' width='80'/></p>
-            <p>Sistema myERP v4.0</p>
-            <p>© 2025 Ricardo Nogueira</p>
-        </div>
-        """,
+        "<div style='text-align:center; font-size: 12px;'>"
+        "<p>Sistema myERP v4.0</p>"
+        "<p>© 2025 Ricardo Nogueira</p>"
+        "</div>",
         unsafe_allow_html=True,
     )
 
