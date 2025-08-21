@@ -3297,10 +3297,9 @@ elif menu_option == "⚙️ Configurações":
         st.error("Sem permissão para aceder a esta área")
     else:
         st.title("⚙️ Configurações do Sistema")
-        tab_fornecedores, tab_clientes, tab_marcas, tab_users, tab_email, tab_backup, tab_layout, tab_empresa = st.tabs([
+        tab_fornecedores, tab_clientes, tab_users, tab_email, tab_backup, tab_layout, tab_empresa = st.tabs([
             "Fornecedores",
             "Clientes",
-            "Marcas e Margens",
             "Utilizadores",
             "Email",
             "Backup",
@@ -3310,265 +3309,275 @@ elif menu_option == "⚙️ Configurações":
 
 
         with tab_fornecedores:
-            st.subheader("Gestão de Fornecedores")
+            sub_tab_fornecedores, sub_tab_marcas = st.tabs([
+                "Fornecedores",
+                "Marcas e Margens",
+            ])
 
-            col1, col2 = st.columns(2)
+            with sub_tab_fornecedores:
+                st.subheader("Gestão de Fornecedores")
 
-            with col1:
-                st.markdown("### Adicionar Fornecedor")
-                with st.form("novo_fornecedor_form"):
-                    nome = st.text_input("Nome *")
-                    email = st.text_input("Email")
-                    telefone = st.text_input("Telefone")
-                    morada = st.text_area("Morada")
-                    nif = st.text_input("NIF")
+                col1, col2 = st.columns(2)
 
-                    if st.form_submit_button("➕ Adicionar"):
-                        if nome:
-                            forn_id = inserir_fornecedor(nome, email, telefone, morada, nif)
-                            if forn_id:
-                                st.success(f"Fornecedor {nome} adicionado!")
-                                st.rerun()
-                        else:
-                            st.error("Nome é obrigatório")
+                with col1:
+                    st.markdown("### Adicionar Fornecedor")
+                    with st.form("novo_fornecedor_form"):
+                        nome = st.text_input("Nome *")
+                        email = st.text_input("Email")
+                        telefone = st.text_input("Telefone")
+                        morada = st.text_area("Morada")
+                        nif = st.text_input("NIF")
 
-            with col2:
-                st.markdown("### Fornecedores Registados")
-                fornecedores = listar_fornecedores()
+                        if st.form_submit_button("➕ Adicionar"):
+                            if nome:
+                                forn_id = inserir_fornecedor(nome, email, telefone, morada, nif)
+                                if forn_id:
+                                    st.success(f"Fornecedor {nome} adicionado!")
+                                    st.rerun()
+                            else:
+                                st.error("Nome é obrigatório")
 
-                for forn in fornecedores:
-                    with st.expander(forn[1]):
-                        with st.form(f"edit_forn_{forn[0]}"):
-                            nome_edit = st.text_input("Nome", forn[1])
-                            email_edit = st.text_input("Email", forn[2] or "")
-                            telefone_edit = st.text_input("Telefone", forn[3] or "")
-                            morada_edit = st.text_area("Morada", forn[4] or "")
-                            nif_edit = st.text_input("NIF", forn[5] or "")
+                with col2:
+                    st.markdown("### Fornecedores Registados")
+                    fornecedores = listar_fornecedores()
 
-                            col_a, col_b = st.columns(2)
-                            with col_a:
-                                if st.form_submit_button("💾 Guardar"):
-                                    if atualizar_fornecedor(
-                                        forn[0],
-                                        nome_edit,
-                                        email_edit,
-                                        telefone_edit,
-                                        morada_edit,
-                                        nif_edit,
-                                    ):
-                                        st.success("Fornecedor atualizado")
-                                        st.rerun()
-                                    else:
-                                        st.error("Erro ao atualizar fornecedor")
-                            with col_b:
-                                if st.form_submit_button("🗑️ Eliminar"):
+                    for forn in fornecedores:
+                        with st.expander(forn[1]):
+                            with st.form(f"edit_forn_{forn[0]}"):
+                                nome_edit = st.text_input("Nome", forn[1])
+                                email_edit = st.text_input("Email", forn[2] or "")
+                                telefone_edit = st.text_input("Telefone", forn[3] or "")
+                                morada_edit = st.text_area("Morada", forn[4] or "")
+                                nif_edit = st.text_input("NIF", forn[5] or "")
+
+                                col_a, col_b = st.columns(2)
+                                with col_a:
+                                    if st.form_submit_button("💾 Guardar"):
+                                        if atualizar_fornecedor(
+                                            forn[0],
+                                            nome_edit,
+                                            email_edit,
+                                            telefone_edit,
+                                            morada_edit,
+                                            nif_edit,
+                                        ):
+                                            st.success("Fornecedor atualizado")
+                                            st.rerun()
+                                        else:
+                                            st.error("Erro ao atualizar fornecedor")
+                                with col_b:
+                                    if st.form_submit_button("🗑️ Eliminar"):
                                         if eliminar_fornecedor_db(forn[0]):
                                             st.success("Fornecedor eliminado")
                                             st.rerun()
                                         else:
                                             st.error("Erro ao eliminar fornecedor")
-    
-                        marcas = obter_marcas_fornecedor(forn[0])
-                        st.write(f"**Marcas:** {', '.join(marcas) if marcas else 'Nenhuma'}")
+
+                            marcas = obter_marcas_fornecedor(forn[0])
+                            st.write(f"**Marcas:** {', '.join(marcas) if marcas else 'Nenhuma'}")
+
+            with sub_tab_marcas:
+                st.subheader("Configuração de Marcas e Margens")
+
+                fornecedores = listar_fornecedores()
+
+                if fornecedores:
+                    fornecedor_sel = st.selectbox(
+                        "Selecionar Fornecedor",
+                        options=fornecedores,
+                        format_func=lambda x: x[1],
+                        key="forn_marcas"
+                    )
+
+                    if fornecedor_sel:
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            st.markdown("### Adicionar Marca")
+                            with st.form("add_marca_form"):
+                                nova_marca = st.text_input("Nome da Marca")
+                                margem_marca = st.number_input(
+                                    "Margem (%)",
+                                    min_value=0.0,
+                                    max_value=100.0,
+                                    value=15.0,
+                                    step=0.5
+                                )
+
+                                if st.form_submit_button("➕ Adicionar Marca"):
+                                    if nova_marca:
+                                        if adicionar_marca_fornecedor(fornecedor_sel[0], nova_marca):
+                                            configurar_margem_marca(fornecedor_sel[0], nova_marca, margem_marca)
+                                            st.success(f"Marca {nova_marca} adicionada!")
+                                            st.rerun()
+                                        else:
+                                            st.error("Marca já existe para este fornecedor")
+
+                        with col2:
+                            st.markdown("### Marcas Existentes")
+                            marcas = obter_marcas_fornecedor(fornecedor_sel[0])
+
+                            if marcas:
+                                for marca in marcas:
+                                    margem = obter_margem_para_marca(fornecedor_sel[0], marca)
+
+                                    with st.expander(f"{marca} - {margem:.1f}%"):
+                                        nova_margem = st.number_input(
+                                            "Nova Margem (%)",
+                                            min_value=0.0,
+                                            max_value=100.0,
+                                            value=margem,
+                                            step=0.5,
+                                            key=f"margem_{fornecedor_sel[0]}_{marca}"
+                                        )
+
+                                        col1, col2 = st.columns(2)
+
+                                        with col1:
+                                            if st.button("💾 Atualizar", key=f"upd_{fornecedor_sel[0]}_{marca}"):
+                                                if configurar_margem_marca(fornecedor_sel[0], marca, nova_margem):
+                                                    st.success("Margem atualizada!")
+                                                    st.rerun()
+
+                                        with col2:
+                                            if st.button("🗑️ Remover", key=f"del_{fornecedor_sel[0]}_{marca}"):
+                                                if remover_marca_fornecedor(fornecedor_sel[0], marca):
+                                                    st.success("Marca removida!")
+                                                    st.rerun()
+                            else:
+                                st.info("Nenhuma marca configurada")
+
+                st.markdown("---")
+
+                # Margem padrão
+                st.subheader("Margem Padrão Global")
+
+                margem_global = obter_margem_para_marca(None, None)
+                nova_margem_global = st.number_input(
+                    "Margem Padrão (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=margem_global,
+                    step=0.5
+                )
+
+                if st.button("💾 Guardar Margem Padrão"):
+                    conn = obter_conexao()
+                    c = conn.cursor()
+                    c.execute("""
+                    UPDATE configuracao_margens
+                    SET margem_percentual = ?
+                    WHERE fornecedor_id IS NULL AND marca IS NULL
+                """, (nova_margem_global,))
+                    conn.commit()
+                    conn.close()
+                    st.success("Margem padrão atualizada!")
         
         with tab_clientes:
             st.subheader("Gestão de Clientes")
 
-            st.markdown("### Gestão de Empresas")
-            emp_col1, emp_col2 = st.columns(2)
+            tab_empresas, tab_comerciais = st.tabs([
+                "Criar Cliente (Empresa)",
+                "Adicionar Comercial",
+            ])
 
-            with emp_col1:
-                with st.form("nova_empresa_form"):
-                    nome_emp = st.text_input("Nome Empresa *")
-                    morada_emp = st.text_input("Morada")
-                    cond_pag_emp = st.text_input("Condições Pagamento")
-                    if st.form_submit_button("➕ Adicionar Empresa"):
-                        if nome_emp:
-                            inserir_empresa(nome_emp, morada_emp, cond_pag_emp)
-                            st.success(f"Empresa {nome_emp} adicionada!")
-                        else:
-                            st.error("Nome é obrigatório")
+            with tab_empresas:
+                st.markdown("### Gestão de Empresas")
+                emp_col1, emp_col2 = st.columns(2)
 
-            with emp_col2:
-                st.markdown("### Empresas Registadas")
-                empresas = listar_empresas()
-                for emp in empresas:
-                    with st.expander(emp[1]):
-                        with st.form(f"edit_emp_{emp[0]}"):
-                            nome_edit = st.text_input("Nome", emp[1])
-                            morada_edit = st.text_input("Morada", emp[2] or "")
-                            cond_pag_edit = st.text_input(
-                                "Condições Pagamento", emp[3] or ""
-                            )
-                            col_a, col_b = st.columns(2)
-                            with col_a:
-                                if st.form_submit_button("💾 Guardar"):
-                                    atualizar_empresa(
-                                        emp[0], nome_edit, morada_edit, cond_pag_edit
-                                    )
-                                    st.success("Empresa atualizada")
-                                    st.rerun()
-                            with col_b:
-                                if st.form_submit_button("🗑️ Eliminar"):
-                                    eliminar_empresa_db(emp[0])
-                                    st.success("Empresa eliminada")
-                                    st.rerun()
+                with emp_col1:
+                    with st.form("nova_empresa_form"):
+                        nome_emp = st.text_input("Nome Empresa *")
+                        morada_emp = st.text_input("Morada")
+                        cond_pag_emp = st.text_input("Condições Pagamento")
+                        if st.form_submit_button("➕ Adicionar Empresa"):
+                            if nome_emp:
+                                inserir_empresa(nome_emp, morada_emp, cond_pag_emp)
+                                st.success(f"Empresa {nome_emp} adicionada!")
+                            else:
+                                st.error("Nome é obrigatório")
 
-            st.markdown("---")
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.markdown("### Adicionar Cliente")
-                with st.form("novo_cliente_form"):
-                    nome = st.text_input("Nome *")
-                    email = st.text_input("Email")
+                with emp_col2:
+                    st.markdown("### Empresas Registadas")
                     empresas = listar_empresas()
-                    empresa_sel = st.selectbox(
-                        "Empresa *",
-                        empresas,
-                        format_func=lambda x: x[1],
-                    )
-                    if st.form_submit_button("➕ Adicionar"):
-                        if nome and empresa_sel:
-                            inserir_cliente(nome, email, empresa_sel[0])
-                            st.success(f"Cliente {nome} adicionado!")
-                            st.rerun()
-                        else:
-                            st.error("Nome e Empresa são obrigatórios")
-
-            with col2:
-                st.markdown("### Clientes Registados")
-                clientes = listar_clientes()
-
-                empresas = listar_empresas()
-                for cli in clientes:
-                    with st.expander(cli[1]):
-                        with st.form(f"edit_cli_{cli[0]}"):
-                            nome_edit = st.text_input("Nome", cli[1])
-                            email_edit = st.text_input("Email", cli[2] or "")
-                            idx_emp = 0
-                            for idx, emp in enumerate(empresas):
-                                if emp[0] == cli[3]:
-                                    idx_emp = idx
-                                    break
-                            empresa_sel = st.selectbox(
-                                "Empresa *",
-                                empresas,
-                                index=idx_emp,
-                                format_func=lambda x: x[1],
-                                key=f"emp_{cli[0]}",
-                            )
-
-                            col_a, col_b = st.columns(2)
-                            with col_a:
-                                if st.form_submit_button("💾 Guardar"):
-                                    atualizar_cliente(cli[0], nome_edit, email_edit, empresa_sel[0])
-                                    st.success("Cliente atualizado")
-                                    st.rerun()
-                            with col_b:
-                                if st.form_submit_button("🗑️ Eliminar"):
-                                    eliminar_cliente_db(cli[0])
-                                    st.success("Cliente eliminado")
-                                    st.rerun()
-
-        with tab_marcas:
-            st.subheader("Configuração de Marcas e Margens")
-    
-            fornecedores = listar_fornecedores()
-    
-            if fornecedores:
-                fornecedor_sel = st.selectbox(
-                    "Selecionar Fornecedor",
-                    options=fornecedores,
-                    format_func=lambda x: x[1],
-                    key="forn_marcas"
-                )
-    
-                if fornecedor_sel:
-                    col1, col2 = st.columns(2)
-    
-                    with col1:
-                        st.markdown("### Adicionar Marca")
-                        with st.form("add_marca_form"):
-                            nova_marca = st.text_input("Nome da Marca")
-                            margem_marca = st.number_input(
-                                "Margem (%)",
-                                min_value=0.0,
-                                max_value=100.0,
-                                value=15.0,
-                                step=0.5
-                            )
-    
-                            if st.form_submit_button("➕ Adicionar Marca"):
-                                if nova_marca:
-                                    if adicionar_marca_fornecedor(fornecedor_sel[0], nova_marca):
-                                        configurar_margem_marca(fornecedor_sel[0], nova_marca, margem_marca)
-                                        st.success(f"Marca {nova_marca} adicionada!")
+                    for emp in empresas:
+                        with st.expander(emp[1]):
+                            with st.form(f"edit_emp_{emp[0]}"):
+                                nome_edit = st.text_input("Nome", emp[1])
+                                morada_edit = st.text_input("Morada", emp[2] or "")
+                                cond_pag_edit = st.text_input(
+                                    "Condições Pagamento", emp[3] or "",
+                                )
+                                col_a, col_b = st.columns(2)
+                                with col_a:
+                                    if st.form_submit_button("💾 Guardar"):
+                                        atualizar_empresa(
+                                            emp[0], nome_edit, morada_edit, cond_pag_edit
+                                        )
+                                        st.success("Empresa atualizada")
                                         st.rerun()
-                                    else:
-                                        st.error("Marca já existe para este fornecedor")
-    
-                    with col2:
-                        st.markdown("### Marcas Existentes")
-                        marcas = obter_marcas_fornecedor(fornecedor_sel[0])
-    
-                        if marcas:
-                            for marca in marcas:
-                                margem = obter_margem_para_marca(fornecedor_sel[0], marca)
-    
-                                with st.expander(f"{marca} - {margem:.1f}%"):
-                                    nova_margem = st.number_input(
-                                        "Nova Margem (%)",
-                                        min_value=0.0,
-                                        max_value=100.0,
-                                        value=margem,
-                                        step=0.5,
-                                        key=f"margem_{fornecedor_sel[0]}_{marca}"
-                                    )
-    
-                                    col1, col2 = st.columns(2)
-    
-                                    with col1:
-                                        if st.button("💾 Atualizar", key=f"upd_{fornecedor_sel[0]}_{marca}"):
-                                            if configurar_margem_marca(fornecedor_sel[0], marca, nova_margem):
-                                                st.success("Margem atualizada!")
-                                                st.rerun()
-    
-                                    with col2:
-                                        if st.button("🗑️ Remover", key=f"del_{fornecedor_sel[0]}_{marca}"):
-                                            if remover_marca_fornecedor(fornecedor_sel[0], marca):
-                                                st.success("Marca removida!")
-                                                st.rerun()
-                        else:
-                            st.info("Nenhuma marca configurada")
-    
-            st.markdown("---")
-    
-            # Margem padrão
-            st.subheader("Margem Padrão Global")
-    
-            margem_global = obter_margem_para_marca(None, None)
-            nova_margem_global = st.number_input(
-                "Margem Padrão (%)",
-                min_value=0.0,
-                max_value=100.0,
-                value=margem_global,
-                step=0.5
-            )
-    
-            if st.button("💾 Guardar Margem Padrão"):
-                conn = obter_conexao()
-                c = conn.cursor()
-                c.execute("""
-                UPDATE configuracao_margens
-                SET margem_percentual = ?
-                WHERE fornecedor_id IS NULL AND marca IS NULL
-            """, (nova_margem_global,))
-                conn.commit()
-                conn.close()
-                st.success("Margem padrão atualizada!")
+                                with col_b:
+                                    if st.form_submit_button("🗑️ Eliminar"):
+                                        eliminar_empresa_db(emp[0])
+                                        st.success("Empresa eliminada")
+                                        st.rerun()
 
+            with tab_comerciais:
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.markdown("### Adicionar Comercial")
+                    with st.form("novo_cliente_form"):
+                        nome = st.text_input("Nome *")
+                        email = st.text_input("Email")
+                        empresas = listar_empresas()
+                        empresa_sel = st.selectbox(
+                            "Empresa *",
+                            empresas,
+                            format_func=lambda x: x[1],
+                        )
+                        if st.form_submit_button("➕ Adicionar"):
+                            if nome and empresa_sel:
+                                inserir_cliente(nome, email, empresa_sel[0])
+                                st.success(f"Comercial {nome} adicionado!")
+                                st.rerun()
+                            else:
+                                st.error("Nome e Empresa são obrigatórios")
+
+                with col2:
+                    st.markdown("### Comerciais Registados")
+                    clientes = listar_clientes()
+
+                    empresas = listar_empresas()
+                    for cli in clientes:
+                        with st.expander(cli[1]):
+                            with st.form(f"edit_cli_{cli[0]}"):
+                                nome_edit = st.text_input("Nome", cli[1])
+                                email_edit = st.text_input("Email", cli[2] or "")
+                                idx_emp = 0
+                                for idx, emp in enumerate(empresas):
+                                    if emp[0] == cli[3]:
+                                        idx_emp = idx
+                                        break
+                                empresa_sel = st.selectbox(
+                                    "Empresa *",
+                                    empresas,
+                                    index=idx_emp,
+                                    format_func=lambda x: x[1],
+                                    key=f"emp_{cli[0]}",
+                                )
+
+                                col_a, col_b = st.columns(2)
+                                with col_a:
+                                    if st.form_submit_button("💾 Guardar"):
+                                        atualizar_cliente(cli[0], nome_edit, email_edit, empresa_sel[0])
+                                        st.success("Comercial atualizado")
+                                        st.rerun()
+                                with col_b:
+                                    if st.form_submit_button("🗑️ Eliminar"):
+                                        eliminar_cliente_db(cli[0])
+                                        st.success("Comercial eliminado")
+                                        st.rerun()
         with tab_users:
             if st.session_state.get("role") != "admin":
                 st.warning("Apenas administradores podem gerir utilizadores.")
