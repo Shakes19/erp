@@ -1283,8 +1283,8 @@ class InquiryPDF(FPDF):
         headers = ["Pos.", "Article No.", "Qty", "Unit", "Item"]
         aligns = ["C", "C", "C", "C", "L"]
         for w, h, a in zip(col_w, headers, aligns):
-            self.cell(w, 8, h, border=1, align=a)
-        self.ln()
+            self.cell(w, 8, h, align=a)
+        self.ln(2)
 
     def add_item(self, idx, item):
         col_w = self._table_col_widths()
@@ -1322,7 +1322,9 @@ class InquiryPDF(FPDF):
             self.cell(col_w[3], line_height, unidade if i == 0 else "", border=border, align="C")
             self.cell(col_w[4], line_height, lines[i], border=border)
 
+        # Espaço extra entre itens
         self.set_y(y_start + row_height)
+        self.ln(3)
 
     def gerar(self, fornecedor, data, artigos, referencia="", contacto=""):
         """Gera o PDF e devolve bytes"""
@@ -1339,7 +1341,6 @@ class InquiryPDF(FPDF):
             "address": [l for l in addr_lines if l],
             "metadata": {
                 "Date": data,
-                "Contact": contacto,
             },
         }
         self.add_page()
@@ -1503,7 +1504,7 @@ class ClientQuotationPDF(InquiryPDF):
         for cond in conditions:
             self.cell(0, 5, cond, ln=1)
 
-    def gerar(self, rfq_info, solicitante_info, itens_resposta):
+    def gerar(self, rfq_info, solicitante_info, itens_resposta, user_info=None):
         addr_lines = []
         if solicitante_info.get("empresa_nome"):
             addr_lines.append(solicitante_info["empresa_nome"])
@@ -1513,12 +1514,18 @@ class ClientQuotationPDF(InquiryPDF):
             addr_lines.append(solicitante_info["nome"])
         if solicitante_info.get("email"):
             addr_lines.append(solicitante_info["email"])
+        metadata = {
+            "Date": rfq_info["data"],
+            "Reference": rfq_info["referencia"],
+        }
+        user_info = user_info or {}
+        if user_info.get("nome"):
+            metadata["Name"] = user_info["nome"]
+        if user_info.get("email"):
+            metadata["Email"] = user_info["email"]
         self.recipient = {
             "address": addr_lines,
-            "metadata": {
-                "Date": rfq_info["data"],
-                "Reference": rfq_info["referencia"],
-            },
+            "metadata": metadata,
         }
         self.add_page()
         self.add_title()
@@ -1637,10 +1644,12 @@ def gerar_pdf_cliente(rfq_id):
             """
             SELECT rfq.referencia, rfq.data, rfq.nome_solicitante, rfq.email_solicitante,
                    ce.nome AS empresa_nome, ce.morada AS empresa_morada,
-                   c.nome AS cliente_nome, c.email AS cliente_email
+                   c.nome AS cliente_nome, c.email AS cliente_email,
+                   u.nome AS user_nome, u.email AS user_email
             FROM rfq
             LEFT JOIN cliente c ON rfq.cliente_id = c.id
             LEFT JOIN cliente_empresa ce ON c.empresa_id = ce.id
+            LEFT JOIN utilizador u ON rfq.utilizador_id = u.id
             WHERE rfq.id = ?
             """,
             (rfq_id,),
@@ -1660,6 +1669,8 @@ def gerar_pdf_cliente(rfq_id):
             "empresa_morada": row[5],
             "cliente_nome": row[6],
             "cliente_email": row[7],
+            "user_nome": row[8] if len(row) > 8 else "",
+            "user_email": row[9] if len(row) > 9 else "",
         }
 
         # 2. Obter respostas
@@ -1695,6 +1706,10 @@ def gerar_pdf_cliente(rfq_id):
                 linhas.append(f"Tel: {empresa['telefone']}")
             if empresa.get("website"):
                 linhas.append(empresa["website"])
+            if rfq_data.get("user_nome"):
+                linhas.append(rfq_data["user_nome"])
+            if rfq_data.get("user_email"):
+                linhas.append(rfq_data["user_email"])
             config["company_lines"] = [l for l in linhas if l]
             bank = {}
             if empresa.get("iban"):
@@ -1717,7 +1732,11 @@ def gerar_pdf_cliente(rfq_id):
                 'nome': rfq_data["cliente_nome"] or rfq_data["nome_solicitante"] or '',
                 'email': rfq_data["cliente_email"] or rfq_data["email_solicitante"] or '',
             },
-            itens_resposta=itens_resposta
+            itens_resposta=itens_resposta,
+            user_info={
+                'nome': rfq_data.get('user_nome', ''),
+                'email': rfq_data.get('user_email', ''),
+            },
         )
 
         # 4. Armazenar PDF
