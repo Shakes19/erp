@@ -241,7 +241,9 @@ def listar_empresas():
     conn = obter_conexao()
     c = conn.cursor()
     try:
-        c.execute("SELECT id, nome, morada FROM cliente_empresa ORDER BY nome")
+        c.execute(
+            "SELECT id, nome, morada, condicoes_pagamento FROM cliente_empresa ORDER BY nome"
+        )
         empresas = c.fetchall()
     except sqlite3.OperationalError as e:
         conn.close()
@@ -290,7 +292,7 @@ def listar_clientes():
     return clientes
 
 
-def inserir_empresa(nome, morada=""):
+def inserir_empresa(nome, morada="", condicoes_pagamento=""):
     """Inserir nova empresa de cliente"""
     conn = obter_conexao()
     c = conn.cursor()
@@ -300,8 +302,8 @@ def inserir_empresa(nome, morada=""):
         if existente:
             return existente[0]
         c.execute(
-            "INSERT INTO cliente_empresa (nome, morada) VALUES (?, ?)",
-            (nome, morada),
+            "INSERT INTO cliente_empresa (nome, morada, condicoes_pagamento) VALUES (?, ?, ?)",
+            (nome, morada, condicoes_pagamento),
         )
         conn.commit()
         listar_empresas.clear()
@@ -310,7 +312,7 @@ def inserir_empresa(nome, morada=""):
         conn.close()
         if "no such table" in str(e).lower():
             criar_base_dados_completa()
-            return inserir_empresa(nome, morada)
+            return inserir_empresa(nome, morada, condicoes_pagamento)
         raise
     finally:
         try:
@@ -319,13 +321,13 @@ def inserir_empresa(nome, morada=""):
             pass
 
 
-def atualizar_empresa(empresa_id, nome, morada=""):
+def atualizar_empresa(empresa_id, nome, morada="", condicoes_pagamento=""):
     """Atualizar dados de uma empresa"""
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
-        "UPDATE cliente_empresa SET nome = ?, morada = ? WHERE id = ?",
-        (nome, morada, empresa_id),
+        "UPDATE cliente_empresa SET nome = ?, morada = ?, condicoes_pagamento = ? WHERE id = ?",
+        (nome, morada, condicoes_pagamento, empresa_id),
     )
     conn.commit()
     conn.close()
@@ -1378,6 +1380,18 @@ class ClientQuotationPDF(InquiryPDF):
         self.cell(0, 8, title, ln=1)
         self.ln(4)
 
+    def add_reference(self, our_ref, your_ref=""):
+        self.set_font("Helvetica", "B", 11)
+        self.cell(40, 5, "Our Reference:")
+        self.set_font("Helvetica", "", 11)
+        self.cell(0, 5, our_ref, ln=1)
+        if your_ref:
+            self.set_font("Helvetica", "B", 11)
+            self.cell(40, 5, "Your Reference:")
+            self.set_font("Helvetica", "", 11)
+            self.cell(0, 5, your_ref, ln=1)
+        self.ln(4)
+
     def table_header(self):
         table_cfg = self.cfg.get("table", {})
         headers = table_cfg.get(
@@ -1528,22 +1542,14 @@ class ClientQuotationPDF(InquiryPDF):
             addr_lines.append(solicitante_info["nome"])
         if solicitante_info.get("email"):
             addr_lines.append(solicitante_info["email"])
-        metadata = {
-            "Date": rfq_info["data"],
-            "Reference": rfq_info["referencia"],
-        }
-        user_info = user_info or {}
-        if user_info.get("nome"):
-            metadata["Name"] = user_info["nome"]
-        if user_info.get("email"):
-            metadata["Email"] = user_info["email"]
+        metadata = {"Date": rfq_info["data"]}
         self.recipient = {
             "address": addr_lines,
             "metadata": metadata,
         }
         self.add_page()
         self.add_title()
-        self.add_reference(rfq_info["referencia"])
+        self.add_reference(rfq_info.get("processo", ""), rfq_info.get("referencia", ""))
         self.table_header()
         total_geral = 0.0
         peso_total = 0.0
@@ -1657,13 +1663,15 @@ def gerar_pdf_cliente(rfq_id):
         c.execute(
             """
             SELECT rfq.referencia, rfq.data, rfq.nome_solicitante, rfq.email_solicitante,
-                   ce.nome AS empresa_nome, ce.morada AS empresa_morada,
+                   ce.nome AS empresa_nome, ce.morada AS empresa_morada, ce.condicoes_pagamento,
                    c.nome AS cliente_nome, c.email AS cliente_email,
-                   u.nome AS user_nome, u.email AS user_email
+                   u.nome AS user_nome, u.email AS user_email,
+                   p.numero AS processo_numero
             FROM rfq
             LEFT JOIN cliente c ON rfq.cliente_id = c.id
             LEFT JOIN cliente_empresa ce ON c.empresa_id = ce.id
             LEFT JOIN utilizador u ON rfq.utilizador_id = u.id
+            LEFT JOIN processo p ON rfq.processo_id = p.id
             WHERE rfq.id = ?
             """,
             (rfq_id,),
@@ -1681,10 +1689,12 @@ def gerar_pdf_cliente(rfq_id):
             "email_solicitante": row[3],
             "empresa_nome": row[4],
             "empresa_morada": row[5],
-            "cliente_nome": row[6],
-            "cliente_email": row[7],
-            "user_nome": row[8] if len(row) > 8 else "",
-            "user_email": row[9] if len(row) > 9 else "",
+            "condicoes_pagamento": row[6],
+            "cliente_nome": row[7],
+            "cliente_email": row[8],
+            "user_nome": row[9] if len(row) > 9 else "",
+            "user_email": row[10] if len(row) > 10 else "",
+            "processo_numero": row[11] if len(row) > 11 else "",
         }
 
         # 2. Obter respostas
@@ -1734,10 +1744,31 @@ def gerar_pdf_cliente(rfq_id):
                 config["bank_details"] = [bank]
             if empresa.get("logo"):
                 config["logo_bytes"] = empresa["logo"]
+
+        pagamento = rfq_data.get("condicoes_pagamento")
+        if pagamento:
+            conds = config.get(
+                "conditions",
+                [
+                    "Proposal validity: 30 days",
+                    "Prices do not include VAT",
+                    "Payment terms: To be agreed",
+                ],
+            )
+            updated = False
+            for i, cond in enumerate(conds):
+                if "payment terms" in cond.lower():
+                    conds[i] = f"Payment terms: {pagamento}"
+                    updated = True
+                    break
+            if not updated:
+                conds.append(f"Payment terms: {pagamento}")
+            config["conditions"] = conds
         pdf_cliente = ClientQuotationPDF(config)
         pdf_bytes = pdf_cliente.gerar(
             rfq_info={
                 'data': _format_iso_date(rfq_data["data"]),
+                'processo': rfq_data["processo_numero"] or '',
                 'referencia': rfq_data["referencia"] or '',
             },
             solicitante_info={
@@ -3302,9 +3333,10 @@ elif menu_option == "⚙️ Configurações":
                 with st.form("nova_empresa_form"):
                     nome_emp = st.text_input("Nome Empresa *")
                     morada_emp = st.text_input("Morada")
+                    cond_pag_emp = st.text_input("Condições Pagamento")
                     if st.form_submit_button("➕ Adicionar Empresa"):
                         if nome_emp:
-                            inserir_empresa(nome_emp, morada_emp)
+                            inserir_empresa(nome_emp, morada_emp, cond_pag_emp)
                             st.success(f"Empresa {nome_emp} adicionada!")
                         else:
                             st.error("Nome é obrigatório")
@@ -3317,10 +3349,15 @@ elif menu_option == "⚙️ Configurações":
                         with st.form(f"edit_emp_{emp[0]}"):
                             nome_edit = st.text_input("Nome", emp[1])
                             morada_edit = st.text_input("Morada", emp[2] or "")
+                            cond_pag_edit = st.text_input(
+                                "Condições Pagamento", emp[3] or ""
+                            )
                             col_a, col_b = st.columns(2)
                             with col_a:
                                 if st.form_submit_button("💾 Guardar"):
-                                    atualizar_empresa(emp[0], nome_edit, morada_edit)
+                                    atualizar_empresa(
+                                        emp[0], nome_edit, morada_edit, cond_pag_edit
+                                    )
                                     st.success("Empresa atualizada")
                                     st.rerun()
                             with col_b:

@@ -110,10 +110,19 @@ def criar_base_dados_completa():
         CREATE TABLE IF NOT EXISTS cliente_empresa (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT NOT NULL UNIQUE,
-            morada TEXT
+            morada TEXT,
+            condicoes_pagamento TEXT
         )
         """
     )
+
+    # Garantir coluna condicoes_pagamento
+    c.execute("PRAGMA table_info(cliente_empresa)")
+    empresa_cols = [row[1] for row in c.fetchall()]
+    if "condicoes_pagamento" not in empresa_cols:
+        c.execute(
+            "ALTER TABLE cliente_empresa ADD COLUMN condicoes_pagamento TEXT"
+        )
 
     # Tabela de clientes
     c.execute(
