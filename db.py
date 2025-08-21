@@ -240,7 +240,7 @@ def criar_base_dados_completa():
             hs_code TEXT,
             pais_origem TEXT,
             moeda TEXT DEFAULT 'EUR',
-            margem_utilizada REAL DEFAULT 10.0,
+            margem_utilizada REAL DEFAULT 0.0,
             preco_venda REAL,
             observacoes TEXT,
             data_resposta TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -287,7 +287,7 @@ def criar_base_dados_completa():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             fornecedor_id INTEGER,
             marca TEXT,
-            margem_percentual REAL DEFAULT 10.0,
+            margem_percentual REAL DEFAULT 0.0,
             ativo BOOLEAN DEFAULT TRUE,
             data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE

@@ -872,11 +872,15 @@ def obter_respostas_cotacao(rfq_id):
 # ========================== FUNÇÕES DE GESTÃO DE MARGENS ==========================
 
 def obter_margem_para_marca(fornecedor_id, marca):
-    """Obter margem configurada para fornecedor/marca específica"""
+    """Obter margem configurada para fornecedor/marca específica.
+
+    Caso não exista configuração para a marca/fornecedor indicados é
+    devolvido ``0.0``.
+    """
     try:
         conn = obter_conexao()
         c = conn.cursor()
-        
+
         # Procurar margem específica para fornecedor e marca
         if marca:
             c.execute("""
@@ -888,21 +892,13 @@ def obter_margem_para_marca(fornecedor_id, marca):
             if result:
                 conn.close()
                 return result[0]
-        
-        # Se não encontrar, usar margem padrão
-        c.execute("""
-            SELECT margem_percentual FROM configuracao_margens
-            WHERE fornecedor_id IS NULL AND marca IS NULL
-            ORDER BY id DESC LIMIT 1
-        """)
-        result = c.fetchone()
+
         conn.close()
-        
-        return result[0] if result else 10.0
-        
+        return 0.0
+
     except Exception as e:
         print(f"Erro ao obter margem: {e}")
-        return 10.0
+        return 0.0
 
 def configurar_margem_marca(fornecedor_id, marca, margem_percentual):
     """Configurar margem para fornecedor/marca"""
@@ -2169,6 +2165,10 @@ st.markdown("""
     .stButton > button {
         width: 100%;
         margin: 2px 0;
+    }
+
+    .block-container {
+        padding-top: 1rem;
     }
     
     .metric-card {
@@ -3447,32 +3447,6 @@ elif menu_option == "⚙️ Configurações":
                             else:
                                 st.info("Nenhuma marca configurada")
 
-                st.markdown("---")
-
-                # Margem padrão
-                st.subheader("Margem Padrão Global")
-
-                margem_global = obter_margem_para_marca(None, None)
-                nova_margem_global = st.number_input(
-                    "Margem Padrão (%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=margem_global,
-                    step=0.5
-                )
-
-                if st.button("💾 Guardar Margem Padrão"):
-                    conn = obter_conexao()
-                    c = conn.cursor()
-                    c.execute("""
-                    UPDATE configuracao_margens
-                    SET margem_percentual = ?
-                    WHERE fornecedor_id IS NULL AND marca IS NULL
-                """, (nova_margem_global,))
-                    conn.commit()
-                    conn.close()
-                    st.success("Margem padrão atualizada!")
-        
         with tab_clientes:
             st.subheader("Gestão de Clientes")
 
@@ -3523,61 +3497,65 @@ elif menu_option == "⚙️ Configurações":
                                         st.rerun()
 
             with tab_comerciais:
-                col1, col2 = st.columns(2)
+                empresas = listar_empresas()
+                if not empresas:
+                    st.info("Nenhuma empresa registada. Adicione uma empresa primeiro.")
+                else:
+                    empresa_sel = st.selectbox(
+                        "Selecionar Empresa",
+                        empresas,
+                        format_func=lambda x: x[1],
+                        key="empresa_comercial_sel",
+                    )
 
-                with col1:
-                    st.markdown("### Adicionar Comercial")
-                    with st.form("novo_cliente_form"):
-                        nome = st.text_input("Nome *")
-                        email = st.text_input("Email")
-                        empresas = listar_empresas()
-                        empresa_sel = st.selectbox(
-                            "Empresa *",
-                            empresas,
-                            format_func=lambda x: x[1],
-                        )
-                        if st.form_submit_button("➕ Adicionar"):
-                            if nome and empresa_sel:
-                                inserir_cliente(nome, email, empresa_sel[0])
-                                st.success(f"Comercial {nome} adicionado!")
-                                st.rerun()
-                            else:
-                                st.error("Nome e Empresa são obrigatórios")
+                    col1, col2 = st.columns(2)
 
-                with col2:
-                    st.markdown("### Comerciais Registados")
-                    clientes = listar_clientes()
+                    with col1:
+                        st.markdown("### Adicionar Comercial")
+                        with st.form("novo_cliente_form"):
+                            nome = st.text_input("Nome *")
+                            email = st.text_input("Email")
+                            if st.form_submit_button("➕ Adicionar"):
+                                if nome:
+                                    inserir_cliente(nome, email, empresa_sel[0])
+                                    st.success(f"Comercial {nome} adicionado!")
+                                    st.rerun()
+                                else:
+                                    st.error("Nome é obrigatório")
 
-                    empresas = listar_empresas()
-                    for cli in clientes:
-                        with st.expander(cli[1]):
-                            with st.form(f"edit_cli_{cli[0]}"):
-                                nome_edit = st.text_input("Nome", cli[1])
-                                email_edit = st.text_input("Email", cli[2] or "")
-                                idx_emp = 0
-                                for idx, emp in enumerate(empresas):
-                                    if emp[0] == cli[3]:
-                                        idx_emp = idx
-                                        break
-                                empresa_sel = st.selectbox(
-                                    "Empresa *",
-                                    empresas,
-                                    index=idx_emp,
-                                    format_func=lambda x: x[1],
-                                    key=f"emp_{cli[0]}",
-                                )
+                    with col2:
+                        st.markdown("### Comerciais Registados")
+                        clientes = [cli for cli in listar_clientes() if cli[3] == empresa_sel[0]]
 
-                                col_a, col_b = st.columns(2)
-                                with col_a:
-                                    if st.form_submit_button("💾 Guardar"):
-                                        atualizar_cliente(cli[0], nome_edit, email_edit, empresa_sel[0])
-                                        st.success("Comercial atualizado")
-                                        st.rerun()
-                                with col_b:
-                                    if st.form_submit_button("🗑️ Eliminar"):
-                                        eliminar_cliente_db(cli[0])
-                                        st.success("Comercial eliminado")
-                                        st.rerun()
+                        for cli in clientes:
+                            with st.expander(cli[1]):
+                                with st.form(f"edit_cli_{cli[0]}"):
+                                    nome_edit = st.text_input("Nome", cli[1])
+                                    email_edit = st.text_input("Email", cli[2] or "")
+                                    idx_emp = 0
+                                    for idx, emp in enumerate(empresas):
+                                        if emp[0] == cli[3]:
+                                            idx_emp = idx
+                                            break
+                                    empresa_sel_edit = st.selectbox(
+                                        "Empresa *",
+                                        empresas,
+                                        index=idx_emp,
+                                        format_func=lambda x: x[1],
+                                        key=f"emp_{cli[0]}",
+                                    )
+
+                                    col_a, col_b = st.columns(2)
+                                    with col_a:
+                                        if st.form_submit_button("💾 Guardar"):
+                                            atualizar_cliente(cli[0], nome_edit, email_edit, empresa_sel_edit[0])
+                                            st.success("Comercial atualizado")
+                                            st.rerun()
+                                    with col_b:
+                                        if st.form_submit_button("🗑️ Eliminar"):
+                                            eliminar_cliente_db(cli[0])
+                                            st.success("Comercial eliminado")
+                                            st.rerun()
         with tab_users:
             if st.session_state.get("role") != "admin":
                 st.warning("Apenas administradores podem gerir utilizadores.")
