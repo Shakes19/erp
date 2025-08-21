@@ -127,3 +127,36 @@ def test_extrair_dados_pdf_alba():
     dados = extrair_dados_pdf(criar_pdf_alba_bytes())
     assert dados["nome"] == "Ricardo Nogueira"
     assert dados["descricao"] == "ALBA gearmotor (rear door) 49NC074"
+
+
+def criar_pdf_piece_inline_bytes():
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(0, 10, "Our reference:")
+    pdf.ln()
+    pdf.cell(0, 10, "01/06/2024")
+    pdf.ln()
+    pdf.cell(0, 10, "21079 Hamburg - Germany")
+    pdf.ln()
+    pdf.cell(0, 10, "Smart Client GmbH")
+    pdf.ln()
+    pdf.cell(0, 10, "Gro\u00dfmoorring 9")
+    pdf.ln()
+    pdf.cell(0, 10, "001.00 Widget Alpha Piece1")
+    pdf.ln()
+    pdf.cell(0, 10, "002.00 Widget Beta Piece2")
+    return pdf.output(dest="S").encode("latin-1")
+
+
+def test_extrair_dados_pdf_piece_inline():
+    dados = extrair_dados_pdf(criar_pdf_piece_inline_bytes())
+    assert dados["cliente"] == "Smart Client GmbH"
+    assert dados["descricao"] == "Widget Alpha"
+    assert dados["quantidade"] == 1
+    assert dados["itens"][0]["codigo"] == "001.00"
+    assert dados["itens"][0]["descricao"] == "Widget Alpha"
+    assert dados["itens"][0]["quantidade"] == 1
+    assert dados["itens"][1]["codigo"] == "002.00"
+    assert dados["itens"][1]["descricao"] == "Widget Beta"
+    assert dados["itens"][1]["quantidade"] == 2
