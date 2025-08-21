@@ -1222,7 +1222,18 @@ class InquiryPDF(FPDF):
         for i, col in enumerate(bank_cols):
             x = 15 + i * col_w
             self.set_xy(x, y)
-            for k, v in col.items():
+            iban = col.get("IBAN / Account No.")
+            nif = col.get("NIF")
+            if iban and nif:
+                # IBAN and NIF on the same line
+                self.set_font("Helvetica", "B", 9)
+                self.cell(col_w, 4, "IBAN / Account No.", ln=1)
+                self.set_font("Helvetica", "", 9)
+                self.multi_cell(col_w, 4, f"{iban}   NIF: {nif}")
+                remaining_items = {k: v for k, v in col.items() if k not in ("IBAN / Account No.", "NIF")}
+            else:
+                remaining_items = col
+            for k, v in remaining_items.items():
                 self.set_font("Helvetica", "B", 9)
                 self.cell(col_w, 4, k, ln=1)
                 self.set_font("Helvetica", "", 9)
@@ -1284,7 +1295,9 @@ class InquiryPDF(FPDF):
         aligns = ["C", "C", "C", "C", "L"]
         for w, h, a in zip(col_w, headers, aligns):
             self.cell(w, 8, h, align=a)
-        self.ln(2)
+        # Move below header row and add a blank line before the first item
+        self.ln()
+        self.ln(4)
 
     def add_item(self, idx, item):
         col_w = self._table_col_widths()
@@ -1499,6 +1512,7 @@ class ClientQuotationPDF(InquiryPDF):
         self.cell(label_w, 8, "TOTAL:", border=1, align="R")
         self.cell(total_w, 8, f"EUR {total_geral:.2f}", border=1, align="C")
         self.cell(extra_w, 8, f"Total Weight: {peso_total:.1f}kg", border=1, align="C")
+        self.ln()
         self.ln(5)
         self.set_font(font, "", size - 1)
         for cond in conditions:
