@@ -796,10 +796,15 @@ def guardar_respostas(rfq_id, respostas, custo_envio=0.0):
         c.execute("UPDATE rfq SET estado = 'respondido' WHERE id = ?", (rfq_id,))
         
         # Obter informações para email
-        c.execute("""
-            SELECT nome_solicitante, email_solicitante, referencia 
-            FROM rfq WHERE id = ?
-        """, (rfq_id,))
+        c.execute(
+            """
+            SELECT r.nome_solicitante, r.email_solicitante, r.referencia, p.numero
+            FROM rfq r
+            LEFT JOIN processo p ON r.processo_id = p.id
+            WHERE r.id = ?
+            """,
+            (rfq_id,),
+        )
         rfq_info = c.fetchone()
         
         conn.commit()
@@ -812,8 +817,9 @@ def guardar_respostas(rfq_id, respostas, custo_envio=0.0):
             enviar_email_orcamento(
                 rfq_info[1],  # email
                 rfq_info[0] if rfq_info[0] else "Cliente",  # nome
-                rfq_info[2],  # referência
-                rfq_id
+                rfq_info[2],  # referência do cliente
+                rfq_info[3],  # número da cotação
+                rfq_id,
             )
         
         return True
@@ -924,7 +930,7 @@ def configurar_margem_marca(fornecedor_id, marca, margem_percentual):
 
 # ========================== FUNÇÕES DE EMAIL ==========================
 
-def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
+def enviar_email_orcamento(email_destino, nome_cliente, referencia_cliente, numero_cotacao, rfq_id):
     """Enviar email com o orçamento ao cliente"""
     try:
         print(f"⏳ Preparando para enviar email para {email_destino}...")
@@ -963,6 +969,7 @@ def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
         if current_user and current_user[4] and current_user[6]:
             email_user = current_user[4]
             email_password = current_user[6]
+            nome_utilizador = current_user[3]
         else:
             st.error(
                 "Configure o seu email e palavra-passe no perfil."
@@ -972,25 +979,27 @@ def enviar_email_orcamento(email_destino, nome_solicitante, referencia, rfq_id):
         print(f"🔧 Configurações SMTP: {smtp_server}:{smtp_port}")
         
         corpo = f"""
-        Estimado(a) {nome_solicitante},
+        Dear {nome_cliente},
 
-        Your Reference: {referencia}
+        Please find attached our offer No {numero_cotacao}
 
-        Segue em anexo o orçamento solicitado com a referência {referencia}.
+        We remain at your disposal for any further clarification.
 
-        Ficamos à disposição para qualquer esclarecimento adicional.
-
-        Com os melhores cumprimentos,
-        Ricardo Nogueira
+        Best regards,
+                {nome_utilizador}
         """
+
+        assunto = f"Quotation {numero_cotacao}"
+        if referencia_cliente:
+            assunto += f" ({referencia_cliente})"
 
         print(f"🚀 Tentando enviar email para {email_destino}...")
         send_email(
             email_destino,
-            f"Orçamento - Ref: {referencia}",
+            assunto,
             corpo,
             pdf_bytes=pdf_bytes,
-            pdf_filename=f"orcamento_{referencia}.pdf",
+            pdf_filename=f"orcamento_{numero_cotacao}.pdf",
             smtp_server=smtp_server,
             smtp_port=smtp_port,
             email_user=email_user,
@@ -2878,6 +2887,7 @@ elif menu_option == "📩 Responder Cotações":
                                                 cotacao['email_solicitante'],
                                                 cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else "Cliente",
                                                 cotacao['referencia'],
+                                                cotacao['processo'],
                                                 cotacao['id'],
                                             ):
                                                 st.success("✅ E-mail reenviado com sucesso!")
@@ -2891,6 +2901,7 @@ elif menu_option == "📩 Responder Cotações":
                                             cotacao['email_solicitante'],
                                             cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else "Cliente",
                                             cotacao['referencia'],
+                                            cotacao['processo'],
                                             cotacao['id'],
                                         ):
                                             st.success("✅ E-mail reenviado com sucesso!")
