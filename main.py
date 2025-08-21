@@ -1825,6 +1825,15 @@ def verificar_pdfs(rfq_id):
     }
 
 
+def extrair_texto_pdf(pdf_bytes):
+    """Retorna todo o texto contido num PDF."""
+    reader = PdfReader(BytesIO(pdf_bytes))
+    texto = ""
+    for page in reader.pages:
+        texto += (page.extract_text() or "") + "\n"
+    return texto.strip()
+
+
 def extrair_dados_pdf(pdf_bytes):
     """Extrai campos relevantes de um PDF de pedido de cotação."""
     reader = PdfReader(BytesIO(pdf_bytes))
@@ -2398,79 +2407,88 @@ elif menu_option == "📝 Nova Cotação":
 elif menu_option == "🤖 Smart Quotation":
     st.title("🤖 Smart Quotation")
 
-    upload_pdf = st.file_uploader("📎 Pedido do cliente (PDF)", type=["pdf"], key="smart_pdf")
-    if upload_pdf is not None:
-        pdf_bytes = upload_pdf.getvalue()
-        exibir_pdf("👁️ PDF carregado", pdf_bytes, expanded=True)
-        dados = extrair_dados_pdf(pdf_bytes)
+    tab_cot, tab_text = st.tabs(["Preencher Cotação", "Text Extraction"])
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.text_input("Referência Cliente", value=dados["referencia"], disabled=True)
-        with col2:
-            st.text_input("Cliente", value=dados["cliente"], disabled=True)
+    with tab_cot:
+        upload_pdf = st.file_uploader("📎 Pedido do cliente (PDF)", type=["pdf"], key="smart_pdf")
+        if upload_pdf is not None:
+            pdf_bytes = upload_pdf.getvalue()
+            exibir_pdf("👁️ PDF carregado", pdf_bytes, expanded=True)
+            dados = extrair_dados_pdf(pdf_bytes)
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.text_input("Nº Artigo", value=dados["artigo_num"], disabled=True)
-        with col2:
-            st.text_input("Quantidade", value=str(dados["quantidade"]), disabled=True)
+            col1, col2 = st.columns(2)
+            with col1:
+                st.text_input("Referência Cliente", value=dados["referencia"], disabled=True)
+            with col2:
+                st.text_input("Cliente", value=dados["cliente"], disabled=True)
 
-        st.text_area("Descrição", value=dados["descricao"], disabled=True, height=100)
-        st.text_input("Unidade", value="Peças", disabled=True)
-        st.text_input("Marca", value=dados["marca"], disabled=True)
+            col1, col2 = st.columns(2)
+            with col1:
+                st.text_input("Nº Artigo", value=dados["artigo_num"], disabled=True)
+            with col2:
+                st.text_input("Quantidade", value=str(dados["quantidade"]), disabled=True)
 
-        if st.button("Submeter", type="primary"):
-            fornecedor_info = obter_fornecedor_por_marca(dados["marca"])
-            if not fornecedor_info:
-                st.error("Marca não encontrada. Configure a marca para um fornecedor.")
-            else:
-                fornecedor_id, _nome_fornecedor, _email = fornecedor_info
-                clientes = listar_clientes()
-                cliente_id = None
-                for cli in clientes:
-                    if cli[1].lower() == dados["cliente"].lower():
-                        cliente_id = cli[0]
-                        break
+            st.text_area("Descrição", value=dados["descricao"], disabled=True, height=100)
+            st.text_input("Unidade", value="Peças", disabled=True)
+            st.text_input("Marca", value=dados["marca"], disabled=True)
 
-                artigos = [
-                    {
-                        "artigo_num": dados["artigo_num"],
-                        "descricao": dados["descricao"],
-                        "quantidade": dados["quantidade"],
-                        "unidade": "Peças",
-                        "marca": dados["marca"],
-                    }
-                ]
-
-                rfq_id, numero_processo = criar_rfq(
-                    fornecedor_id,
-                    datetime.today(),
-                    artigos,
-                    dados["referencia"],
-                    cliente_id,
-                )
-
-                if rfq_id:
-                    guardar_pdf_upload(
-                        rfq_id,
-                        "anexo_cliente",
-                        upload_pdf.name,
-                        pdf_bytes,
-                    )
-                    st.success(
-                        f"✅ Cotação {numero_processo} (Ref: {dados['referencia']}) criada com sucesso!"
-                    )
-                    pdf_pedido = obter_pdf_da_db(rfq_id, "pedido")
-                    if pdf_pedido:
-                        st.download_button(
-                            "📄 Download PDF",
-                            data=pdf_pedido,
-                            file_name=f"cotacao_{rfq_id}.pdf",
-                            mime="application/pdf",
-                        )
+            if st.button("Submeter", type="primary"):
+                fornecedor_info = obter_fornecedor_por_marca(dados["marca"])
+                if not fornecedor_info:
+                    st.error("Marca não encontrada. Configure a marca para um fornecedor.")
                 else:
-                    st.error("Erro ao criar cotação.")
+                    fornecedor_id, _nome_fornecedor, _email = fornecedor_info
+                    clientes = listar_clientes()
+                    cliente_id = None
+                    for cli in clientes:
+                        if cli[1].lower() == dados["cliente"].lower():
+                            cliente_id = cli[0]
+                            break
+
+                    artigos = [
+                        {
+                            "artigo_num": dados["artigo_num"],
+                            "descricao": dados["descricao"],
+                            "quantidade": dados["quantidade"],
+                            "unidade": "Peças",
+                            "marca": dados["marca"],
+                        }
+                    ]
+
+                    rfq_id, numero_processo = criar_rfq(
+                        fornecedor_id,
+                        datetime.today(),
+                        artigos,
+                        dados["referencia"],
+                        cliente_id,
+                    )
+
+                    if rfq_id:
+                        guardar_pdf_upload(
+                            rfq_id,
+                            "anexo_cliente",
+                            upload_pdf.name,
+                            pdf_bytes,
+                        )
+                        st.success(
+                            f"✅ Cotação {numero_processo} (Ref: {dados['referencia']}) criada com sucesso!"
+                        )
+                        pdf_pedido = obter_pdf_da_db(rfq_id, "pedido")
+                        if pdf_pedido:
+                            st.download_button(
+                                "📄 Download PDF",
+                                data=pdf_pedido,
+                                file_name=f"cotacao_{rfq_id}.pdf",
+                                mime="application/pdf",
+                            )
+                    else:
+                        st.error("Erro ao criar cotação.")
+
+    with tab_text:
+        pdf_text = st.file_uploader("📎 PDF", type=["pdf"], key="extract_pdf")
+        if pdf_text is not None:
+            texto = extrair_texto_pdf(pdf_text.getvalue())
+            st.text_area("Texto extraído", value=texto, height=400)
 
 elif menu_option == "📩 Responder Cotações":
     st.title("📩 Responder Cotações")
