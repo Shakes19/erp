@@ -39,6 +39,15 @@ def listar_processos(page: int = 0, page_size: int = 10):
         session.close()
 
 
+def contar_processos() -> int:
+    """Devolve o número total de processos existentes."""
+    session = obter_conexao()
+    try:
+        return session.execute(text("SELECT COUNT(*) FROM processo")).scalar()
+    finally:
+        session.close()
+
+
 # Obter fornecedores
 def listar_fornecedores():
     session = obter_conexao()
@@ -106,9 +115,7 @@ PAGE_SIZE = 10
 if "processos_page" not in st.session_state:
     st.session_state.processos_page = 0
 
-processos, total_processos = listar_processos(
-    st.session_state.processos_page, PAGE_SIZE
-)
+total_processos = contar_processos()
 total_paginas = max(1, (total_processos + PAGE_SIZE - 1) // PAGE_SIZE)
 
 fornecedores = listar_fornecedores()
@@ -121,6 +128,10 @@ if col2.button(
     disabled=st.session_state.processos_page >= total_paginas - 1,
 ):
     st.session_state.processos_page += 1
+
+processos, _ = listar_processos(
+    st.session_state.processos_page, PAGE_SIZE
+)
 
 st.write(f"Página {st.session_state.processos_page + 1} de {total_paginas}")
 
