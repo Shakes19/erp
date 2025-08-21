@@ -729,7 +729,7 @@ def eliminar_cotacao(rfq_id):
 
 # ========================== FUNÇÕES DE GESTÃO DE RESPOSTAS ==========================
 
-def guardar_respostas(rfq_id, respostas, custo_envio=0.0):
+def guardar_respostas(rfq_id, respostas, custo_envio=0.0, observacoes=""):
     """Guardar respostas do fornecedor e enviar email"""
     conn = obter_conexao()
     c = conn.cursor()
@@ -767,8 +767,8 @@ def guardar_respostas(rfq_id, respostas, custo_envio=0.0):
                 """
                 INSERT OR REPLACE INTO resposta_fornecedor
                 (fornecedor_id, rfq_id, artigo_id, descricao, custo, prazo_entrega,
-                 peso, hs_code, pais_origem, margem_utilizada, preco_venda, quantidade_final)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 peso, hs_code, pais_origem, margem_utilizada, preco_venda, quantidade_final, observacoes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     fornecedor_id,
@@ -783,6 +783,7 @@ def guardar_respostas(rfq_id, respostas, custo_envio=0.0):
                     margem,
                     preco_venda,
                     quantidade_final,
+                    observacoes,
                 ),
             )
         
@@ -820,6 +821,7 @@ def guardar_respostas(rfq_id, respostas, custo_envio=0.0):
                 rfq_info[2],  # referência do cliente
                 rfq_info[3],  # número da cotação
                 rfq_id,
+                observacoes,
             )
         
         return True
@@ -930,7 +932,14 @@ def configurar_margem_marca(fornecedor_id, marca, margem_percentual):
 
 # ========================== FUNÇÕES DE EMAIL ==========================
 
-def enviar_email_orcamento(email_destino, nome_cliente, referencia_cliente, numero_cotacao, rfq_id):
+def enviar_email_orcamento(
+    email_destino,
+    nome_cliente,
+    referencia_cliente,
+    numero_cotacao,
+    rfq_id,
+    observacoes=None,
+):
     """Enviar email com o orçamento ao cliente"""
     try:
         print(f"⏳ Preparando para enviar email para {email_destino}...")
@@ -977,13 +986,27 @@ def enviar_email_orcamento(email_destino, nome_cliente, referencia_cliente, nume
             return False
 
         print(f"🔧 Configurações SMTP: {smtp_server}:{smtp_port}")
-        
+
+        if observacoes is None:
+            conn = obter_conexao()
+            c = conn.cursor()
+            c.execute(
+                "SELECT observacoes FROM resposta_fornecedor WHERE rfq_id = ? AND observacoes IS NOT NULL AND observacoes != '' LIMIT 1",
+                (rfq_id,),
+            )
+            row = c.fetchone()
+            conn.close()
+            if row:
+                observacoes = row[0]
+
         corpo = f"""
         Dear {nome_cliente},
 
         Please find attached our offer No {numero_cotacao}
-
-        We remain at your disposal for any further clarification.
+        """
+        if observacoes:
+            corpo += f"{observacoes}\n\n"
+        corpo += """We remain at your disposal for any further clarification.
 
         Best regards,
                 {nome_utilizador}
@@ -1064,6 +1087,7 @@ def enviar_email_pedido_fornecedor(rfq_id):
         if current_user and current_user[4] and current_user[6]:
             email_user = current_user[4]
             email_password = current_user[6]
+            nome_utilizador = current_user[3]
         else:
             st.error(
                 "Configure o seu email e palavra-passe no perfil."
@@ -1071,18 +1095,26 @@ def enviar_email_pedido_fornecedor(rfq_id):
             return False
 
         # Construir email
-        corpo = f"""
-Estimado(a) {fornecedor_nome},
+        corpo = f"""Request for Quotation – {referencia}
 
-Segue em anexo o pedido de cotação relativo à referência {referencia}.
-Agradecemos o envio do preço, prazo de entrega, HS Code, país de origem e peso.
+Dear {fornecedor_nome} Team,
 
-Com os melhores cumprimentos,
-Ricardo Nogueira
+Please find attached our Request for Quotation (RFQ) for reference {referencia}.
+
+Kindly provide us with the following details:
+- Unit price
+- Delivery time
+- HS Code
+- Country of origin
+- Weight
+
+We look forward to receiving your quotation.
+Thank you in advance for your prompt response.
+{nome_utilizador}
 """
         send_email(
             fornecedor_email,
-            f"Pedido de Cotação - Ref: {referencia}",
+            f"Request for Quotation – {referencia}",
             corpo,
             pdf_bytes=pdf_bytes,
             pdf_filename=f"pedido_{referencia}.pdf",
@@ -2666,6 +2698,11 @@ elif menu_option == "📩 Responder Cotações":
                 key=f"custo_envio_{cotacao['id']}"
             )
 
+            observacoes = st.text_area(
+                "Observações",
+                key=f"obs_{cotacao['id']}"
+            )
+
             col1, col2 = st.columns(2)
 
             with col1:
@@ -2678,7 +2715,7 @@ elif menu_option == "📩 Responder Cotações":
             respostas_validas = [r for r in respostas if r[1] > 0]
 
             if respostas_validas:
-                if guardar_respostas(cotacao['id'], respostas_validas, custo_envio):
+                if guardar_respostas(cotacao['id'], respostas_validas, custo_envio, observacoes):
                     if pdf_resposta is not None:
                         with open(f"resposta_fornecedor_{cotacao['id']}.pdf", "wb") as f:
                             f.write(pdf_resposta.getbuffer())
