@@ -1910,11 +1910,17 @@ def extrair_dados_pdf(pdf_bytes):
     linhas_pdf = texto.splitlines()
     itens = []
     padrao_item = re.compile(r"\b\d{3}\.00\b")
+    padrao_piece_qtd = re.compile(r"Piece\s*(\d+)", re.IGNORECASE)
     for i, linha in enumerate(linhas_pdf):
         m = padrao_item.search(linha)
         if m:
             codigo = m.group()
             desc = linha[m.end():].strip()
+            match_piece = padrao_piece_qtd.search(desc)
+            quantidade_item = None
+            if match_piece:
+                quantidade_item = int(match_piece.group(1))
+                desc = desc[:match_piece.start()].strip()
             if not desc:
                 for j in range(i - 1, -1, -1):
                     prev = linhas_pdf[j].strip()
@@ -1925,20 +1931,27 @@ def extrair_dados_pdf(pdf_bytes):
                 prox = linhas_pdf[i + 1].strip()
                 if re.match(r"^[A-Za-z0-9-]+$", prox):
                     desc = f"{desc} {prox}".strip()
-            itens.append({"codigo": codigo, "descricao": desc})
+            item = {"codigo": codigo, "descricao": desc}
+            if quantidade_item is not None:
+                item["quantidade"] = quantidade_item
+            itens.append(item)
     if not descricao and itens:
         descricao = itens[0]["descricao"]
     if not descricao:
         descricao = linha_apos("Piece")
 
     quantidade = 1
-    idx_qtd = texto.find("Quantity")
-    if idx_qtd != -1:
-        linhas = texto[idx_qtd:].splitlines()
-        if len(linhas) >= 2:
-            match = re.search(r"\d+", linhas[1])
-            if match:
-                quantidade = int(match.group(0))
+    match_qtd = padrao_piece_qtd.search(texto)
+    if match_qtd:
+        quantidade = int(match_qtd.group(1))
+    else:
+        idx_qtd = texto.find("Quantity")
+        if idx_qtd != -1:
+            linhas = texto[idx_qtd:].splitlines()
+            if len(linhas) >= 2:
+                match = re.search(r"\d+", linhas[1])
+                if match:
+                    quantidade = int(match.group(0))
 
     marca = descricao.split()[0] if descricao else ""
 
