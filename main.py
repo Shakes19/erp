@@ -585,13 +585,23 @@ def criar_rfq(fornecedor_id, data, artigos, referencia, cliente_id=None):
     finally:
         conn.close()
 
-def obter_todas_cotacoes(filtro_referencia="", estado=None, fornecedor_id=None, utilizador_id=None):
-    """Obter todas as cotações com filtros opcionais"""
+
+def obter_todas_cotacoes(
+    filtro_referencia: str = "",
+    estado: str | None = None,
+    fornecedor_id: int | None = None,
+    utilizador_id: int | None = None,
+    page: int | None = None,
+    page_size: int = 10,
+    return_total: bool = False,
+):
+    """Obter cotações com filtros opcionais e suporte para paginação."""
+
     try:
         conn = obter_conexao()
         c = conn.cursor()
-        
-        query = """
+
+        base_query = """
             SELECT rfq.id,
                    rfq.data,
                    COALESCE(fornecedor.nome, 'Fornecedor desconhecido'),
@@ -608,14 +618,14 @@ def obter_todas_cotacoes(filtro_referencia="", estado=None, fornecedor_id=None, 
             LEFT JOIN utilizador u ON rfq.utilizador_id = u.id
             LEFT JOIN artigo ON rfq.id = artigo.rfq_id
         """
-        
-        conditions = []
-        params = []
-        
+
+        conditions: list[str] = []
+        params: list = []
+
         if filtro_referencia:
             conditions.append("rfq.referencia LIKE ?")
             params.append(f"%{filtro_referencia}%")
-        
+
         if estado:
             conditions.append("rfq.estado = ?")
             params.append(estado)
@@ -627,29 +637,50 @@ def obter_todas_cotacoes(filtro_referencia="", estado=None, fornecedor_id=None, 
         if utilizador_id:
             conditions.append("rfq.utilizador_id = ?")
             params.append(utilizador_id)
-        
+
         if conditions:
-            query += " WHERE " + " AND ".join(conditions)
-        
-        query += " GROUP BY rfq.id ORDER BY rfq.data DESC"
-        
-        c.execute(query, params)
+            base_query += " WHERE " + " AND ".join(conditions)
+
+        base_query += " GROUP BY rfq.id ORDER BY rfq.data DESC"
+
+        query = base_query
+        query_params = list(params)
+
+        if page is not None:
+            query += " LIMIT ? OFFSET ?"
+            query_params.extend([page_size, page * page_size])
+
+        c.execute(query, query_params)
         resultados = c.fetchall()
+
+        cotacoes = [
+            {
+                "id": row[0],
+                "data": row[1],
+                "fornecedor": row[2],
+                "estado": row[3],
+                "processo": row[4],
+                "referencia": row[5],
+                "num_artigos": row[6],
+                "nome_solicitante": row[7] if row[7] else "",
+                "email_solicitante": row[8] if row[8] else "",
+                "criador": row[9] if row[9] else "",
+            }
+            for row in resultados
+        ]
+
+        if return_total:
+            count_query = "SELECT COUNT(*) FROM rfq"
+            if conditions:
+                count_query += " WHERE " + " AND ".join(conditions)
+            c.execute(count_query, params)
+            total = c.fetchone()[0]
+            conn.close()
+            return cotacoes, total
+
         conn.close()
-        
-        return [{
-            "id": row[0],
-            "data": row[1],
-            "fornecedor": row[2],
-            "estado": row[3],
-            "processo": row[4],
-            "referencia": row[5],
-            "num_artigos": row[6],
-            "nome_solicitante": row[7] if row[7] else "",
-            "email_solicitante": row[8] if row[8] else "",
-            "criador": row[9] if row[9] else ""
-        } for row in resultados]
-        
+        return cotacoes
+
     except Exception as e:
         print(f"Erro ao obter cotações: {e}")
         return []
@@ -2578,6 +2609,12 @@ elif menu_option == "🤖 Smart Quotation":
 elif menu_option == "📩 Responder Cotações":
     st.title("📩 Responder Cotações")
 
+    PAGE_SIZE = 10
+    if "cotacoes_pend_page" not in st.session_state:
+        st.session_state.cotacoes_pend_page = 0
+    if "cotacoes_resp_page" not in st.session_state:
+        st.session_state.cotacoes_resp_page = 0
+
     @st.dialog("Responder Cotação")
     def responder_cotacao_dialog(cotacao):
         st.markdown(
@@ -2754,11 +2791,35 @@ elif menu_option == "📩 Responder Cotações":
         fornecedor_id_pend = opcoes_forn[fornecedor_sel_pend]
         utilizador_id_pend = opcoes_user[utilizador_sel_pend]
 
-        # Obter cotações pendentes
-        cotacoes_pendentes = obter_todas_cotacoes(
-            filtro_ref_pend, "pendente", fornecedor_id_pend, utilizador_id_pend
+        cotacoes_pendentes, total_pend = obter_todas_cotacoes(
+            filtro_ref_pend,
+            "pendente",
+            fornecedor_id_pend,
+            utilizador_id_pend,
+            page=st.session_state.cotacoes_pend_page,
+            page_size=PAGE_SIZE,
+            return_total=True,
         )
-        
+        total_paginas_pend = max(1, (total_pend + PAGE_SIZE - 1) // PAGE_SIZE)
+
+        nav_prev, nav_next = st.columns(2)
+        if nav_prev.button(
+            "⬅️ Anterior",
+            key="pend_prev",
+            disabled=st.session_state.cotacoes_pend_page == 0,
+        ):
+            st.session_state.cotacoes_pend_page -= 1
+        if nav_next.button(
+            "Próximo ➡️",
+            key="pend_next",
+            disabled=st.session_state.cotacoes_pend_page >= total_paginas_pend - 1,
+        ):
+            st.session_state.cotacoes_pend_page += 1
+
+        st.write(
+            f"Página {st.session_state.cotacoes_pend_page + 1} de {total_paginas_pend}"
+        )
+
         if cotacoes_pendentes:
             for cotacao in cotacoes_pendentes:
                 with st.expander(f"{cotacao['processo']} - {cotacao['fornecedor']} - Ref: {cotacao['referencia']}", expanded=False):
@@ -2843,11 +2904,35 @@ elif menu_option == "📩 Responder Cotações":
         fornecedor_id_resp = opcoes_forn[fornecedor_sel_resp]
         utilizador_id_resp = opcoes_user[utilizador_sel_resp]
 
-        # Obter cotações respondidas
-        cotacoes_respondidas = obter_todas_cotacoes(
-            filtro_ref_resp, "respondido", fornecedor_id_resp, utilizador_id_resp
+        cotacoes_respondidas, total_resp = obter_todas_cotacoes(
+            filtro_ref_resp,
+            "respondido",
+            fornecedor_id_resp,
+            utilizador_id_resp,
+            page=st.session_state.cotacoes_resp_page,
+            page_size=PAGE_SIZE,
+            return_total=True,
         )
-        
+        total_paginas_resp = max(1, (total_resp + PAGE_SIZE - 1) // PAGE_SIZE)
+
+        nav_prev_r, nav_next_r = st.columns(2)
+        if nav_prev_r.button(
+            "⬅️ Anterior",
+            key="resp_prev",
+            disabled=st.session_state.cotacoes_resp_page == 0,
+        ):
+            st.session_state.cotacoes_resp_page -= 1
+        if nav_next_r.button(
+            "Próximo ➡️",
+            key="resp_next",
+            disabled=st.session_state.cotacoes_resp_page >= total_paginas_resp - 1,
+        ):
+            st.session_state.cotacoes_resp_page += 1
+
+        st.write(
+            f"Página {st.session_state.cotacoes_resp_page + 1} de {total_paginas_resp}"
+        )
+
         if cotacoes_respondidas:
             for cotacao in cotacoes_respondidas:
                 with st.expander(f"{cotacao['processo']} - {cotacao['fornecedor']} - Ref: {cotacao['referencia']}", expanded=False):
