@@ -1954,19 +1954,23 @@ def extrair_dados_pdf(pdf_bytes):
 
     referencia = linha_apos("Our reference:")
 
-    cliente = ""
+    # ----------------------------- CLIENTE -----------------------------
+    cliente = linha_apos("Client:")
     nome = ""
-    match_data = re.search(r"\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2}", texto)
-    if match_data:
-        restante = texto[match_data.end():]
-        for linha in restante.splitlines():
-            linha = linha.strip()
-            if not linha:
-                continue
-            if "Hamburg - Germany" in linha:
-                continue
-            cliente = linha
-            break
+
+    # Fallbacks para layouts antigos
+    if not cliente:
+        match_data = re.search(r"\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2}", texto)
+        if match_data:
+            restante = texto[match_data.end():]
+            for linha in restante.splitlines():
+                linha = linha.strip()
+                if not linha:
+                    continue
+                if "Hamburg - Germany" in linha:
+                    continue
+                cliente = linha
+                break
     if not cliente:
         cliente = linha_apos("Contact:")
     if not cliente:
@@ -2008,49 +2012,76 @@ def extrair_dados_pdf(pdf_bytes):
 
     linhas_pdf = texto.splitlines()
     itens = []
-    padrao_item = re.compile(r"\b\d{3}\.00\b")
+    padrao_item = re.compile(r"^\s*(\d{3}\.\d{2})\s*(.*)")
     padrao_piece_qtd = re.compile(r"Piece\s*(\d+)", re.IGNORECASE)
-    for i, linha in enumerate(linhas_pdf):
-        m = padrao_item.search(linha)
+
+    i = 0
+    while i < len(linhas_pdf):
+        linha = linhas_pdf[i].strip()
+        m = padrao_item.match(linha)
         if m:
-            codigo = m.group()
-            desc = linha[m.end():].strip()
-            match_piece = padrao_piece_qtd.search(desc)
+            codigo = m.group(1)
+            restante = m.group(2).strip()
+            desc_partes = []
             quantidade_item = None
+
+            tokens = restante.split()
+            if tokens and tokens[-1].isdigit():
+                quantidade_item = int(tokens[-1])
+                restante = " ".join(tokens[:-1]).strip()
+            match_piece = padrao_piece_qtd.search(restante)
             if match_piece:
                 quantidade_item = int(match_piece.group(1))
-                desc = desc[:match_piece.start()].strip()
-            if not desc:
-                for j in range(i - 1, -1, -1):
-                    prev = linhas_pdf[j].strip()
-                    if prev and prev.lower() not in {"quantity %", "unit", "piece", "quantity"} and not prev.isdigit():
-                        desc = prev
+                restante = restante[:match_piece.start()].strip()
+            if restante:
+                desc_partes.append(restante)
+            else:
+                # Se a linha do código não tiver descrição, procurar nas linhas anteriores
+                k = i - 1
+                while k >= 0:
+                    prev = linhas_pdf[k].strip()
+                    if not prev:
+                        k -= 1
+                        continue
+                    if padrao_item.match(prev) or prev in {"Quantity", "Description"} or prev.endswith(":"):
                         break
-            if i + 1 < len(linhas_pdf):
-                prox = linhas_pdf[i + 1].strip()
-                if re.match(r"^[A-Za-z0-9-]+$", prox):
-                    desc = f"{desc} {prox}".strip()
+                    desc_partes.insert(0, prev)
+                    k -= 1
+                    break
+
+            j = i + 1
+            while j < len(linhas_pdf):
+                prox = linhas_pdf[j].strip()
+                if not prox:
+                    j += 1
+                    continue
+                if padrao_item.match(prox) or prox in {"Quantity", "Description"} or prox.endswith(":"):
+                    break
+                if j + 1 < len(linhas_pdf) and padrao_item.match(linhas_pdf[j + 1].strip()):
+                    break
+                tokens = prox.split()
+                if quantidade_item is None and tokens and tokens[-1].isdigit():
+                    quantidade_item = int(tokens[-1])
+                    prox = " ".join(tokens[:-1]).strip()
+                desc_partes.append(prox)
+                j += 1
+
+            desc = " ".join(desc_partes).strip()
             item = {"codigo": codigo, "descricao": desc}
             if quantidade_item is not None:
                 item["quantidade"] = quantidade_item
             itens.append(item)
+            i = j
+        else:
+            i += 1
+
+    # Se não houver descrição principal, usar a do primeiro item
     if not descricao and itens:
         descricao = itens[0]["descricao"]
     if not descricao:
         descricao = linha_apos("Piece")
 
-    quantidade = 1
-    match_qtd = padrao_piece_qtd.search(texto)
-    if match_qtd:
-        quantidade = int(match_qtd.group(1))
-    else:
-        idx_qtd = texto.find("Quantity")
-        if idx_qtd != -1:
-            linhas = texto[idx_qtd:].splitlines()
-            if len(linhas) >= 2:
-                match = re.search(r"\d+", linhas[1])
-                if match:
-                    quantidade = int(match.group(0))
+    quantidade = itens[0].get("quantidade", 1) if itens else 1
 
     marca = descricao.split()[0] if descricao else ""
 
