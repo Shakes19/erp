@@ -2802,23 +2802,10 @@ elif menu_option == "📩 Responder Cotações":
         )
         total_paginas_pend = max(1, (total_pend + PAGE_SIZE - 1) // PAGE_SIZE)
 
-        nav_prev, nav_next = st.columns(2)
-        if nav_prev.button(
-            "⬅️ Anterior",
-            key="pend_prev",
-            disabled=st.session_state.cotacoes_pend_page == 0,
-        ):
-            st.session_state.cotacoes_pend_page -= 1
-        if nav_next.button(
-            "Próximo ➡️",
-            key="pend_next",
-            disabled=st.session_state.cotacoes_pend_page >= total_paginas_pend - 1,
-        ):
-            st.session_state.cotacoes_pend_page += 1
-
-        st.write(
-            f"Página {st.session_state.cotacoes_pend_page + 1} de {total_paginas_pend}"
-        )
+        # Garantir que a página atual está dentro dos limites
+        if st.session_state.cotacoes_pend_page > total_paginas_pend - 1:
+            st.session_state.cotacoes_pend_page = max(0, total_paginas_pend - 1)
+            st.rerun()
 
         if cotacoes_pendentes:
             for cotacao in cotacoes_pendentes:
@@ -2879,7 +2866,27 @@ elif menu_option == "📩 Responder Cotações":
                                 st.rerun()
         else:
             st.info("Não há cotações pendentes")
-    
+
+        st.markdown("---")
+        st.write(
+            f"Página {st.session_state.cotacoes_pend_page + 1} de {total_paginas_pend}"
+        )
+        nav_prev, nav_next = st.columns(2)
+        if nav_prev.button(
+            "⬅️ Anterior",
+            key="pend_prev",
+            disabled=st.session_state.cotacoes_pend_page == 0,
+        ):
+            st.session_state.cotacoes_pend_page -= 1
+            st.rerun()
+        if nav_next.button(
+            "Próximo ➡️",
+            key="pend_next",
+            disabled=st.session_state.cotacoes_pend_page >= total_paginas_pend - 1,
+        ):
+            st.session_state.cotacoes_pend_page += 1
+            st.rerun()
+
     with tab2:
         # Filtros
         col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
@@ -2915,23 +2922,10 @@ elif menu_option == "📩 Responder Cotações":
         )
         total_paginas_resp = max(1, (total_resp + PAGE_SIZE - 1) // PAGE_SIZE)
 
-        nav_prev_r, nav_next_r = st.columns(2)
-        if nav_prev_r.button(
-            "⬅️ Anterior",
-            key="resp_prev",
-            disabled=st.session_state.cotacoes_resp_page == 0,
-        ):
-            st.session_state.cotacoes_resp_page -= 1
-        if nav_next_r.button(
-            "Próximo ➡️",
-            key="resp_next",
-            disabled=st.session_state.cotacoes_resp_page >= total_paginas_resp - 1,
-        ):
-            st.session_state.cotacoes_resp_page += 1
-
-        st.write(
-            f"Página {st.session_state.cotacoes_resp_page + 1} de {total_paginas_resp}"
-        )
+        # Garantir que a página atual está dentro dos limites
+        if st.session_state.cotacoes_resp_page > total_paginas_resp - 1:
+            st.session_state.cotacoes_resp_page = max(0, total_paginas_resp - 1)
+            st.rerun()
 
         if cotacoes_respondidas:
             for cotacao in cotacoes_respondidas:
@@ -3051,6 +3045,26 @@ elif menu_option == "📩 Responder Cotações":
                                     st.rerun()
         else:
             st.info("Não há cotações respondidas")
+
+        st.markdown("---")
+        st.write(
+            f"Página {st.session_state.cotacoes_resp_page + 1} de {total_paginas_resp}"
+        )
+        nav_prev_r, nav_next_r = st.columns(2)
+        if nav_prev_r.button(
+            "⬅️ Anterior",
+            key="resp_prev",
+            disabled=st.session_state.cotacoes_resp_page == 0,
+        ):
+            st.session_state.cotacoes_resp_page -= 1
+            st.rerun()
+        if nav_next_r.button(
+            "Próximo ➡️",
+            key="resp_next",
+            disabled=st.session_state.cotacoes_resp_page >= total_paginas_resp - 1,
+        ):
+            st.session_state.cotacoes_resp_page += 1
+            st.rerun()
 
 elif menu_option == "📊 Relatórios":
     st.title("📊 Relatórios e Análises")
