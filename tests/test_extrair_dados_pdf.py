@@ -160,3 +160,33 @@ def test_extrair_dados_pdf_piece_inline():
     assert dados["itens"][1]["codigo"] == "002.00"
     assert dados["itens"][1]["descricao"] == "Widget Beta"
     assert dados["itens"][1]["quantidade"] == 2
+
+
+def criar_pdf_client_bytes():
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(0, 10, "Our reference: REF001")
+    pdf.ln()
+    pdf.cell(0, 10, "Client: ACME Corp")
+    pdf.ln()
+    pdf.cell(0, 10, "001.00 Widget A 5")
+    pdf.ln()
+    pdf.cell(0, 10, "002.00 Widget B")
+    pdf.ln()
+    pdf.cell(0, 10, "extra info 3")
+    return pdf.output(dest="S").encode("latin-1")
+
+
+def test_extrair_dados_pdf_client_table():
+    dados = extrair_dados_pdf(criar_pdf_client_bytes())
+    assert dados["referencia"] == "REF001"
+    assert dados["cliente"] == "ACME Corp"
+    assert dados["descricao"] == "Widget A"
+    assert dados["quantidade"] == 5
+    assert dados["itens"][0]["codigo"] == "001.00"
+    assert dados["itens"][0]["descricao"] == "Widget A"
+    assert dados["itens"][0]["quantidade"] == 5
+    assert dados["itens"][1]["codigo"] == "002.00"
+    assert dados["itens"][1]["descricao"] == "Widget B extra info"
+    assert dados["itens"][1]["quantidade"] == 3
