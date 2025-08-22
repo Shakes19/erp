@@ -118,22 +118,15 @@ if "processos_page" not in st.session_state:
 total_processos = contar_processos()
 total_paginas = max(1, (total_processos + PAGE_SIZE - 1) // PAGE_SIZE)
 
-fornecedores = listar_fornecedores()
+# Garantir que a página atual está dentro dos limites válidos
+if st.session_state.processos_page > total_paginas - 1:
+    st.session_state.processos_page = max(0, total_paginas - 1)
 
-col1, col2 = st.columns(2)
-if col1.button("⬅️ Anterior", disabled=st.session_state.processos_page == 0):
-    st.session_state.processos_page -= 1
-if col2.button(
-    "Próximo ➡️",
-    disabled=st.session_state.processos_page >= total_paginas - 1,
-):
-    st.session_state.processos_page += 1
+fornecedores = listar_fornecedores()
 
 processos, _ = listar_processos(
     st.session_state.processos_page, PAGE_SIZE
 )
-
-st.write(f"Página {st.session_state.processos_page + 1} de {total_paginas}")
 
 if total_processos and fornecedores:
     if processos:
@@ -188,3 +181,17 @@ if total_processos and fornecedores:
             st.warning("Este fornecedor ainda não tem um RFQ associado a este processo.")
 else:
     st.info("Adiciona primeiro processos e fornecedores no sistema.")
+
+# Controles de paginação no fundo da página
+st.markdown("---")
+st.write(f"Página {st.session_state.processos_page + 1} de {total_paginas}")
+nav_prev, nav_next = st.columns(2)
+if nav_prev.button("⬅️ Anterior", disabled=st.session_state.processos_page == 0):
+    st.session_state.processos_page -= 1
+    st.rerun()
+if nav_next.button(
+    "Próximo ➡️",
+    disabled=st.session_state.processos_page >= total_paginas - 1,
+):
+    st.session_state.processos_page += 1
+    st.rerun()
