@@ -1984,9 +1984,11 @@ def extrair_dados_pdf(pdf_bytes):
                 cliente = linha
                 break
 
-    match_nome = re.search(r"i\.A\.\s*([^\n]+)", texto)
+    match_nome = re.search(r"i\.[AV]\.\s*([^\n]+)", texto)
     if match_nome:
         nome = match_nome.group(1).strip()
+        if not cliente:
+            cliente = nome
 
     descricao = ""
     artigo = ""
@@ -2059,11 +2061,25 @@ def extrair_dados_pdf(pdf_bytes):
                     break
                 if j + 1 < len(linhas_pdf) and padrao_item.match(linhas_pdf[j + 1].strip()):
                     break
+                if prox.lower() in {"piece", "quantity", "description", "unit"}:
+                    j += 1
+                    continue
+                match_piece = padrao_piece_qtd.search(prox)
+                if match_piece:
+                    quantidade_item = int(match_piece.group(1))
+                    prox = prox[:match_piece.start()].strip()
+                    if not prox:
+                        j += 1
+                        continue
                 tokens = prox.split()
                 if quantidade_item is None and tokens and tokens[-1].isdigit():
-                    quantidade_item = int(tokens[-1])
-                    prox = " ".join(tokens[:-1]).strip()
-                desc_partes.append(prox)
+                    prev_lower = linhas_pdf[j-1].strip().lower() if j > 0 else ""
+                    resto_tokens = " ".join(tokens[:-1]).strip()
+                    if resto_tokens or ("quantity" in prev_lower or "piece" in prev_lower):
+                        quantidade_item = int(tokens[-1])
+                        prox = resto_tokens
+                if prox:
+                    desc_partes.append(prox)
                 j += 1
 
             desc = " ".join(desc_partes).strip()
@@ -2075,13 +2091,14 @@ def extrair_dados_pdf(pdf_bytes):
         else:
             i += 1
 
-    # Se não houver descrição principal, usar a do primeiro item
-    if not descricao and itens:
+    # Usar sempre a descrição do primeiro item quando disponível
+    if itens:
         descricao = itens[0]["descricao"]
-    if not descricao:
-        descricao = linha_apos("Piece")
-
-    quantidade = itens[0].get("quantidade", 1) if itens else 1
+        quantidade = itens[0].get("quantidade", 1)
+    else:
+        if not descricao:
+            descricao = linha_apos("Piece")
+        quantidade = 1
 
     marca = descricao.split()[0] if descricao else ""
 
