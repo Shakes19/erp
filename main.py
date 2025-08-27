@@ -23,6 +23,8 @@ from db import (
     verify_password,
     DB_PATH,
     engine,
+    inserir_artigo_catalogo,
+    procurar_artigos_catalogo,
 )
 from services.pdf_service import (
     load_pdf_config,
@@ -2306,6 +2308,7 @@ with st.sidebar:
         "📩 Responder Cotações",
         "📊 Relatórios",
         "📄 PDFs",
+        "📦 Artigos",
         "👤 Perfil",
     ]
     if st.session_state.get("role") in ["admin", "gestor"]:
@@ -3393,6 +3396,46 @@ elif menu_option == "📄 PDFs":
                 st.info("Apenas administradores podem atualizar o PDF.")
     else:
         st.info("Nenhuma cotação disponível")
+
+elif menu_option == "📦 Artigos":
+    st.title("📦 Catálogo de Artigos")
+    tab_search, tab_create = st.tabs(["🔍 Procurar", "➕ Criar"])
+
+    with tab_search:
+        termo = st.text_input("Pesquisar por nº ou descrição")
+        resultados = procurar_artigos_catalogo(termo)
+        if resultados:
+            df = pd.DataFrame(
+                resultados,
+                columns=[
+                    "Nº Artigo",
+                    "Descrição",
+                    "Fabricante",
+                    "Preço Venda",
+                    "Última Cotação",
+                ],
+            )
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.info("Nenhum artigo encontrado")
+
+    with tab_create:
+        with st.form("novo_artigo_catalogo"):
+            numero = st.text_input("Nº Artigo *")
+            descricao = st.text_area("Descrição *")
+            fabricante = st.text_input("Fabricante")
+            preco = st.number_input(
+                "Preço de venda", min_value=0.0, step=0.01, format="%.2f"
+            )
+            submit = st.form_submit_button("Guardar Artigo")
+        if submit:
+            if numero.strip() and descricao.strip():
+                inserir_artigo_catalogo(
+                    numero.strip(), descricao.strip(), fabricante.strip(), preco
+                )
+                st.success("Artigo guardado com sucesso")
+            else:
+                st.error("Preencha os campos obrigatórios")
 
 elif menu_option == "👤 Perfil":
     st.title("👤 Meu Perfil")

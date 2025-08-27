@@ -459,3 +459,56 @@ def criar_processo(descricao: str = ""):
         return processo_id, numero
     finally:
         session.close()
+
+
+def inserir_artigo_catalogo(
+    artigo_num: str,
+    descricao: str,
+    fabricante: str = "",
+    preco_venda: float = 0.0,
+):
+    """Insert or update an article in the catalogue."""
+
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        """
+        INSERT INTO artigo_catalogo
+            (artigo_num, descricao, fabricante, preco_venda, data_ultima_cotacao)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(artigo_num) DO UPDATE SET
+            descricao = excluded.descricao,
+            fabricante = excluded.fabricante,
+            preco_venda = excluded.preco_venda,
+            data_ultima_cotacao = excluded.data_ultima_cotacao
+        """,
+        (
+            artigo_num,
+            descricao,
+            fabricante,
+            preco_venda,
+            datetime.now().strftime("%Y-%m-%d"),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def procurar_artigos_catalogo(termo: str = ""):
+    """Search catalogue articles by number or description."""
+
+    conn = get_connection()
+    c = conn.cursor()
+    like = f"%{termo}%"
+    c.execute(
+        """
+        SELECT artigo_num, descricao, fabricante, preco_venda, data_ultima_cotacao
+        FROM artigo_catalogo
+        WHERE artigo_num LIKE ? OR descricao LIKE ?
+        ORDER BY artigo_num
+        """,
+        (like, like),
+    )
+    rows = c.fetchall()
+    conn.close()
+    return rows

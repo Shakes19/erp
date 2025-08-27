@@ -36,3 +36,10 @@ def test_artigo_catalogo_table_structure():
     }
     assert expected.issubset(cols)
     conn.close()
+
+
+def test_inserir_e_procurar_artigos():
+    db.inserir_artigo_catalogo("A1", "Desc1", "Fab", 10.0)
+    db.inserir_artigo_catalogo("A2", "Outro", "Fab2", 20.0)
+    resultados = db.procurar_artigos_catalogo("A1")
+    assert any(r[0] == "A1" for r in resultados)
