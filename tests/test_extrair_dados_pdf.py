@@ -190,3 +190,36 @@ def test_extrair_dados_pdf_client_table():
     assert dados["itens"][1]["codigo"] == "002.00"
     assert dados["itens"][1]["descricao"] == "Widget B extra info"
     assert dados["itens"][1]["quantidade"] == 3
+
+
+def criar_pdf_ktb_bytes():
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(0, 10, "Our reference: KTB-DE0496425/C")
+    pdf.ln()
+    pdf.cell(0, 10, "Info")
+    pdf.ln()
+    pdf.cell(0, 10, "i.V. Micael Duarte")
+    pdf.ln()
+    pdf.cell(0, 10, "001.00 TURCK Sensor")
+    pdf.ln()
+    pdf.cell(0, 10, "BI2-G08-VP6X-0,15-PSG4S")
+    pdf.ln()
+    pdf.cell(0, 10, "4602652")
+    pdf.ln()
+    pdf.cell(0, 10, "Piece2")
+    pdf.ln()
+    pdf.cell(0, 10, "KTB-code:")
+    pdf.ln()
+    pdf.cell(0, 10, "2167704")
+    return pdf.output(dest="S").encode("latin-1")
+
+
+def test_extrair_dados_pdf_ktb():
+    dados = extrair_dados_pdf(criar_pdf_ktb_bytes())
+    assert dados["cliente"] == "Micael Duarte"
+    assert dados["referencia"] == "KTB-DE0496425/C"
+    assert dados["artigo_num"] == "2167704"
+    assert dados["descricao"] == "TURCK Sensor BI2-G08-VP6X-0,15-PSG4S 4602652"
+    assert dados["quantidade"] == 2
