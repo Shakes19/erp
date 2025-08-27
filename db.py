@@ -224,6 +224,20 @@ def criar_base_dados_completa():
         """
     )
 
+    # Tabela de catálogo de artigos
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS artigo_catalogo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            artigo_num TEXT NOT NULL UNIQUE,
+            descricao TEXT NOT NULL,
+            fabricante TEXT,
+            preco_venda REAL NOT NULL DEFAULT 0.0,
+            data_ultima_cotacao TEXT
+        )
+        """
+    )
+
     # Tabela de respostas dos fornecedores
     c.execute(
         """
@@ -384,6 +398,7 @@ def criar_base_dados_completa():
         "CREATE INDEX IF NOT EXISTS idx_rfq_estado ON rfq(estado)",
         "CREATE INDEX IF NOT EXISTS idx_rfq_referencia ON rfq(referencia)",
         "CREATE INDEX IF NOT EXISTS idx_artigo_rfq ON artigo(rfq_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_artigo_catalogo_num ON artigo_catalogo(artigo_num)",
         "CREATE INDEX IF NOT EXISTS idx_resposta_fornecedor ON resposta_fornecedor(fornecedor_id, rfq_id)",
         "CREATE INDEX IF NOT EXISTS idx_resposta_artigo ON resposta_fornecedor(artigo_id)",
         "CREATE INDEX IF NOT EXISTS idx_fornecedor_nome ON fornecedor(nome)",
