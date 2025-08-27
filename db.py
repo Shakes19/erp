@@ -8,7 +8,7 @@ database dependencies.
 
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import bcrypt
 from sqlalchemy import create_engine, text
@@ -233,7 +233,7 @@ def criar_base_dados_completa():
             descricao TEXT NOT NULL,
             fabricante TEXT,
             preco_venda REAL NOT NULL DEFAULT 0.0,
-            data_ultima_cotacao TEXT
+            validade_preco TEXT
         )
         """
     )
@@ -258,7 +258,7 @@ def criar_base_dados_completa():
             preco_venda REAL,
             observacoes TEXT,
             data_resposta TEXT DEFAULT CURRENT_TIMESTAMP,
-            validade_dias INTEGER DEFAULT 30,
+            validade_preco TEXT,
             FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
             FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE,
             FOREIGN KEY (artigo_id) REFERENCES artigo(id) ON DELETE CASCADE,
@@ -466,28 +466,32 @@ def inserir_artigo_catalogo(
     descricao: str,
     fabricante: str = "",
     preco_venda: float = 0.0,
+    validade_preco: str | None = None,
 ):
     """Insert or update an article in the catalogue."""
+
+    if validade_preco is None:
+        validade_preco = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
 
     conn = get_connection()
     c = conn.cursor()
     c.execute(
         """
         INSERT INTO artigo_catalogo
-            (artigo_num, descricao, fabricante, preco_venda, data_ultima_cotacao)
+            (artigo_num, descricao, fabricante, preco_venda, validade_preco)
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(artigo_num) DO UPDATE SET
             descricao = excluded.descricao,
             fabricante = excluded.fabricante,
             preco_venda = excluded.preco_venda,
-            data_ultima_cotacao = excluded.data_ultima_cotacao
+            validade_preco = excluded.validade_preco
         """,
         (
             artigo_num,
             descricao,
             fabricante,
             preco_venda,
-            datetime.now().strftime("%Y-%m-%d"),
+            validade_preco,
         ),
     )
     conn.commit()
@@ -502,7 +506,7 @@ def procurar_artigos_catalogo(termo: str = ""):
     like = f"%{termo}%"
     c.execute(
         """
-        SELECT artigo_num, descricao, fabricante, preco_venda, data_ultima_cotacao
+        SELECT artigo_num, descricao, fabricante, preco_venda, validade_preco
         FROM artigo_catalogo
         WHERE artigo_num LIKE ? OR descricao LIKE ?
         ORDER BY artigo_num

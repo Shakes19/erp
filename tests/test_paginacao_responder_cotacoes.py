@@ -2,6 +2,7 @@ import os
 import sys
 import importlib
 import sqlite3
+from datetime import date
 
 # Ensure project root in path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -38,6 +39,7 @@ def test_paginacao_responder_cotacoes(tmp_path, monkeypatch):
     dummy.tabs = lambda labels: tuple(DummyCtx() for _ in labels)
     dummy.text_area = lambda *a, **k: ""
     dummy.number_input = lambda *a, **k: 0
+    dummy.date_input = lambda *a, **k: date.today()
     dummy.write = lambda *a, **k: None
     dummy.info = lambda *a, **k: None
     dummy.warning = lambda *a, **k: None
