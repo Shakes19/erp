@@ -1,6 +1,6 @@
 import streamlit as st
 import sqlite3
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from fpdf import FPDF
 import base64
 import json
@@ -760,6 +760,23 @@ def eliminar_cotacao(rfq_id):
     finally:
         conn.close()
 
+# ========================== ARQUIVO DE COTAÇÕES ==========================
+
+def arquivar_cotacao(rfq_id):
+    """Arquivar cotação alterando o estado para 'arquivada'"""
+    conn = obter_conexao()
+    c = conn.cursor()
+    try:
+        c.execute("UPDATE rfq SET estado = 'arquivada' WHERE id = ?", (rfq_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        st.error(f"Erro ao arquivar cotação: {str(e)}")
+        return False
+    finally:
+        conn.close()
+
 # ========================== FUNÇÕES DE GESTÃO DE RESPOSTAS ==========================
 
 def guardar_respostas(rfq_id, respostas, custo_envio=0.0, observacoes=""):
@@ -782,7 +799,17 @@ def guardar_respostas(rfq_id, respostas, custo_envio=0.0, observacoes=""):
 
         # Obter margem para cada artigo baseada na marca
         for item in respostas:
-            artigo_id, custo, prazo, peso, hs_code, pais_origem, descricao_editada, quantidade_final = item
+            (
+                artigo_id,
+                custo,
+                validade_preco,
+                prazo,
+                peso,
+                hs_code,
+                pais_origem,
+                descricao_editada,
+                quantidade_final,
+            ) = item
             
             # Obter marca do artigo
             c.execute("SELECT marca FROM artigo WHERE id = ?", (artigo_id,))
@@ -800,8 +827,8 @@ def guardar_respostas(rfq_id, respostas, custo_envio=0.0, observacoes=""):
                 """
                 INSERT OR REPLACE INTO resposta_fornecedor
                 (fornecedor_id, rfq_id, artigo_id, descricao, custo, prazo_entrega,
-                 peso, hs_code, pais_origem, margem_utilizada, preco_venda, quantidade_final, observacoes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 peso, hs_code, pais_origem, margem_utilizada, preco_venda, quantidade_final, observacoes, validade_preco)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     fornecedor_id,
@@ -817,6 +844,7 @@ def guardar_respostas(rfq_id, respostas, custo_envio=0.0, observacoes=""):
                     preco_venda,
                     quantidade_final,
                     observacoes,
+                    validade_preco,
                 ),
             )
         
@@ -2673,6 +2701,8 @@ elif menu_option == "📩 Responder Cotações":
         st.session_state.cotacoes_pend_page = 0
     if "cotacoes_resp_page" not in st.session_state:
         st.session_state.cotacoes_resp_page = 0
+    if "cotacoes_arq_page" not in st.session_state:
+        st.session_state.cotacoes_arq_page = 0
 
     @st.dialog("Responder Cotação")
     def responder_cotacao_dialog(cotacao):
@@ -2737,7 +2767,7 @@ elif menu_option == "📩 Responder Cotações":
                         key=f"qtd_{artigo['id']}"
                     )
 
-                col3, col4, col5 = st.columns(3)
+                col3, col4, col5, col6 = st.columns(4)
 
                 with col3:
                     custo = st.number_input(
@@ -2751,6 +2781,14 @@ elif menu_option == "📩 Responder Cotações":
                         st.success(f"P.V.: EUR {preco_venda:.2f}")
 
                 with col4:
+                    validade_default = date.today() + timedelta(days=30)
+                    validade_preco = st.date_input(
+                        "Validade Preço",
+                        value=validade_default,
+                        key=f"val_{artigo['id']}"
+                    )
+
+                with col5:
                     prazo = st.number_input(
                         "Prazo (dias)",
                         min_value=1,
@@ -2758,7 +2796,7 @@ elif menu_option == "📩 Responder Cotações":
                         key=f"prazo_{artigo['id']}"
                     )
 
-                with col5:
+                with col6:
                     peso = st.number_input(
                         "Peso (kg)",
                         min_value=0.0,
@@ -2766,23 +2804,23 @@ elif menu_option == "📩 Responder Cotações":
                         key=f"peso_{artigo['id']}"
                     )
 
-                col6, col7 = st.columns(2)
+                col7, col8 = st.columns(2)
 
-                with col6:
+                with col7:
                     hs_code = st.text_input(
                         "HS Code",
                         key=f"hs_{artigo['id']}"
                     )
 
-                with col7:
+                with col8:
                     pais_origem = st.text_input(
                         "País Origem",
                         key=f"pais_{artigo['id']}"
                     )
 
                 respostas.append((
-                    artigo['id'], custo, prazo, peso, hs_code,
-                    pais_origem, descricao_editada, quantidade_final
+                    artigo['id'], custo, validade_preco.isoformat(), prazo, peso,
+                    hs_code, pais_origem, descricao_editada, quantidade_final
                 ))
 
                 st.markdown("---")
@@ -2823,8 +2861,8 @@ elif menu_option == "📩 Responder Cotações":
         if cancelar:
             st.rerun()
     
-    # Tabs para pendentes e respondidas
-    tab1, tab2 = st.tabs(["Pendentes", "Respondidas"])
+    # Tabs para pendentes, respondidas e arquivadas
+    tab1, tab2, tab3 = st.tabs(["Pendentes", "Respondidas", "Arquivados"])
 
     with tab1:
         # Filtros
@@ -2919,10 +2957,11 @@ elif menu_option == "📩 Responder Cotações":
                         if st.button("💬 Responder", key=f"resp_{cotacao['id']}"):
                             responder_cotacao_dialog(cotacao)
 
+                        if st.button("📦 Arquivar", key=f"arc_pend_{cotacao['id']}"):
+                            st.session_state.confirmacao = ("arquivar", cotacao['id'])
+
                         if st.button("🗑️ Eliminar", key=f"del_pend_{cotacao['id']}"):
-                            if eliminar_cotacao(cotacao['id']):
-                                st.success("Cotação eliminada!")
-                                st.rerun()
+                            st.session_state.confirmacao = ("eliminar", cotacao['id'])
         else:
             st.info("Não há cotações pendentes")
 
@@ -3099,9 +3138,7 @@ elif menu_option == "📩 Responder Cotações":
 
                         with col_del:
                             if st.button("🗑️ Eliminar", key=f"del_resp_{cotacao['id']}"):
-                                if eliminar_cotacao(cotacao['id']):
-                                    st.success("Cotação eliminada!")
-                                    st.rerun()
+                                st.session_state.confirmacao = ("eliminar", cotacao['id'])
         else:
             st.info("Não há cotações respondidas")
 
@@ -3124,6 +3161,119 @@ elif menu_option == "📩 Responder Cotações":
         ):
             st.session_state.cotacoes_resp_page += 1
             st.rerun()
+
+    with tab3:
+        # Filtros
+        col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+        with col1:
+            filtro_ref_arq = st.text_input("🔍 Pesquisar por referência", placeholder="Referência...", key="filtro_arq")
+        with col2:
+            fornecedores = listar_fornecedores()
+            opcoes_forn = {"Todos": None}
+            opcoes_forn.update({f[1]: f[0] for f in fornecedores})
+            fornecedor_sel_arq = st.selectbox("Fornecedor", list(opcoes_forn.keys()), key="fornecedor_arq")
+        with col3:
+            utilizadores = listar_utilizadores()
+            opcoes_user = {"Todos": None}
+            opcoes_user.update({(u[2] or u[1]): u[0] for u in utilizadores})
+            utilizador_sel_arq = st.selectbox("Utilizador", list(opcoes_user.keys()), key="utilizador_arq")
+        with col4:
+            st.markdown("<div style='display:flex;justify-content:center;'>", unsafe_allow_html=True)
+            if st.button("🔄 Atualizar", key="refresh_arq"):
+                st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        fornecedor_id_arq = opcoes_forn[fornecedor_sel_arq]
+        utilizador_id_arq = opcoes_user[utilizador_sel_arq]
+
+        cotacoes_arq, total_arq = obter_todas_cotacoes(
+            filtro_ref_arq,
+            "arquivada",
+            fornecedor_id_arq,
+            utilizador_id_arq,
+            page=st.session_state.cotacoes_arq_page,
+            page_size=PAGE_SIZE,
+            return_total=True,
+        )
+        total_paginas_arq = max(1, (total_arq + PAGE_SIZE - 1) // PAGE_SIZE)
+
+        if st.session_state.cotacoes_arq_page > total_paginas_arq - 1:
+            st.session_state.cotacoes_arq_page = max(0, total_paginas_arq - 1)
+            st.rerun()
+
+        if cotacoes_arq:
+            for cotacao in cotacoes_arq:
+                with st.expander(f"{cotacao['processo']} - {cotacao['fornecedor']} - Ref: {cotacao['referencia']}", expanded=False):
+                    col1, col2 = st.columns([3, 1])
+
+                    with col1:
+                        st.write(f"**Data:** {cotacao['data']}")
+                        st.write(f"**Solicitante:** {cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else 'N/A'}")
+                        st.write(f"**Email:** {cotacao['email_solicitante'] if cotacao['email_solicitante'] else 'N/A'}")
+                        st.write(f"**Criado por:** {cotacao['criador'] if cotacao['criador'] else 'N/A'}")
+                        st.write(f"**Artigos:** {cotacao['num_artigos']}")
+
+                    with col2:
+                        pdf_pedido = obter_pdf_da_db(cotacao['id'], "pedido")
+                        if pdf_pedido:
+                            st.download_button(
+                                "📄 PDF",
+                                data=pdf_pedido,
+                                file_name=f"pedido_{cotacao['processo']}.pdf",
+                                mime="application/pdf",
+                                key=f"pdf_arq_{cotacao['id']}"
+                            )
+
+                        if st.button("🗑️ Eliminar", key=f"del_arq_{cotacao['id']}"):
+                            st.session_state.confirmacao = ("eliminar", cotacao['id'])
+        else:
+            st.info("Não há cotações arquivadas")
+
+        st.markdown("---")
+        st.write(
+            f"Página {st.session_state.cotacoes_arq_page + 1} de {total_paginas_arq}"
+        )
+        nav_prev_a, nav_next_a = st.columns(2)
+        if nav_prev_a.button(
+            "⬅️ Anterior",
+            key="arq_prev",
+            disabled=st.session_state.cotacoes_arq_page == 0,
+        ):
+            st.session_state.cotacoes_arq_page -= 1
+            st.rerun()
+        if nav_next_a.button(
+            "Próximo ➡️",
+            key="arq_next",
+            disabled=st.session_state.cotacoes_arq_page >= total_paginas_arq - 1,
+        ):
+            st.session_state.cotacoes_arq_page += 1
+            st.rerun()
+
+    # Diálogo de confirmação para eliminar/arquivar
+    if "confirmacao" in st.session_state:
+        acao, rfq_conf = st.session_state.confirmacao
+
+        @st.dialog("Confirmação")
+        def confirmar_acao():
+            st.write(
+                "Tem a certeza que deseja arquivar este processo?"
+                if acao == "arquivar"
+                else "Tem a certeza que deseja eliminar este processo?"
+            )
+            col_ok, col_cancel = st.columns(2)
+            if col_ok.button("Sim"):
+                if acao == "arquivar":
+                    if arquivar_cotacao(rfq_conf):
+                        st.success("Cotação arquivada!")
+                else:
+                    if eliminar_cotacao(rfq_conf):
+                        st.success("Cotação eliminada!")
+                del st.session_state.confirmacao
+                st.rerun()
+            if col_cancel.button("Não"):
+                del st.session_state.confirmacao
+
+        confirmar_acao()
 
 elif menu_option == "📊 Relatórios":
     st.title("📊 Relatórios e Análises")
@@ -3412,7 +3562,7 @@ elif menu_option == "📦 Artigos":
                     "Descrição",
                     "Fabricante",
                     "Preço Venda",
-                    "Última Cotação",
+                    "Validade Preço",
                 ],
             )
             st.dataframe(df, use_container_width=True)

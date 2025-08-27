@@ -1,4 +1,5 @@
 import os
+import os
 import sys
 import importlib
 import sqlite3
@@ -32,7 +33,7 @@ def test_artigo_catalogo_table_structure():
         "descricao",
         "fabricante",
         "preco_venda",
-        "data_ultima_cotacao",
+        "validade_preco",
     }
     assert expected.issubset(cols)
     conn.close()
