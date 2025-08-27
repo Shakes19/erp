@@ -1955,8 +1955,19 @@ def extrair_dados_pdf(pdf_bytes):
     referencia = linha_apos("Our reference:")
 
     # ----------------------------- CLIENTE -----------------------------
-    cliente = linha_apos("Client:")
-    nome = ""
+    # Priorizar a extração do contacto ("Contact:" ou assinaturas "i.V."/"i.A.")
+    cliente = linha_apos("Contact:")
+    nome = cliente if cliente else ""
+
+    if not cliente:
+        match_nome = re.search(r"i\.[AV]\.\s*([^\n]+)", texto)
+        if match_nome:
+            nome = match_nome.group(1).strip()
+            cliente = nome
+
+    # Caso não tenha sido possível obter o contacto, usar "Client:" e outros
+    if not cliente:
+        cliente = linha_apos("Client:")
 
     # Fallbacks para layouts antigos
     if not cliente:
@@ -1972,8 +1983,6 @@ def extrair_dados_pdf(pdf_bytes):
                 cliente = linha
                 break
     if not cliente:
-        cliente = linha_apos("Contact:")
-    if not cliente:
         cliente = linha_apos("21079 Hamburg - Germany")
     if "Gro\u00dfmoorring 9" in texto:
         idx_addr = texto.find("Gro\u00dfmoorring 9")
@@ -1981,14 +1990,13 @@ def extrair_dados_pdf(pdf_bytes):
         for linha in reversed(linhas_antes):
             linha = linha.strip()
             if linha:
-                cliente = linha
+                if not cliente or cliente.lower() in {"info"}:
+                    cliente = linha
                 break
 
-    match_nome = re.search(r"i\.[AV]\.\s*([^\n]+)", texto)
-    if match_nome:
-        nome = match_nome.group(1).strip()
-        if not cliente:
-            cliente = nome
+    # Garantir que o campo "nome" reflete o contacto identificado
+    if not nome and cliente:
+        nome = cliente
 
     descricao = ""
     artigo = ""
