@@ -3268,10 +3268,11 @@ elif menu_option == "📩 Responder Cotações":
                 else:
                     if eliminar_cotacao(rfq_conf):
                         st.success("Cotação eliminada!")
-                del st.session_state.confirmacao
+                st.session_state.pop("confirmacao", None)
                 st.rerun()
             if col_cancel.button("Não"):
-                del st.session_state.confirmacao
+                st.session_state.pop("confirmacao", None)
+                st.rerun()
 
         confirmar_acao()
 
