@@ -2717,14 +2717,15 @@ elif menu_option == "📩 Responder Cotações":
                 align-items: center;
                 justify-content: center;
             }
-            /* Expand inner dialog content */
+            /* Expand inner dialog content to occupy full form */
             [data-testid="stDialog"] > div {
-                width: 60rem;
+                width: 100%;
+                height: 100%;
             }
-            /* Scale form content */
+            /* Ensure form stretches to fill available space */
             [data-testid="stDialog"] form {
-                transform: scale(1.3);
-                transform-origin: top left;
+                width: 100%;
+                height: 100%;
             }
             </style>
             """,
