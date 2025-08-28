@@ -2284,6 +2284,10 @@ st.markdown("""
         margin: 2px 0;
     }
 
+    .st-h2 {
+        min-width: 60%;
+    }
+
     .block-container {
         padding-top: 1rem;
     }
@@ -2745,9 +2749,6 @@ elif menu_option == "📩 Responder Cotações":
             for i, artigo in enumerate(detalhes['artigos'], 1):
                 st.subheader(f"Artigo {i}: {artigo['artigo_num'] if artigo['artigo_num'] else 'S/N'}")
 
-                margem = obter_margem_para_marca(detalhes['fornecedor_id'], artigo['marca'])
-                st.info(f"Marca: {artigo['marca'] if artigo['marca'] else 'N/A'} | Margem: {margem:.1f}%")
-
                 col1, col2 = st.columns([3, 1])
 
                 with col1:
@@ -2957,11 +2958,15 @@ elif menu_option == "📩 Responder Cotações":
                         if st.button("💬 Responder", key=f"resp_{cotacao['id']}"):
                             responder_cotacao_dialog(cotacao)
 
-                        if st.button("📦 Arquivar", key=f"arc_pend_{cotacao['id']}"):
-                            st.session_state.confirmacao = ("arquivar", cotacao['id'])
+                        col_arc, col_del = st.columns(2)
 
-                        if st.button("🗑️ Eliminar", key=f"del_pend_{cotacao['id']}"):
-                            st.session_state.confirmacao = ("eliminar", cotacao['id'])
+                        with col_arc:
+                            if st.button("📦 Arquivar", key=f"arc_pend_{cotacao['id']}"):
+                                st.session_state.confirmacao = ("arquivar", cotacao['id'])
+
+                        with col_del:
+                            if st.button("🗑️ Eliminar", key=f"del_pend_{cotacao['id']}"):
+                                st.session_state.confirmacao = ("eliminar", cotacao['id'])
         else:
             st.info("Não há cotações pendentes")
 
