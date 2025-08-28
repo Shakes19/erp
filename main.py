@@ -2719,8 +2719,7 @@ elif menu_option == "📩 Responder Cotações":
             }
             /* Expand inner dialog content */
             [data-testid="stDialog"] > div {
-                width: 100%;
-                max-width: 100%;
+                width: 60rem;
             }
             /* Scale form content */
             [data-testid="stDialog"] form {
