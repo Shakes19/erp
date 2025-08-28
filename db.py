@@ -69,6 +69,39 @@ def verify_password(password: str, hashed: str | bytes | None) -> bool:
         return False
 
 
+def ensure_artigo_catalogo_schema(conn: sqlite3.Connection) -> None:
+    """Ensure the ``artigo_catalogo`` table exists with ``validade_preco`` column.
+
+    Older databases may lack this column, which leads to ``OperationalError``
+    when queries reference it. This helper performs a light-weight migration
+    by creating the table if missing and adding the column when required.
+    """
+
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(artigo_catalogo)")
+    cols = [row[1] for row in cur.fetchall()]
+
+    if not cols:
+        # Table missing entirely – create it with the expected structure.
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS artigo_catalogo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                artigo_num TEXT NOT NULL UNIQUE,
+                descricao TEXT NOT NULL,
+                fabricante TEXT,
+                preco_venda REAL NOT NULL DEFAULT 0.0,
+                validade_preco TEXT
+            )
+            """
+        )
+        conn.commit()
+    elif "validade_preco" not in cols:
+        # Column missing – add it so future queries succeed.
+        cur.execute("ALTER TABLE artigo_catalogo ADD COLUMN validade_preco TEXT")
+        conn.commit()
+
+
 def criar_base_dados_completa():
     """Create all database tables and apply basic PRAGMAs for SQLite.
 
@@ -474,6 +507,7 @@ def inserir_artigo_catalogo(
         validade_preco = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
 
     conn = get_connection()
+    ensure_artigo_catalogo_schema(conn)
     c = conn.cursor()
     c.execute(
         """
@@ -502,25 +536,18 @@ def procurar_artigos_catalogo(termo: str = ""):
     """Search catalogue articles by number or description."""
 
     conn = get_connection()
+    ensure_artigo_catalogo_schema(conn)
     c = conn.cursor()
     like = f"%{termo}%"
-    try:
-        c.execute(
-            """
-            SELECT artigo_num, descricao, fabricante, preco_venda, validade_preco
-            FROM artigo_catalogo
-            WHERE artigo_num LIKE ? OR descricao LIKE ?
-            ORDER BY artigo_num
-            """,
-            (like, like),
-        )
-        rows = c.fetchall()
-    except sqlite3.OperationalError as e:
-        conn.close()
-        if "no such table" in str(e).lower():
-            criar_base_dados_completa()
-            return []
-        raise
-    else:
-        conn.close()
-        return rows
+    c.execute(
+        """
+        SELECT artigo_num, descricao, fabricante, preco_venda, validade_preco
+        FROM artigo_catalogo
+        WHERE artigo_num LIKE ? OR descricao LIKE ?
+        ORDER BY artigo_num
+        """,
+        (like, like),
+    )
+    rows = c.fetchall()
+    conn.close()
+    return rows
