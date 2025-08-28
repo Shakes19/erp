@@ -504,15 +504,23 @@ def procurar_artigos_catalogo(termo: str = ""):
     conn = get_connection()
     c = conn.cursor()
     like = f"%{termo}%"
-    c.execute(
-        """
-        SELECT artigo_num, descricao, fabricante, preco_venda, validade_preco
-        FROM artigo_catalogo
-        WHERE artigo_num LIKE ? OR descricao LIKE ?
-        ORDER BY artigo_num
-        """,
-        (like, like),
-    )
-    rows = c.fetchall()
-    conn.close()
-    return rows
+    try:
+        c.execute(
+            """
+            SELECT artigo_num, descricao, fabricante, preco_venda, validade_preco
+            FROM artigo_catalogo
+            WHERE artigo_num LIKE ? OR descricao LIKE ?
+            ORDER BY artigo_num
+            """,
+            (like, like),
+        )
+        rows = c.fetchall()
+    except sqlite3.OperationalError as e:
+        conn.close()
+        if "no such table" in str(e).lower():
+            criar_base_dados_completa()
+            return []
+        raise
+    else:
+        conn.close()
+        return rows
