@@ -779,7 +779,14 @@ def arquivar_cotacao(rfq_id):
 
 # ========================== FUNÇÕES DE GESTÃO DE RESPOSTAS ==========================
 
-def guardar_respostas(rfq_id, respostas, custo_envio=0.0, custo_embalagem=0.0, observacoes=""):
+def guardar_respostas(
+    rfq_id,
+    respostas,
+    custo_envio=0.0,
+    custo_embalagem=0.0,
+    observacoes="",
+    prazo_dias=0,
+):
     """Guardar respostas do fornecedor e enviar email"""
     conn = obter_conexao()
     c = conn.cursor()
@@ -810,8 +817,7 @@ def guardar_respostas(rfq_id, respostas, custo_envio=0.0, custo_embalagem=0.0, o
                 quantidade_final,
             ) = item
 
-            # prazo_entrega já não é utilizado; manter 0 apenas para preencher coluna obrigatória
-            prazo = 0
+            prazo = prazo_dias
             
             # Obter marca do artigo
             c.execute("SELECT marca FROM artigo WHERE id = ?", (artigo_id,))
@@ -2774,7 +2780,7 @@ elif menu_option == "📩 Responder Cotações":
                     )
                 # Peso unitário definido mais abaixo na mesma linha
 
-                col3, col4, col5, col6 = st.columns(4)
+                col3, col4, col5 = st.columns(3)
 
                 with col3:
                     custo = st.number_input(
@@ -2796,12 +2802,6 @@ elif menu_option == "📩 Responder Cotações":
                     )
 
                 with col5:
-                    hs_code = st.text_input(
-                        "HS Code",
-                        key=f"hs_{artigo['id']}"
-                    )
-
-                with col6:
                     peso = st.number_input(
                         "Peso Unitário(kg)",
                         min_value=0.0,
@@ -2809,37 +2809,56 @@ elif menu_option == "📩 Responder Cotações":
                         key=f"peso_{artigo['id']}"
                     )
 
-                col7, col8 = st.columns(2)
+                col6, col7 = st.columns(2)
 
-                with col7:
+                with col6:
                     hs_code = st.text_input(
                         "HS Code",
                         key=f"hs_{artigo['id']}"
                     )
 
-                with col8:
+                with col7:
                     pais_origem = st.text_input(
                         "País Origem",
                         key=f"pais_{artigo['id']}"
                     )
 
-            respostas.append((
-                artigo['id'], custo, validade_preco.isoformat(), peso,
-                hs_code, pais_origem, descricao_editada, quantidade_final
-            ))
+                respostas.append((
+                    artigo['id'], custo, validade_preco.isoformat(), peso,
+                    hs_code, pais_origem, descricao_editada, quantidade_final
+                ))
 
             st.markdown("---")
 
-            custo_envio = st.number_input(
-                "Custos Envio",
-                min_value=0.0,
-                step=0.01,
-                key=f"custo_envio_{cotacao['id']}"
-            )
+            col_env, col_emb, col_prazo = st.columns(3)
+
+            with col_env:
+                custo_envio = st.number_input(
+                    "Custos Envio",
+                    min_value=0.0,
+                    step=0.01,
+                    key=f"custo_envio_{cotacao['id']}",
+                )
+
+            with col_emb:
+                custo_embalagem = st.number_input(
+                    "Custos Embalagem",
+                    min_value=0.0,
+                    step=0.01,
+                    key=f"custo_emb_{cotacao['id']}",
+                )
+
+            with col_prazo:
+                prazo_dias = st.number_input(
+                    "Prazo (dias)",
+                    min_value=0,
+                    step=1,
+                    key=f"prazo_{cotacao['id']}",
+                )
 
             observacoes = st.text_area(
                 "Observações",
-                key=f"obs_{cotacao['id']}"
+                key=f"obs_{cotacao['id']}",
             )
 
             col1, col2 = st.columns(2)
@@ -2854,7 +2873,14 @@ elif menu_option == "📩 Responder Cotações":
             respostas_validas = [r for r in respostas if r[1] > 0]
 
             if respostas_validas:
-                if guardar_respostas(cotacao['id'], respostas_validas, custo_envio, custo_embalagem, observacoes):
+                if guardar_respostas(
+                    cotacao['id'],
+                    respostas_validas,
+                    custo_envio,
+                    custo_embalagem,
+                    observacoes,
+                    prazo_dias,
+                ):
                     if pdf_resposta is not None:
                         with open(f"resposta_fornecedor_{cotacao['id']}.pdf", "wb") as f:
                             f.write(pdf_resposta.getbuffer())
