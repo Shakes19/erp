@@ -2761,14 +2761,14 @@ elif menu_option == "📩 Responder Cotações":
             for i, artigo in enumerate(detalhes['artigos'], 1):
                 st.subheader(f"Artigo {i}: {artigo['artigo_num'] if artigo['artigo_num'] else 'S/N'}")
 
-                col1, col2 = st.columns([3, 1])
+                col1, col2, col3 = st.columns([2, 1, 1])
 
                 with col1:
                     descricao_editada = st.text_area(
                         "Descrição (editável)",
                         value=artigo['descricao'],
                         key=f"desc_{artigo['id']}",
-                        height=80
+                        height=180
                     )
 
                 with col2:
@@ -2792,9 +2792,19 @@ elif menu_option == "📩 Responder Cotações":
                         key=f"prazo_{artigo['id']}"
                     )
 
-                col3, col4, col5, col6 = st.columns(4)
-
                 with col3:
+                    hs_code = st.text_input(
+                        "HS Code",
+                        key=f"hs_{artigo['id']}"
+                    )
+                    pais_origem = st.text_input(
+                        "País Origem",
+                        key=f"pais_{artigo['id']}"
+                    )
+
+                col4, col5 = st.columns(2)
+
+                with col4:
                     custo = st.number_input(
                         "Preço Compra (EUR )",
                         min_value=0.0,
@@ -2805,7 +2815,7 @@ elif menu_option == "📩 Responder Cotações":
                         preco_venda = custo * (1 + margem/100)
                         st.success(f"P.V.: EUR {preco_venda:.2f}")
 
-                with col4:
+                with col5:
                     validade_default = date.today() + timedelta(days=30)
                     validade_preco = st.date_input(
                         "Validade Preço",
@@ -2813,17 +2823,6 @@ elif menu_option == "📩 Responder Cotações":
                         key=f"val_{artigo['id']}"
                     )
 
-                with col5:
-                    hs_code = st.text_input(
-                        "HS Code",
-                        key=f"hs_{artigo['id']}"
-                    )
-
-                with col6:
-                    pais_origem = st.text_input(
-                        "País Origem",
-                        key=f"pais_{artigo['id']}"
-                    )
 
                 respostas.append((
                     artigo['id'], custo, validade_preco.isoformat(), peso,
@@ -2832,12 +2831,13 @@ elif menu_option == "📩 Responder Cotações":
 
             st.markdown("---")
 
-            col_obs, col_env, col_emb = st.columns([2, 1, 1])
+            col_obs, col_env = st.columns([3, 1])
 
             with col_obs:
                 observacoes = st.text_area(
                     "Observações",
                     key=f"obs_{cotacao['id']}",
+                    height=110
                 )
 
             with col_env:
@@ -2847,14 +2847,14 @@ elif menu_option == "📩 Responder Cotações":
                     step=0.01,
                     key=f"custo_envio_{cotacao['id']}",
                 )
-
-            with col_emb:
                 custo_embalagem = st.number_input(
                     "Custos Embalagem",
                     min_value=0.0,
                     step=0.01,
                     key=f"custo_emb_{cotacao['id']}",
                 )
+
+                
 
             col1, col2 = st.columns(2)
 
