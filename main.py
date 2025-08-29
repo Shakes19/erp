@@ -779,7 +779,7 @@ def arquivar_cotacao(rfq_id):
 
 # ========================== FUNÇÕES DE GESTÃO DE RESPOSTAS ==========================
 
-def guardar_respostas(rfq_id, respostas, custo_envio=0.0, observacoes=""):
+def guardar_respostas(rfq_id, respostas, custo_envio=0.0, custo_embalagem=0.0, observacoes=""):
     """Guardar respostas do fornecedor e enviar email"""
     conn = obter_conexao()
     c = conn.cursor()
@@ -803,13 +803,15 @@ def guardar_respostas(rfq_id, respostas, custo_envio=0.0, observacoes=""):
                 artigo_id,
                 custo,
                 validade_preco,
-                prazo,
                 peso,
                 hs_code,
                 pais_origem,
                 descricao_editada,
                 quantidade_final,
             ) = item
+
+            # prazo_entrega já não é utilizado; manter 0 apenas para preencher coluna obrigatória
+            prazo = 0
             
             # Obter marca do artigo
             c.execute("SELECT marca FROM artigo WHERE id = ?", (artigo_id,))
@@ -817,7 +819,7 @@ def guardar_respostas(rfq_id, respostas, custo_envio=0.0, observacoes=""):
             marca = marca_result[0] if marca_result else None
 
             proporcao = (custo / total_custos) if total_custos else 0
-            custo_total = custo + custo_envio * proporcao
+            custo_total = custo + (custo_envio + custo_embalagem) * proporcao
 
             # Obter margem configurada para a marca
             margem = obter_margem_para_marca(fornecedor_id, marca)
@@ -850,8 +852,8 @@ def guardar_respostas(rfq_id, respostas, custo_envio=0.0, observacoes=""):
         
         # Guardar custos adicionais
         c.execute(
-            "INSERT OR REPLACE INTO resposta_custos (rfq_id, custo_envio) VALUES (?, ?)",
-            (rfq_id, custo_envio),
+            "INSERT OR REPLACE INTO resposta_custos (rfq_id, custo_envio, custo_embalagem) VALUES (?, ?, ?)",
+            (rfq_id, custo_envio, custo_embalagem),
         )
 
         # Atualizar estado da RFQ
@@ -1501,12 +1503,11 @@ class ClientQuotationPDF(InquiryPDF):
                 "Qty",
                 "Unit Price",
                 "Total",
-                "Lead Time",
                 "Weight",
             ],
         )
         widths = table_cfg.get(
-            "widths", [8, 18, 78, 12, 18, 20, 12, 14]
+            "widths", [8, 18, 82, 12, 20, 24, 16]
         )
         font = table_cfg.get("font", "Arial")
         style = table_cfg.get("font_style", "B")
@@ -1537,9 +1538,7 @@ class ClientQuotationPDF(InquiryPDF):
 
     def add_item(self, idx, item):
         table_cfg = self.cfg.get("table", {})
-        widths = table_cfg.get(
-            "widths", [8, 18, 78, 12, 18, 20, 12, 14]
-        )
+        widths = table_cfg.get("widths", [8, 18, 82, 12, 20, 24, 16])
         row_font = table_cfg.get("font", "Arial")
         row_size = table_cfg.get("row_font_size", 8)
         self.set_font(row_font, "", row_size)
@@ -1576,20 +1575,7 @@ class ClientQuotationPDF(InquiryPDF):
                 self.cell(widths[3], 6, str(quantidade), border=border, align="C")
                 self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=border, align="R")
                 self.cell(widths[5], 6, f"EUR {total:.2f}", border=border, align="R")
-                self.cell(
-                    widths[6],
-                    6,
-                    f"{item.get('prazo_entrega', 30)}d",
-                    border=border,
-                    align="C",
-                )
-                self.cell(
-                    widths[7],
-                    6,
-                    f"{(item.get('peso') or 0):.1f}kg",
-                    border=border,
-                    align="C",
-                )
+                self.cell(widths[6], 6, f"{(item.get('peso') or 0):.1f}kg", border=border, align="C")
             else:
                 for w in widths[3:]:
                     self.cell(w, 6, "", border=border)
@@ -1797,7 +1783,7 @@ def gerar_pdf_cliente(rfq_id):
 
         # 2. Obter respostas
         c.execute("""SELECT a.artigo_num, rf.descricao, rf.quantidade_final, 
-                    a.unidade, rf.preco_venda, rf.prazo_entrega,
+                    a.unidade, rf.preco_venda,
                     rf.peso, rf.hs_code, rf.pais_origem
                  FROM resposta_fornecedor rf
                  JOIN artigo a ON rf.artigo_id = a.id
@@ -1809,10 +1795,9 @@ def gerar_pdf_cliente(rfq_id):
             'quantidade_final': row[2],
             'unidade': row[3],
             'preco_venda': row[4],
-            'prazo_entrega': row[5],
-            'peso': row[6] or 0,
-            'hs_code': row[7] or '',
-            'pais_origem': row[8] or ''
+            'peso': row[5] or 0,
+            'hs_code': row[6] or '',
+            'pais_origem': row[7] or ''
         } for row in c.fetchall()]
 
         if not itens_resposta:
@@ -2623,6 +2608,14 @@ elif menu_option == "🤖 Smart Quotation":
             exibir_pdf("👁️ PDF carregado", pdf_bytes, expanded=True)
             dados = extrair_dados_pdf(pdf_bytes)
 
+            # Novo: custos separados de embalagem
+            custo_embalagem = st.number_input(
+                "Custos Embalagem",
+                min_value=0.0,
+                step=0.01,
+                key=f"custo_emb_{cotacao['id']}"
+            )
+
             col1, col2 = st.columns(2)
             with col1:
                 st.text_input("Referência Cliente", value=dados["referencia"], disabled=True)
@@ -2724,15 +2717,25 @@ elif menu_option == "📩 Responder Cotações":
             /* Expand inner dialog content to occupy full form */
             [data-testid="stDialog"] > div {
                 width: 100%;
-                height: 100%;
+                padding-top: 20px;
+                min-width: 60rem;
             }
             /* Ensure form stretches to fill available space */
             [data-testid="stDialog"] form {
                 width: 100%;
                 height: 100%;
             }
-            .st-fv{
-            min-width:60rem;}
+            [data-testid="stDialog"] .st-ft {
+                min-width: 60rem;
+            }
+            [data-testid="stDialog"] hr {
+                margin: 1.3em 0px;
+            }
+
+            [data-testid="stVerticalBlock"]{
+                gap: .2rem;
+            }
+            
             </style>
             """,
             unsafe_allow_html=True,
@@ -2769,6 +2772,7 @@ elif menu_option == "📩 Responder Cotações":
                         value=quantidade_original,
                         key=f"qtd_{artigo['id']}"
                     )
+                # Peso unitário definido mais abaixo na mesma linha
 
                 col3, col4, col5, col6 = st.columns(4)
 
@@ -2792,16 +2796,14 @@ elif menu_option == "📩 Responder Cotações":
                     )
 
                 with col5:
-                    prazo = st.number_input(
-                        "Prazo (dias)",
-                        min_value=1,
-                        value=30,
-                        key=f"prazo_{artigo['id']}"
+                    hs_code = st.text_input(
+                        "HS Code",
+                        key=f"hs_{artigo['id']}"
                     )
 
                 with col6:
                     peso = st.number_input(
-                        "Peso (kg)",
+                        "Peso Unitário(kg)",
                         min_value=0.0,
                         step=0.1,
                         key=f"peso_{artigo['id']}"
@@ -2821,15 +2823,15 @@ elif menu_option == "📩 Responder Cotações":
                         key=f"pais_{artigo['id']}"
                     )
 
-                respostas.append((
-                    artigo['id'], custo, validade_preco.isoformat(), prazo, peso,
-                    hs_code, pais_origem, descricao_editada, quantidade_final
-                ))
+            respostas.append((
+                artigo['id'], custo, validade_preco.isoformat(), peso,
+                hs_code, pais_origem, descricao_editada, quantidade_final
+            ))
 
-                st.markdown("---")
+            st.markdown("---")
 
             custo_envio = st.number_input(
-                "Custos de envio e embalagem",
+                "Custos Envio",
                 min_value=0.0,
                 step=0.01,
                 key=f"custo_envio_{cotacao['id']}"
@@ -2852,7 +2854,7 @@ elif menu_option == "📩 Responder Cotações":
             respostas_validas = [r for r in respostas if r[1] > 0]
 
             if respostas_validas:
-                if guardar_respostas(cotacao['id'], respostas_validas, custo_envio, observacoes):
+                if guardar_respostas(cotacao['id'], respostas_validas, custo_envio, custo_embalagem, observacoes):
                     if pdf_resposta is not None:
                         with open(f"resposta_fornecedor_{cotacao['id']}.pdf", "wb") as f:
                             f.write(pdf_resposta.getbuffer())

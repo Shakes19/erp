@@ -306,6 +306,7 @@ def criar_base_dados_completa():
         CREATE TABLE IF NOT EXISTS resposta_custos (
             rfq_id INTEGER PRIMARY KEY,
             custo_envio REAL DEFAULT 0.0,
+            custo_embalagem REAL DEFAULT 0.0,
             FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
         )
         """
@@ -443,6 +444,19 @@ def criar_base_dados_completa():
         c.execute(idx)
 
     conn.commit()
+
+    # Migração leve: garantir coluna custo_embalagem em bases existentes
+    try:
+        c.execute("PRAGMA table_info(resposta_custos)")
+        rc_cols = [row[1] for row in c.fetchall()]
+        if "custo_embalagem" not in rc_cols:
+            c.execute(
+                "ALTER TABLE resposta_custos ADD COLUMN custo_embalagem REAL DEFAULT 0.0"
+            )
+            conn.commit()
+    except Exception:
+        pass
+
     conn.close()
     return True
 
