@@ -2731,6 +2731,8 @@ elif menu_option == "📩 Responder Cotações":
                 width: 100%;
                 height: 100%;
             }
+            .st-fv{
+            min-width:60rem;}
             </style>
             """,
             unsafe_allow_html=True,
