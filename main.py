@@ -31,6 +31,7 @@ from services.pdf_service import (
     save_pdf_config,
     obter_config_empresa,
     obter_pdf_da_db,
+    processar_upload_pdf,
 )
 from services.email_service import send_email
 
@@ -2461,14 +2462,17 @@ elif menu_option == "📝 Nova Cotação":
         col_ref, col_pdf = st.columns(2)
         with col_ref:
             referencia_input = st.text_input("Referência Cliente")
+        pedido_nome_pdf = None
+        pedido_pdf_bytes = None
         with col_pdf:
             upload_pedido_cliente = st.file_uploader(
-                "📎 Pedido do cliente (PDF)",
-                type=['pdf'],
+                "📎 Pedido do cliente (PDF ou email)",
+                type=["pdf", "eml"],
                 key='upload_pedido_cliente'
             )
             if upload_pedido_cliente is not None:
-                exibir_pdf("👁️ PDF carregado", upload_pedido_cliente.getvalue(), expanded=True)
+                pedido_nome_pdf, pedido_pdf_bytes = processar_upload_pdf(upload_pedido_cliente)
+                exibir_pdf("👁️ PDF carregado", pedido_pdf_bytes, expanded=True)
 
         st.markdown("### 📦 Artigos")
 
@@ -2572,11 +2576,12 @@ elif menu_option == "📝 Nova Cotação":
                         f"✅ Cotação {numero_processo} (Ref: {referencia_input}) criada com sucesso!"
                     )
                     # Guardar PDF do cliente (upload) se existir
-                    if upload_pedido_cliente is not None:
+                    if pedido_pdf_bytes is not None:
                         guardar_pdf_upload(
-                            rfq_id, 'anexo_cliente',
-                            upload_pedido_cliente.name,
-                            upload_pedido_cliente.getvalue()
+                            rfq_id,
+                            'anexo_cliente',
+                            pedido_nome_pdf,
+                            pedido_pdf_bytes,
                         )
                         st.success("Anexo do cliente guardado!")
 
@@ -2609,9 +2614,13 @@ elif menu_option == "🤖 Smart Quotation":
     tab_cot, tab_text = st.tabs(["Preencher Cotação", "Text Extraction"])
 
     with tab_cot:
-        upload_pdf = st.file_uploader("📎 Pedido do cliente (PDF)", type=["pdf"], key="smart_pdf")
+        upload_pdf = st.file_uploader(
+            "📎 Pedido do cliente (PDF ou email)",
+            type=["pdf", "eml"],
+            key="smart_pdf",
+        )
         if upload_pdf is not None:
-            pdf_bytes = upload_pdf.getvalue()
+            _, pdf_bytes = processar_upload_pdf(upload_pdf)
             exibir_pdf("👁️ PDF carregado", pdf_bytes, expanded=True)
             dados = extrair_dados_pdf(pdf_bytes)
 
@@ -2692,9 +2701,14 @@ elif menu_option == "🤖 Smart Quotation":
                         st.error("Erro ao criar cotação.")
 
     with tab_text:
-        pdf_text = st.file_uploader("📎 PDF", type=["pdf"], key="extract_pdf")
+        pdf_text = st.file_uploader(
+            "📎 PDF ou email",
+            type=["pdf", "eml"],
+            key="extract_pdf",
+        )
         if pdf_text is not None:
-            texto = extrair_texto_pdf(pdf_text.getvalue())
+            _, pdf_bytes = processar_upload_pdf(pdf_text)
+            texto = extrair_texto_pdf(pdf_bytes)
             st.text_area("Texto extraído", value=texto, height=400)
 
 elif menu_option == "📩 Responder Cotações":
@@ -2750,13 +2764,16 @@ elif menu_option == "📩 Responder Cotações":
         detalhes = obter_detalhes_cotacao(cotacao['id'])
         st.info(f"**Responder a Cotação {cotacao['processo']}**")
 
+        pdf_resposta_bytes = None
         with st.form(f"resposta_form_{cotacao['id']}"):
             respostas = []
             pdf_resposta = st.file_uploader(
-                "Resposta do Fornecedor (PDF)",
-                type=["pdf"],
+                "Resposta do Fornecedor (PDF ou email)",
+                type=["pdf", "eml"],
                 key=f"pdf_{cotacao['id']}"
             )
+            if pdf_resposta is not None:
+                _, pdf_resposta_bytes = processar_upload_pdf(pdf_resposta)
 
             for i, artigo in enumerate(detalhes['artigos'], 1):
                 st.subheader(f"Artigo {i}: {artigo['artigo_num'] if artigo['artigo_num'] else 'S/N'}")
@@ -2875,9 +2892,11 @@ elif menu_option == "📩 Responder Cotações":
                     custo_embalagem,
                     observacoes,
                 ):
-                    if pdf_resposta is not None:
-                        with open(f"resposta_fornecedor_{cotacao['id']}.pdf", "wb") as f:
-                            f.write(pdf_resposta.getbuffer())
+                    if pdf_resposta_bytes is not None:
+                        with open(
+                            f"resposta_fornecedor_{cotacao['id']}.pdf", "wb"
+                        ) as f:
+                            f.write(pdf_resposta_bytes)
                     st.success("✅ Resposta guardada e email enviado com sucesso!")
                     st.rerun()
             else:
@@ -3568,9 +3587,14 @@ elif menu_option == "📄 PDFs":
                     key="tipo_pdf_gest",
                 )
                 tipo_pdf = next(t for lbl, t, _ in pdf_types if lbl == label_selec)
-                novo_pdf = st.file_uploader("Substituir PDF", type=["pdf"], key="upload_pdf_gest")
+                novo_pdf = st.file_uploader(
+                    "Substituir PDF",
+                    type=["pdf", "eml"],
+                    key="upload_pdf_gest",
+                )
                 if novo_pdf and st.button("💾 Guardar PDF"):
-                    if guardar_pdf_upload(cot_sel["id"], tipo_pdf, novo_pdf.name, novo_pdf.getvalue()):
+                    nome_pdf, bytes_pdf = processar_upload_pdf(novo_pdf)
+                    if guardar_pdf_upload(cot_sel["id"], tipo_pdf, nome_pdf, bytes_pdf):
                         st.success("PDF atualizado com sucesso!")
             else:
                 st.info("Apenas administradores podem atualizar o PDF.")
