@@ -1,5 +1,11 @@
 import json
+import os
+from email import policy
+from email.parser import BytesParser
+
 import streamlit as st
+from fpdf import FPDF
+
 from db import get_connection as obter_conexao
 
 @st.cache_data(show_spinner=False)
@@ -61,3 +67,44 @@ def obter_pdf_da_db(rfq_id, tipo_pdf="pedido"):
     result = c.fetchone()
     conn.close()
     return result[0] if result else None
+
+
+def converter_eml_para_pdf(eml_bytes: bytes) -> bytes:
+    """Convert raw EML bytes to PDF bytes."""
+    message = BytesParser(policy=policy.default).parsebytes(eml_bytes)
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_font("Arial", size=12)
+
+    header_lines = [
+        f"From: {message.get('From', '')}",
+        f"To: {message.get('To', '')}",
+        f"Subject: {message.get('Subject', '')}",
+        f"Date: {message.get('Date', '')}",
+        "",
+    ]
+    for line in header_lines:
+        pdf.multi_cell(0, 10, line)
+
+    body = ""
+    if message.is_multipart():
+        for part in message.walk():
+            if part.get_content_type() == "text/plain" and not part.get_content_disposition():
+                body += part.get_content()
+    else:
+        body = message.get_content()
+    pdf.multi_cell(0, 10, body.strip())
+    return pdf.output(dest="S").encode("latin-1")
+
+
+def processar_upload_pdf(uploaded_file):
+    """Return PDF filename and bytes from an uploaded PDF or EML file."""
+    if uploaded_file is None:
+        return None, None
+    nome = uploaded_file.name
+    conteudo = uploaded_file.getvalue()
+    if nome.lower().endswith(".eml"):
+        nome = os.path.splitext(nome)[0] + ".pdf"
+        conteudo = converter_eml_para_pdf(conteudo)
+    return nome, conteudo
