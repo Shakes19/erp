@@ -275,32 +275,39 @@ def criar_base_dados_completa():
                 """
             )
 
-            c.execute("PRAGMA table_info(rfq_old)")
-            old_columns = [row[1] for row in c.fetchall()]
-            column_order = [
-                "id",
-                "processo_id",
-                "fornecedor_id",
-                "cliente_id",
-                "data",
-                "estado",
-                "referencia",
-                "observacoes",
-                "nome_solicitante",
-                "email_solicitante",
-                "telefone_solicitante",
-                "empresa_solicitante",
-                "data_criacao",
-                "data_atualizacao",
-                "utilizador_id",
-            ]
-            common_cols = [col for col in column_order if col in old_columns]
-            cols_csv = ", ".join(common_cols)
-            if cols_csv:
-                c.execute(
-                    f"INSERT INTO rfq ({cols_csv}) SELECT {cols_csv} FROM rfq_old"
-                )
-            c.execute("DROP TABLE rfq_old")
+            c.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='rfq_old'"
+            )
+            has_rfq_old = c.fetchone() is not None
+
+            if has_rfq_old:
+                c.execute("PRAGMA table_info(rfq_old)")
+                old_columns = [row[1] for row in c.fetchall()]
+                column_order = [
+                    "id",
+                    "processo_id",
+                    "fornecedor_id",
+                    "cliente_id",
+                    "data",
+                    "estado",
+                    "referencia",
+                    "observacoes",
+                    "nome_solicitante",
+                    "email_solicitante",
+                    "telefone_solicitante",
+                    "empresa_solicitante",
+                    "data_criacao",
+                    "data_atualizacao",
+                    "utilizador_id",
+                ]
+                common_cols = [col for col in column_order if col in old_columns]
+                cols_csv = ", ".join(common_cols)
+                if cols_csv:
+                    c.execute(
+                        f"INSERT INTO rfq ({cols_csv}) SELECT {cols_csv} FROM rfq_old"
+                    )
+
+            c.execute("DROP TABLE IF EXISTS rfq_old")
         finally:
             c.execute("PRAGMA foreign_keys = ON")
 
