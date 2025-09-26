@@ -3822,7 +3822,7 @@ elif menu_option == "📩 Responder Cotações":
                         if artigos_processo:
                             st.markdown("---")
                             st.markdown("**Selecionar proposta por artigo:**")
-                            for artigo_proc in artigos_processo:
+                            for idx_artigo, artigo_proc in enumerate(artigos_processo):
                                 st.markdown(
                                     f"**{(artigo_proc['artigo_num'] + ' - ') if artigo_proc['artigo_num'] else ''}{artigo_proc['descricao']}**"
                                 )
@@ -3848,7 +3848,7 @@ elif menu_option == "📩 Responder Cotações":
                                         "Fornecedor",
                                         options=opcoes,
                                         index=indice_default,
-                                        key=f"selec_{cotacao['processo_id']}_{artigo_proc['processo_artigo_id']}",
+                                        key=f"selec_{cotacao['processo_id']}_{artigo_proc['processo_artigo_id']}_{idx_artigo}",
                                         format_func=lambda opt: opt[1] if isinstance(opt, tuple) else opt,
                                     )
                                     selecoes_novas[artigo_proc['processo_artigo_id']] = escolha[0]
