@@ -202,7 +202,7 @@ def criar_base_dados_completa():
         """
     )
 
-    # Tabela RFQ
+    # Tabela RFQ (pedidos enviados aos fornecedores)
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS rfq (
@@ -212,7 +212,7 @@ def criar_base_dados_completa():
             cliente_id INTEGER,
             data TEXT NOT NULL,
             estado TEXT DEFAULT 'pendente',
-            referencia TEXT NOT NULL UNIQUE,
+            referencia TEXT NOT NULL,
             observacoes TEXT,
             nome_solicitante TEXT,
             email_solicitante TEXT,
@@ -228,6 +228,81 @@ def criar_base_dados_completa():
         )
         """
     )
+
+    # Migração: versões anteriores tinham UNIQUE(referencia), impedindo várias
+    # perguntas para a mesma referência. Garantir que esse índice foi removido.
+    c.execute("PRAGMA index_list('rfq')")
+    rfq_indexes = c.fetchall()
+    unique_ref_index = None
+    for _, idx_name, is_unique, origin, _ in rfq_indexes:
+        if not is_unique:
+            continue
+        c.execute(f"PRAGMA index_info('{idx_name}')")
+        cols = [row[2] for row in c.fetchall()]
+        if cols == ["referencia"]:
+            unique_ref_index = idx_name
+            break
+
+    if unique_ref_index:
+        # Recriar a tabela sem a restrição UNIQUE. É necessário desativar
+        # temporariamente as foreign keys para permitir a operação de rename.
+        c.execute("PRAGMA foreign_keys = OFF")
+        try:
+            c.execute("ALTER TABLE rfq RENAME TO rfq_old")
+            c.execute(
+                """
+                CREATE TABLE rfq (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    processo_id INTEGER,
+                    fornecedor_id INTEGER NOT NULL,
+                    cliente_id INTEGER,
+                    data TEXT NOT NULL,
+                    estado TEXT DEFAULT 'pendente',
+                    referencia TEXT NOT NULL,
+                    observacoes TEXT,
+                    nome_solicitante TEXT,
+                    email_solicitante TEXT,
+                    telefone_solicitante TEXT,
+                    empresa_solicitante TEXT,
+                    data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
+                    data_atualizacao TEXT DEFAULT CURRENT_TIMESTAMP,
+                    utilizador_id INTEGER,
+                    FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
+                    FOREIGN KEY (cliente_id) REFERENCES cliente(id) ON DELETE SET NULL,
+                    FOREIGN KEY (utilizador_id) REFERENCES utilizador(id) ON DELETE SET NULL,
+                    FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE SET NULL
+                )
+                """
+            )
+
+            c.execute("PRAGMA table_info(rfq_old)")
+            old_columns = [row[1] for row in c.fetchall()]
+            column_order = [
+                "id",
+                "processo_id",
+                "fornecedor_id",
+                "cliente_id",
+                "data",
+                "estado",
+                "referencia",
+                "observacoes",
+                "nome_solicitante",
+                "email_solicitante",
+                "telefone_solicitante",
+                "empresa_solicitante",
+                "data_criacao",
+                "data_atualizacao",
+                "utilizador_id",
+            ]
+            common_cols = [col for col in column_order if col in old_columns]
+            cols_csv = ", ".join(common_cols)
+            if cols_csv:
+                c.execute(
+                    f"INSERT INTO rfq ({cols_csv}) SELECT {cols_csv} FROM rfq_old"
+                )
+            c.execute("DROP TABLE rfq_old")
+        finally:
+            c.execute("PRAGMA foreign_keys = ON")
 
     # Garantir colunas adicionais
     c.execute("PRAGMA table_info(rfq)")
