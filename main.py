@@ -1174,6 +1174,201 @@ def guardar_selecoes_processo(selecoes: dict[int, int | None]):
     finally:
         conn.close()
 
+
+def procurar_processos_por_termo(termo: str, limite: int = 25):
+    """Pesquisa processos pelo número ou por referências de cliente associadas."""
+
+    termo = (termo or "").strip()
+    if not termo:
+        return []
+
+    conn = obter_conexao()
+    c = conn.cursor()
+
+    like_term = f"%{termo}%"
+    c.execute(
+        """
+        SELECT processo.id,
+               processo.numero,
+               COALESCE(processo.descricao, ''),
+               processo.data_abertura,
+               COALESCE(processo.estado, ''),
+               COUNT(DISTINCT rfq.id) AS total_pedidos
+        FROM processo
+        LEFT JOIN rfq ON rfq.processo_id = processo.id
+        WHERE processo.numero LIKE ? OR rfq.referencia LIKE ?
+        GROUP BY processo.id
+        ORDER BY processo.data_abertura DESC, processo.numero DESC
+        LIMIT ?
+        """,
+        (like_term, like_term, limite),
+    )
+
+    resultados = [
+        {
+            "id": row[0],
+            "numero": row[1],
+            "descricao": row[2] or "",
+            "data_abertura": row[3],
+            "estado": row[4] or "",
+            "total_pedidos": row[5] or 0,
+        }
+        for row in c.fetchall()
+    ]
+
+    conn.close()
+    return resultados
+
+
+def obter_detalhes_processo(processo_id: int):
+    """Obtém informação consolidada de um processo (artigos e pedidos a fornecedores)."""
+
+    conn = obter_conexao()
+    c = conn.cursor()
+
+    c.execute(
+        "SELECT id, numero, COALESCE(descricao, ''), data_abertura, COALESCE(estado, '') FROM processo WHERE id = ?",
+        (processo_id,),
+    )
+    row = c.fetchone()
+
+    if not row:
+        conn.close()
+        return None
+
+    processo_info = {
+        "id": row[0],
+        "numero": row[1],
+        "descricao": row[2] or "",
+        "data_abertura": row[3],
+        "estado": row[4] or "",
+    }
+
+    c.execute(
+        """
+        SELECT id, COALESCE(artigo_num, ''), descricao, quantidade, unidade, COALESCE(marca, ''), ordem
+        FROM processo_artigo
+        WHERE processo_id = ?
+        ORDER BY ordem, id
+        """,
+        (processo_id,),
+    )
+
+    artigos_processo = [
+        {
+            "id": artigo_row[0],
+            "artigo_num": artigo_row[1] or "",
+            "descricao": artigo_row[2],
+            "quantidade": artigo_row[3],
+            "unidade": artigo_row[4],
+            "marca": artigo_row[5] or "",
+            "ordem": artigo_row[6],
+        }
+        for artigo_row in c.fetchall()
+    ]
+
+    c.execute(
+        """
+        SELECT rfq.id,
+               rfq.referencia,
+               COALESCE(rfq.estado, 'pendente'),
+               rfq.data,
+               COALESCE(fornecedor.nome, 'Fornecedor desconhecido') AS fornecedor_nome,
+               COALESCE(rfq.observacoes, ''),
+               COALESCE(rfq.nome_solicitante, ''),
+               COALESCE(rfq.email_solicitante, ''),
+               COALESCE(cliente.nome, ''),
+               rfq.utilizador_id
+        FROM rfq
+        LEFT JOIN fornecedor ON fornecedor.id = rfq.fornecedor_id
+        LEFT JOIN cliente ON cliente.id = rfq.cliente_id
+        WHERE rfq.processo_id = ?
+        ORDER BY fornecedor_nome COLLATE NOCASE, rfq.data
+        """,
+        (processo_id,),
+    )
+
+    rfqs_rows = c.fetchall()
+    rfq_ids = [rfq_row[0] for rfq_row in rfqs_rows]
+
+    artigos_por_rfq: dict[int, list[dict]] = {rfq_id: [] for rfq_id in rfq_ids}
+    respostas_por_rfq: dict[int, int] = {rfq_id: 0 for rfq_id in rfq_ids}
+
+    if rfq_ids:
+        placeholders = ",".join(["?"] * len(rfq_ids))
+
+        c.execute(
+            f"""
+            SELECT rfq_id, id, COALESCE(artigo_num, ''), descricao, quantidade, unidade, COALESCE(marca, ''), ordem
+            FROM artigo
+            WHERE rfq_id IN ({placeholders})
+            ORDER BY rfq_id, ordem, id
+            """,
+            rfq_ids,
+        )
+
+        for artigo_row in c.fetchall():
+            artigos_por_rfq.setdefault(artigo_row[0], []).append(
+                {
+                    "id": artigo_row[1],
+                    "artigo_num": artigo_row[2] or "",
+                    "descricao": artigo_row[3],
+                    "quantidade": artigo_row[4],
+                    "unidade": artigo_row[5],
+                    "marca": artigo_row[6] or "",
+                    "ordem": artigo_row[7],
+                }
+            )
+
+        c.execute(
+            f"""
+            SELECT rfq_id, COUNT(*)
+            FROM resposta_fornecedor
+            WHERE rfq_id IN ({placeholders})
+            GROUP BY rfq_id
+            """,
+            rfq_ids,
+        )
+
+        for rfq_id, total in c.fetchall():
+            respostas_por_rfq[rfq_id] = total or 0
+
+    conn.close()
+
+    rfqs = []
+    for rfq_row in rfqs_rows:
+        rfq_id = rfq_row[0]
+        rfqs.append(
+            {
+                "id": rfq_id,
+                "referencia": rfq_row[1],
+                "estado": rfq_row[2] or "pendente",
+                "data": rfq_row[3],
+                "fornecedor": rfq_row[4] or "Fornecedor desconhecido",
+                "observacoes": rfq_row[5] or "",
+                "nome_solicitante": rfq_row[6] or "",
+                "email_solicitante": rfq_row[7] or "",
+                "cliente": rfq_row[8] or "",
+                "utilizador_id": rfq_row[9],
+                "artigos": sorted(artigos_por_rfq.get(rfq_id, []), key=lambda x: (x.get("ordem") or 0, x.get("id"))),
+                "total_respostas": respostas_por_rfq.get(rfq_id, 0),
+            }
+        )
+
+    respondidas = sum(
+        1
+        for rfq in rfqs
+        if (rfq.get("estado") or "").lower() == "respondido" or rfq.get("total_respostas", 0) > 0
+    )
+
+    return {
+        "processo": processo_info,
+        "artigos": sorted(artigos_processo, key=lambda x: (x.get("ordem") or 0, x.get("id"))),
+        "rfqs": rfqs,
+        "total_rfqs": len(rfqs),
+        "respondidas": respondidas,
+    }
+
 # ========================== FUNÇÕES DE GESTÃO DE MARGENS ==========================
 
 def obter_margem_para_marca(fornecedor_id, marca):
@@ -3254,10 +3449,18 @@ elif menu_option == "📩 Responder Cotações":
         if cancelar:
             st.rerun()
     
-    # Tabs para pendentes, respondidas e arquivadas
-    tab1, tab2, tab3 = st.tabs(["Pendentes", "Respondidas", "Arquivados"])
+    if "process_center_results" not in st.session_state:
+        st.session_state.process_center_results = []
+    if "process_center_selected_id" not in st.session_state:
+        st.session_state.process_center_selected_id = None
+    if "process_center_focus_ref" not in st.session_state:
+        st.session_state.process_center_focus_ref = ""
 
-    with tab1:
+    tab_pendentes, tab_respondidas, tab_arquivados, tab_process_center = st.tabs(
+        ["Pendentes", "Respondidas", "Arquivados", "Process Center"]
+    )
+
+    with tab_pendentes:
         # Filtros
         col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
         with col1:
@@ -3382,7 +3585,7 @@ elif menu_option == "📩 Responder Cotações":
             st.session_state.cotacoes_pend_page += 1
             st.rerun()
 
-    with tab2:
+    with tab_respondidas:
         # Filtros
         col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
         with col1:
@@ -3651,7 +3854,7 @@ elif menu_option == "📩 Responder Cotações":
             st.session_state.cotacoes_resp_page += 1
             st.rerun()
 
-    with tab3:
+    with tab_arquivados:
         # Filtros
         col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
         with col1:
@@ -3737,6 +3940,187 @@ elif menu_option == "📩 Responder Cotações":
         ):
             st.session_state.cotacoes_arq_page += 1
             st.rerun()
+
+    with tab_process_center:
+        st.subheader("Process Center")
+        st.caption(
+            "Pesquise pelo número do processo (ex.: QT2025-0001) ou pela referência do cliente para ver todos os pedidos"
+        )
+
+        with st.form("process_center_form"):
+            termo_pesquisa = st.text_input(
+                "Processo ou referência",
+                key="process_center_term",
+                placeholder="QT2025-0001 ou REF123",
+            )
+            submitted = st.form_submit_button("Pesquisar", type="primary")
+
+        if submitted:
+            termo = (termo_pesquisa or "").strip()
+            if not termo:
+                st.warning("Introduza um termo de pesquisa válido.")
+            else:
+                resultados = procurar_processos_por_termo(termo)
+                st.session_state.process_center_results = resultados
+                st.session_state.process_center_selected_id = (
+                    resultados[0]["id"] if resultados else None
+                )
+                st.session_state.process_center_focus_ref = termo
+                if not resultados:
+                    st.warning("Nenhum processo encontrado para o termo indicado.")
+
+        resultados = st.session_state.get("process_center_results", [])
+        processo_selecionado_id = st.session_state.get("process_center_selected_id")
+        foco_referencia = (st.session_state.get("process_center_focus_ref") or "").lower()
+
+        if resultados:
+            indices = list(range(len(resultados)))
+            indice_default = 0
+            for idx, processo in enumerate(resultados):
+                if processo.get("id") == processo_selecionado_id:
+                    indice_default = idx
+                    break
+
+            def _format_result(idx: int) -> str:
+                item = resultados[idx]
+                descricao = f" • {item['descricao']}" if item.get("descricao") else ""
+                return (
+                    f"{item['numero']} • {item['total_pedidos']} pedidos{descricao}"
+                )
+
+            selected_index = st.selectbox(
+                "Processos encontrados",
+                options=indices,
+                index=indice_default if indices else 0,
+                format_func=_format_result,
+            )
+
+            processo_escolhido = resultados[selected_index]
+            st.session_state.process_center_selected_id = processo_escolhido.get("id")
+
+            detalhes_processo = obter_detalhes_processo(processo_escolhido.get("id"))
+
+            if detalhes_processo:
+                processo_info = detalhes_processo.get("processo", {})
+                st.markdown(f"### {processo_info.get('numero', 'Processo')}")
+                if processo_info.get("descricao"):
+                    st.caption(processo_info.get("descricao"))
+
+                info_cols = st.columns(3)
+                with info_cols[0]:
+                    st.write(
+                        f"**Abertura:** {_format_iso_date(processo_info.get('data_abertura')) or '—'}"
+                    )
+                with info_cols[1]:
+                    estado = processo_info.get("estado") or ""
+                    st.write(f"**Estado:** {estado.title() if estado else '—'}")
+                with info_cols[2]:
+                    st.write(
+                        f"**Artigos registados:** {len(detalhes_processo.get('artigos', []))}"
+                    )
+
+                metric_cols = st.columns(3)
+                with metric_cols[0]:
+                    st.metric("Pedidos fornecedor", detalhes_processo.get("total_rfqs", 0))
+                with metric_cols[1]:
+                    st.metric("Respostas recebidas", detalhes_processo.get("respondidas", 0))
+                with metric_cols[2]:
+                    pendentes = max(
+                        detalhes_processo.get("total_rfqs", 0) - detalhes_processo.get("respondidas", 0),
+                        0,
+                    )
+                    st.metric("Pendentes", pendentes)
+
+                st.markdown("---")
+                st.subheader("Pedido Cliente")
+
+                artigos_processo = detalhes_processo.get("artigos", [])
+                if artigos_processo:
+                    df_cliente = pd.DataFrame(
+                        [
+                            {
+                                "Nº Artigo": artigo.get("artigo_num") or "",
+                                "Descrição": artigo.get("descricao"),
+                                "Qtd": artigo.get("quantidade"),
+                                "Unidade": artigo.get("unidade"),
+                                "Marca": artigo.get("marca") or "",
+                            }
+                            for artigo in artigos_processo
+                        ]
+                    )
+                    st.dataframe(df_cliente, use_container_width=True, hide_index=True)
+                else:
+                    st.info("Nenhum artigo registado para este processo.")
+
+                st.markdown("---")
+                st.subheader("Pedidos Fornecedor")
+
+                pedidos_fornecedor = detalhes_processo.get("rfqs", [])
+                if pedidos_fornecedor:
+                    for pedido in pedidos_fornecedor:
+                        estado_lower = (pedido.get("estado") or "").lower()
+                        if estado_lower == "respondido" or pedido.get("total_respostas", 0) > 0:
+                            emoji = "🟢"
+                        elif estado_lower == "arquivada":
+                            emoji = "⚪️"
+                        else:
+                            emoji = "🟡"
+
+                        titulo_expander = f"{emoji} {pedido.get('fornecedor', 'Fornecedor')} • Ref: {pedido.get('referencia', '—')}"
+                        expanded = foco_referencia and foco_referencia == (pedido.get("referencia") or "").lower()
+
+                        with st.expander(titulo_expander, expanded=bool(expanded)):
+                            meta_cols = st.columns(3)
+                            with meta_cols[0]:
+                                st.write(
+                                    f"**Estado:** {pedido.get('estado').title() if pedido.get('estado') else '—'}"
+                                )
+                                st.write(
+                                    f"**Data:** {_format_iso_date(pedido.get('data')) or '—'}"
+                                )
+                            with meta_cols[1]:
+                                st.write(
+                                    f"**Respostas recebidas:** {pedido.get('total_respostas', 0)}"
+                                )
+                                st.write(
+                                    f"**Solicitante:** {pedido.get('nome_solicitante') or '—'}"
+                                )
+                            with meta_cols[2]:
+                                st.write(
+                                    f"**Email:** {pedido.get('email_solicitante') or '—'}"
+                                )
+                                st.write(f"**Cliente:** {pedido.get('cliente') or '—'}")
+
+                            if pedido.get("observacoes"):
+                                st.markdown(f"_Observações:_ {pedido.get('observacoes')}")
+
+                            artigos_fornecedor = pedido.get("artigos", [])
+                            if artigos_fornecedor:
+                                df_fornecedor = pd.DataFrame(
+                                    [
+                                        {
+                                            "Nº Artigo": artigo.get("artigo_num") or "",
+                                            "Descrição": artigo.get("descricao"),
+                                            "Qtd": artigo.get("quantidade"),
+                                            "Unidade": artigo.get("unidade"),
+                                            "Marca": artigo.get("marca") or "",
+                                        }
+                                        for artigo in artigos_fornecedor
+                                    ]
+                                )
+                                st.dataframe(
+                                    df_fornecedor,
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
+                            else:
+                                st.info("Nenhum artigo associado a este pedido.")
+                else:
+                    st.info("Nenhum pedido enviado aos fornecedores para este processo.")
+            else:
+                st.warning("Não foi possível carregar os detalhes do processo selecionado.")
+        else:
+            st.info("Introduza um termo de pesquisa para listar processos.")
 
     # Diálogo de confirmação para eliminar/arquivar
     if "confirmacao" in st.session_state:
