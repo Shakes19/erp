@@ -662,16 +662,26 @@ def criar_rfq(
             conexao.commit()
             return rfq_pk
 
-        try:
-            rfq_id = _executar_insercao(conn)
-        except sqlite3.OperationalError as db_err:
-            if "rfq_old" in str(db_err).lower():
-                conn.rollback()
-                conn.close()
-                criar_base_dados_completa()
-                conn = obter_conexao()
+        limpeza_migracao_executada = False
+        while True:
+            try:
                 rfq_id = _executar_insercao(conn)
-            else:
+                break
+            except sqlite3.OperationalError as db_err:
+                # Algumas instalações antigas podem ter ficado com uma tabela
+                # temporária ``rfq_old`` quando uma migração falhou a meio.
+                # A criação da nova cotação terminava com o erro
+                # ``no such table: main.rfq_old`` e não havia nova tentativa de
+                # inserção após limpar o esquema.  Este ciclo garante que
+                # executamos a rotina de migração apenas uma vez e voltamos a
+                # tentar a inserção logo de seguida.
+                if "rfq_old" in str(db_err).lower() and not limpeza_migracao_executada:
+                    limpeza_migracao_executada = True
+                    conn.rollback()
+                    conn.close()
+                    criar_base_dados_completa()
+                    conn = obter_conexao()
+                    continue
                 raise
 
         # Gerar PDF
