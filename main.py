@@ -4,6 +4,7 @@ from datetime import datetime, date, timedelta
 from fpdf import FPDF
 import base64
 import json
+from collections import defaultdict
 from io import BytesIO
 import os
 import shutil
@@ -211,8 +212,12 @@ def listar_todas_marcas():
     return marcas
 
 
-def obter_fornecedor_por_marca(marca):
-    """Retorna fornecedor (id, nome, email) associado à marca"""
+def obter_fornecedores_por_marca(marca):
+    """Retorna lista de fornecedores (id, nome, email) associados à marca."""
+
+    if not marca:
+        return []
+
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
@@ -221,10 +226,11 @@ def obter_fornecedor_por_marca(marca):
         FROM fornecedor f
         JOIN fornecedor_marca fm ON f.id = fm.fornecedor_id
         WHERE fm.marca = ?
+        ORDER BY f.nome
         """,
         (marca,),
     )
-    res = c.fetchone()
+    res = c.fetchall()
     conn.close()
     return res
 
@@ -492,14 +498,72 @@ def eliminar_utilizador(user_id):
 
 # ========================== FUNÇÕES DE GESTÃO DE RFQs ==========================
 
-def criar_rfq(fornecedor_id, data, artigos, referencia, cliente_id=None):
+def criar_processo_com_artigos(artigos):
+    """Criar um novo processo e respetivos artigos base."""
+
+    processo_id, numero_processo = criar_processo()
+    conn = obter_conexao()
+    c = conn.cursor()
+    processo_artigos: list[dict] = []
+
+    try:
+        for ordem, art in enumerate(artigos, 1):
+            c.execute(
+                """
+                INSERT INTO processo_artigo (processo_id, artigo_num, descricao,
+                                             quantidade, unidade, marca, ordem)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    processo_id,
+                    art.get("artigo_num", ""),
+                    art.get("descricao", ""),
+                    art.get("quantidade", 1),
+                    art.get("unidade", "Peças"),
+                    art.get("marca", ""),
+                    ordem,
+                ),
+            )
+            processo_artigos.append(
+                {
+                    **art,
+                    "ordem": ordem,
+                    "processo_artigo_id": c.lastrowid,
+                }
+            )
+
+        conn.commit()
+        return processo_id, numero_processo, processo_artigos
+    finally:
+        conn.close()
+
+
+def criar_rfq(
+    fornecedor_id,
+    data,
+    artigos,
+    referencia,
+    cliente_id=None,
+    processo_id=None,
+    numero_processo=None,
+    processo_artigos=None,
+):
     """Criar nova RFQ"""
     conn = obter_conexao()
     c = conn.cursor()
 
     try:
         utilizador_id = st.session_state.get("user_id")
-        processo_id, numero_processo = criar_processo()
+
+        if processo_id is None or numero_processo is None or processo_artigos is None:
+            processo_id, numero_processo, processo_artigos = criar_processo_com_artigos(artigos)
+        else:
+            # Garantir que temos um mapa por ordem caso não exista nos artigos
+            ordem_para_processo = {
+                item.get("ordem", idx + 1): item.get("processo_artigo_id")
+                for idx, item in enumerate(processo_artigos)
+                if item.get("processo_artigo_id")
+            }
 
         nome_solicitante = ""
         email_solicitante = ""
@@ -562,13 +626,16 @@ def criar_rfq(fornecedor_id, data, artigos, referencia, cliente_id=None):
         # Inserir artigos
         for ordem, art in enumerate(artigos, 1):
             if art.get("descricao", "").strip():
+                processo_artigo_id = art.get("processo_artigo_id")
+                if not processo_artigo_id and processo_artigos:
+                    processo_artigo_id = ordem_para_processo.get(ordem) if "ordem_para_processo" in locals() else processo_artigos[ordem - 1].get("processo_artigo_id")
                 c.execute("""
                     INSERT INTO artigo (rfq_id, artigo_num, descricao, quantidade,
-                                      unidade, especificacoes, marca, ordem)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                      unidade, especificacoes, marca, ordem, processo_artigo_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (rfq_id, art.get("artigo_num", ""), art["descricao"],
                       art.get("quantidade", 1), art.get("unidade", "Peças"),
-                      art.get("especificacoes", ""), art.get("marca", ""), ordem))
+                      art.get("especificacoes", ""), art.get("marca", ""), ordem, processo_artigo_id))
 
         conn.commit()
 
@@ -577,7 +644,7 @@ def criar_rfq(fornecedor_id, data, artigos, referencia, cliente_id=None):
         # Enviar pedido por email ao fornecedor
         enviar_email_pedido_fornecedor(rfq_id)
 
-        return rfq_id, numero_processo
+        return rfq_id, numero_processo, processo_id, processo_artigos
     except Exception as e:
         conn.rollback()
         if "UNIQUE" in str(e).upper():
@@ -606,6 +673,7 @@ def obter_todas_cotacoes(
 
         base_query = """
             SELECT rfq.id,
+                   rfq.processo_id,
                    rfq.data,
                    COALESCE(fornecedor.nome, 'Fornecedor desconhecido'),
                    rfq.estado,
@@ -659,15 +727,16 @@ def obter_todas_cotacoes(
         cotacoes = [
             {
                 "id": row[0],
-                "data": row[1],
-                "fornecedor": row[2],
-                "estado": row[3],
-                "processo": row[4],
-                "referencia": row[5],
-                "num_artigos": row[6],
-                "nome_solicitante": row[7] if row[7] else "",
-                "email_solicitante": row[8] if row[8] else "",
-                "criador": row[9] if row[9] else "",
+                "processo_id": row[1],
+                "data": row[2],
+                "fornecedor": row[3],
+                "estado": row[4],
+                "processo": row[5],
+                "referencia": row[6],
+                "num_artigos": row[7],
+                "nome_solicitante": row[8] if row[8] else "",
+                "email_solicitante": row[9] if row[9] else "",
+                "criador": row[10] if row[10] else "",
             }
             for row in resultados
         ]
@@ -877,21 +946,7 @@ def guardar_respostas(
         rfq_info = c.fetchone()
         
         conn.commit()
-        
-        # Gerar PDF de cliente
-        pdf_sucesso = gerar_pdf_cliente(rfq_id)
-        
-        # Enviar email se houver endereço
-        if rfq_info and rfq_info[1] and pdf_sucesso:
-            enviar_email_orcamento(
-                rfq_info[1],  # email
-                rfq_info[0] if rfq_info[0] else "Cliente",  # nome
-                rfq_info[2],  # referência do cliente
-                rfq_info[3],  # número da cotação
-                rfq_id,
-                observacoes,
-            )
-        
+
         return True
         
     except Exception as e:
@@ -936,6 +991,188 @@ def obter_respostas_cotacao(rfq_id):
     
     conn.close()
     return respostas
+
+
+def obter_respostas_por_processo(processo_id):
+    """Agrega respostas de todos os fornecedores para um processo."""
+
+    conn = obter_conexao()
+    c = conn.cursor()
+
+    c.execute(
+        """
+        SELECT pa.id,
+               pa.artigo_num,
+               pa.descricao,
+               pa.quantidade,
+               pa.unidade,
+               pa.marca,
+               pa.ordem,
+               rf.id as resposta_id,
+               rf.preco_venda,
+               rf.custo,
+               rf.prazo_entrega,
+               rf.moeda,
+               rf.quantidade_final,
+               rf.fornecedor_id,
+               f.nome as fornecedor_nome,
+               r.id as rfq_id,
+               r.estado,
+               rf.validade_preco
+        FROM processo_artigo pa
+        LEFT JOIN artigo a ON a.processo_artigo_id = pa.id
+        LEFT JOIN rfq r ON a.rfq_id = r.id
+        LEFT JOIN resposta_fornecedor rf ON rf.artigo_id = a.id AND rf.rfq_id = r.id
+        LEFT JOIN fornecedor f ON rf.fornecedor_id = f.id
+        WHERE pa.processo_id = ?
+        ORDER BY pa.ordem, fornecedor_nome
+        """,
+        (processo_id,),
+    )
+
+    artigos: dict[int, dict] = {}
+    fornecedores_estado: dict[int, dict] = {}
+
+    for row in c.fetchall():
+        (
+            processo_artigo_id,
+            artigo_num,
+            descricao,
+            quantidade,
+            unidade,
+            marca,
+            ordem,
+            resposta_id,
+            preco_venda,
+            custo,
+            prazo,
+            moeda,
+            quantidade_final,
+            fornecedor_id,
+            fornecedor_nome,
+            rfq_id,
+            estado_rfq,
+            validade_preco,
+        ) = row
+
+        artigo_info = artigos.setdefault(
+            processo_artigo_id,
+            {
+                "processo_artigo_id": processo_artigo_id,
+                "artigo_num": artigo_num or "",
+                "descricao": descricao,
+                "quantidade": quantidade,
+                "unidade": unidade,
+                "marca": marca or "",
+                "ordem": ordem,
+                "respostas": [],
+            },
+        )
+
+        if fornecedor_id:
+            fornecedor_entry = fornecedores_estado.setdefault(
+                fornecedor_id,
+                {
+                    "id": fornecedor_id,
+                    "nome": fornecedor_nome or "Fornecedor",
+                    "estado": estado_rfq or "pendente",
+                },
+            )
+            if estado_rfq and estado_rfq != fornecedor_entry["estado"]:
+                fornecedor_entry["estado"] = estado_rfq
+
+        if resposta_id:
+            artigo_info["respostas"].append(
+                {
+                    "resposta_id": resposta_id,
+                    "preco_venda": preco_venda,
+                    "custo": custo,
+                    "prazo": prazo,
+                    "moeda": moeda,
+                    "quantidade_final": quantidade_final,
+                    "fornecedor_id": fornecedor_id,
+                    "fornecedor_nome": fornecedor_nome or "",
+                    "rfq_id": rfq_id,
+                    "validade_preco": validade_preco,
+                }
+            )
+
+    c.execute(
+        """
+        SELECT rfq.fornecedor_id, fornecedor.nome, rfq.estado
+        FROM rfq
+        LEFT JOIN fornecedor ON fornecedor.id = rfq.fornecedor_id
+        WHERE rfq.processo_id = ?
+        """,
+        (processo_id,),
+    )
+    for fornecedor_id, nome, estado in c.fetchall():
+        fornecedores_estado.setdefault(
+            fornecedor_id,
+            {
+                "id": fornecedor_id,
+                "nome": nome or "Fornecedor",
+                "estado": estado or "pendente",
+            },
+        )
+
+    conn.close()
+
+    artigos_ordenados = sorted(artigos.values(), key=lambda x: x["ordem"])
+    fornecedores_lista = sorted(fornecedores_estado.values(), key=lambda x: x["nome"].lower())
+
+    return artigos_ordenados, fornecedores_lista
+
+
+def obter_selecoes_processo(processo_id):
+    """Obtém seleções atuais por artigo de processo."""
+
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute(
+        "SELECT processo_artigo_id, resposta_id FROM processo_artigo_selecao WHERE processo_artigo_id IN (SELECT id FROM processo_artigo WHERE processo_id = ?)",
+        (processo_id,),
+    )
+    selecoes = {row[0]: row[1] for row in c.fetchall() if row[1]}
+    conn.close()
+    return selecoes
+
+
+def guardar_selecoes_processo(selecoes: dict[int, int | None]):
+    """Atualiza a tabela de seleções do processo."""
+
+    if not selecoes:
+        return True
+
+    conn = obter_conexao()
+    c = conn.cursor()
+
+    try:
+        for processo_artigo_id, resposta_id in selecoes.items():
+            if resposta_id:
+                c.execute(
+                    """
+                    INSERT INTO processo_artigo_selecao (processo_artigo_id, resposta_id, selecionado_em)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(processo_artigo_id) DO UPDATE SET
+                        resposta_id = excluded.resposta_id,
+                        selecionado_em = CURRENT_TIMESTAMP
+                    """,
+                    (processo_artigo_id, resposta_id),
+                )
+            else:
+                c.execute(
+                    "DELETE FROM processo_artigo_selecao WHERE processo_artigo_id = ?",
+                    (processo_artigo_id,),
+                )
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        st.error(f"Erro ao guardar seleção: {e}")
+        return False
+    finally:
+        conn.close()
 
 # ========================== FUNÇÕES DE GESTÃO DE MARGENS ==========================
 
@@ -1757,7 +1994,8 @@ def gerar_pdf_cliente(rfq_id):
                    ce.nome AS empresa_nome, ce.morada AS empresa_morada, ce.condicoes_pagamento,
                    c.nome AS cliente_nome, c.email AS cliente_email,
                    u.nome AS user_nome, u.email AS user_email,
-                   p.numero AS processo_numero
+                   p.numero AS processo_numero,
+                   rfq.processo_id
             FROM rfq
             LEFT JOIN cliente c ON rfq.cliente_id = c.id
             LEFT JOIN cliente_empresa ce ON c.empresa_id = ce.id
@@ -1786,27 +2024,62 @@ def gerar_pdf_cliente(rfq_id):
             "user_nome": row[9] if len(row) > 9 else "",
             "user_email": row[10] if len(row) > 10 else "",
             "processo_numero": row[11] if len(row) > 11 else "",
+            "processo_id": row[12] if len(row) > 12 else None,
         }
 
-        # 2. Obter respostas
-        c.execute("""SELECT a.artigo_num, rf.descricao, rf.quantidade_final,
-                    a.unidade, rf.preco_venda,
-                    rf.prazo_entrega, rf.peso, rf.hs_code, rf.pais_origem
-                 FROM resposta_fornecedor rf
-                 JOIN artigo a ON rf.artigo_id = a.id
-                 WHERE rf.rfq_id = ?""", (rfq_id,))
+        selecoes = obter_selecoes_processo(rfq_data.get("processo_id")) if rfq_data.get("processo_id") else {}
 
-        itens_resposta = [{
-            'artigo_num': row[0] or '',
-            'descricao': row[1],
-            'quantidade_final': row[2],
-            'unidade': row[3],
-            'preco_venda': row[4],
-            'prazo_entrega': row[5],
-            'peso': row[6] or 0,
-            'hs_code': row[7] or '',
-            'pais_origem': row[8] or ''
-        } for row in c.fetchall()]
+        if selecoes:
+            c.execute(
+                """
+                SELECT a.artigo_num,
+                       rf.descricao,
+                       COALESCE(rf.quantidade_final, a.quantidade) AS quantidade_final,
+                       a.unidade,
+                       rf.preco_venda,
+                       rf.prazo_entrega,
+                       rf.peso,
+                       rf.hs_code,
+                       rf.pais_origem,
+                       pa.ordem
+                FROM processo_artigo_selecao sel
+                JOIN resposta_fornecedor rf ON sel.resposta_id = rf.id
+                JOIN artigo a ON rf.artigo_id = a.id
+                LEFT JOIN processo_artigo pa ON pa.id = sel.processo_artigo_id
+                WHERE pa.processo_id = ?
+                ORDER BY pa.ordem
+                """,
+                (rfq_data.get("processo_id"),),
+            )
+        else:
+            c.execute(
+                """
+                SELECT a.artigo_num, rf.descricao, rf.quantidade_final,
+                       a.unidade, rf.preco_venda,
+                       rf.prazo_entrega, rf.peso, rf.hs_code, rf.pais_origem,
+                       a.ordem
+                FROM resposta_fornecedor rf
+                JOIN artigo a ON rf.artigo_id = a.id
+                WHERE rf.rfq_id = ?
+                ORDER BY a.ordem
+                """,
+                (rfq_id,),
+            )
+
+        itens_resposta = [
+            {
+                'artigo_num': row[0] or '',
+                'descricao': row[1],
+                'quantidade_final': row[2],
+                'unidade': row[3],
+                'preco_venda': row[4],
+                'prazo_entrega': row[5],
+                'peso': row[6] or 0,
+                'hs_code': row[7] or '',
+                'pais_origem': row[8] or ''
+            }
+            for row in c.fetchall()
+        ]
 
         if not itens_resposta:
             st.error("Nenhuma resposta encontrada para esta RFQ")
@@ -2434,19 +2707,7 @@ elif menu_option == "📝 Nova Cotação":
     st.title("📝 Criar Nova Cotação")
 
     marcas = listar_todas_marcas()
-
-    col1, col2 = st.columns(2)
-    with col1:
-        marca_opcoes = [""] + marcas
-        marca_selecionada = st.selectbox("Marca *", marca_opcoes, key="marca_select")
-        fornecedor_id_selecionado = None
-        nome_fornecedor = ""
-        if marca_selecionada:
-            fornecedor_info = obter_fornecedor_por_marca(marca_selecionada)
-            if fornecedor_info:
-                fornecedor_id_selecionado, nome_fornecedor, _ = fornecedor_info
-    with col2:
-        data = st.date_input("Data da cotação", datetime.today())
+    data = st.date_input("Data da cotação", datetime.today())
 
     with st.form(key="nova_cotacao_form"):
         clientes = listar_clientes()
@@ -2483,8 +2744,15 @@ elif menu_option == "📝 Nova Cotação":
 
                 with col1:
                     artigo['artigo_num'] = st.text_input("Nº Artigo", value=artigo['artigo_num'], key=f"art_num_{i}")
-                    st.text_input("Marca", value=marca_selecionada or "", key=f"marca_{i}", disabled=True)
-                    artigo['marca'] = marca_selecionada or ""
+                    marca_opcoes = [""] + [m for m in marcas if m]
+                    if artigo.get('marca') and artigo['marca'] not in marca_opcoes:
+                        marca_opcoes.append(artigo['marca'])
+                    artigo['marca'] = st.selectbox(
+                        "Marca *",
+                        marca_opcoes,
+                        index=marca_opcoes.index(artigo['marca']) if artigo.get('marca') in marca_opcoes else 0,
+                        key=f"marca_{i}",
+                    )
 
                 with col2:
                     artigo['descricao'] = st.text_area("Descrição *", value=artigo['descricao'], key=f"desc_{i}", height=100)
@@ -2554,59 +2822,117 @@ elif menu_option == "📝 Nova Cotação":
 
     if criar_cotacao:
         # Validar campos obrigatórios
-        if not marca_selecionada or not fornecedor_id_selecionado:
-            st.error("Por favor, selecione uma marca válida")
-        elif not referencia_input.strip():
+        if not referencia_input.strip():
             st.error("Por favor, indique uma referência")
         else:
-            fornecedor_id = fornecedor_id_selecionado
-            artigos_validos = [a for a in st.session_state.artigos if a['descricao'].strip()]
+            artigos_validos: list[dict] = []
+            erros: list[str] = []
 
-            if artigos_validos and fornecedor_id:
-                rfq_id, numero_processo = criar_rfq(
-                    fornecedor_id,
-                    data,
-                    artigos_validos,
-                    referencia_input,
-                    cliente_sel[0] if cliente_sel else None,
-                )
+            for idx, art in enumerate(st.session_state.artigos, 1):
+                descricao = art.get('descricao', '').strip()
+                if not descricao:
+                    continue
+                marca = art.get('marca', '').strip()
+                if not marca:
+                    erros.append(f"Artigo {idx}: selecione uma marca")
+                    continue
+                artigos_validos.append({
+                    "artigo_num": art.get('artigo_num', ''),
+                    "descricao": descricao,
+                    "quantidade": art.get('quantidade', 1),
+                    "unidade": art.get('unidade', 'Peças'),
+                    "marca": marca,
+                })
 
-                if rfq_id:
-                    st.success(
-                        f"✅ Cotação {numero_processo} (Ref: {referencia_input}) criada com sucesso!"
-                    )
-                    # Guardar PDF do cliente (upload) se existir
-                    if pedido_pdf_bytes is not None:
-                        guardar_pdf_upload(
-                            rfq_id,
-                            'anexo_cliente',
-                            pedido_nome_pdf,
-                            pedido_pdf_bytes,
-                        )
-                        st.success("Anexo do cliente guardado!")
-
-                    # Download do PDF
-                    pdf_bytes = obter_pdf_da_db(rfq_id, "pedido")
-                    if pdf_bytes:
-                        st.download_button(
-                            "📄 Download PDF",
-                            data=pdf_bytes,
-                            file_name=f"cotacao_{rfq_id}.pdf",
-                            mime="application/pdf",
-                        )
-
-                    # Limpar formulário
-                    st.session_state.artigos = [{
-                        "artigo_num": "",
-                        "descricao": "",
-                        "quantidade": 1,
-                        "unidade": "Peças",
-                        "marca": "",
-                    }]
-                else:
-                    st.error("Erro ao criar cotação. Verifique se a referência já não existe.")
-            else:
+            if not artigos_validos:
                 st.error("Por favor, adicione pelo menos um artigo com descrição")
+            elif erros:
+                for mensagem in erros:
+                    st.error(mensagem)
+            else:
+                fornecedores_map: defaultdict[int, list[int]] = defaultdict(list)
+                fornecedores_info: dict[int, tuple] = {}
+
+                for idx, art in enumerate(artigos_validos):
+                    fornecedores = obter_fornecedores_por_marca(art['marca'])
+                    if not fornecedores:
+                        erros.append(
+                            f"Nenhum fornecedor configurado para a marca '{art['marca']}'"
+                        )
+                        continue
+                    for fornecedor in fornecedores:
+                        fornecedores_map[fornecedor[0]].append(idx)
+                        fornecedores_info[fornecedor[0]] = fornecedor
+
+                if erros:
+                    for mensagem in erros:
+                        st.error(mensagem)
+                elif not fornecedores_map:
+                    st.error("Não foram encontrados fornecedores elegíveis para os artigos selecionados")
+                else:
+                    processo_id, numero_processo, processo_artigos = criar_processo_com_artigos(artigos_validos)
+                    rfqs_criados: list[tuple[int, tuple]] = []
+
+                    for fornecedor_id, indices in fornecedores_map.items():
+                        artigos_fornecedor = []
+                        for idx in indices:
+                            base = {
+                                **artigos_validos[idx],
+                                "processo_artigo_id": processo_artigos[idx]["processo_artigo_id"],
+                                "ordem": processo_artigos[idx]["ordem"],
+                            }
+                            artigos_fornecedor.append(base)
+
+                        rfq_id, numero_processo_ret, _, _ = criar_rfq(
+                            fornecedor_id,
+                            data,
+                            artigos_fornecedor,
+                            referencia_input,
+                            cliente_sel[0] if cliente_sel else None,
+                            processo_id=processo_id,
+                            numero_processo=numero_processo,
+                            processo_artigos=processo_artigos,
+                        )
+
+                        if rfq_id:
+                            rfqs_criados.append((rfq_id, fornecedores_info[fornecedor_id]))
+                            if pedido_pdf_bytes is not None:
+                                guardar_pdf_upload(
+                                    rfq_id,
+                                    'anexo_cliente',
+                                    pedido_nome_pdf,
+                                    pedido_pdf_bytes,
+                                )
+
+                    if rfqs_criados:
+                        st.success(
+                            f"✅ Cotação {numero_processo} (Ref: {referencia_input}) criada para {len(rfqs_criados)} fornecedor(es)!"
+                        )
+                        st.markdown("**Fornecedores notificados:**")
+                        for rfq_id, fornecedor in rfqs_criados:
+                            st.write(f"• {fornecedor[1]}")
+
+                        for rfq_id, fornecedor in rfqs_criados:
+                            pdf_bytes = obter_pdf_da_db(rfq_id, "pedido")
+                            if pdf_bytes:
+                                st.download_button(
+                                    f"📄 PDF - {fornecedor[1]}",
+                                    data=pdf_bytes,
+                                    file_name=f"cotacao_{numero_processo}_{fornecedor[1].replace(' ', '_')}.pdf",
+                                    mime="application/pdf",
+                                    key=f"download_pdf_{rfq_id}",
+                                )
+
+                        st.session_state.artigos = [{
+                            "artigo_num": "",
+                            "descricao": "",
+                            "quantidade": 1,
+                            "unidade": "Peças",
+                            "marca": "",
+                        }]
+                        st.rerun()
+                    else:
+                        st.error("Não foi possível criar as cotações para os fornecedores selecionados.")
 
 elif menu_option == "🤖 Smart Quotation":
     st.title("🤖 Smart Quotation")
@@ -2649,11 +2975,10 @@ elif menu_option == "🤖 Smart Quotation":
             st.text_input("Marca", value=dados["marca"], disabled=True)
 
             if st.button("Submeter", type="primary"):
-                fornecedor_info = obter_fornecedor_por_marca(dados["marca"])
-                if not fornecedor_info:
+                fornecedores = obter_fornecedores_por_marca(dados["marca"])
+                if not fornecedores:
                     st.error("Marca não encontrada. Configure a marca para um fornecedor.")
                 else:
-                    fornecedor_id, _nome_fornecedor, _email = fornecedor_info
                     clientes = listar_clientes()
                     cliente_id = None
                     for cli in clientes:
@@ -2661,42 +2986,61 @@ elif menu_option == "🤖 Smart Quotation":
                             cliente_id = cli[0]
                             break
 
-                    artigos = [
-                        {
-                            "artigo_num": dados["artigo_num"],
-                            "descricao": dados["descricao"],
-                            "quantidade": dados["quantidade"],
-                            "unidade": "Peças",
-                            "marca": dados["marca"],
-                        }
-                    ]
+                    artigo_base = {
+                        "artigo_num": dados["artigo_num"],
+                        "descricao": dados["descricao"],
+                        "quantidade": dados["quantidade"],
+                        "unidade": "Peças",
+                        "marca": dados["marca"],
+                    }
 
-                    rfq_id, numero_processo = criar_rfq(
-                        fornecedor_id,
-                        datetime.today(),
-                        artigos,
-                        dados["referencia"],
-                        cliente_id,
-                    )
+                    processo_id, numero_processo, processo_artigos = criar_processo_com_artigos([artigo_base])
+                    rfqs_criados: list[tuple[int, tuple]] = []
 
-                    if rfq_id:
-                        guardar_pdf_upload(
-                            rfq_id,
-                            "anexo_cliente",
-                            upload_pdf.name,
-                            pdf_bytes,
+                    for fornecedor in fornecedores:
+                        artigos_fornecedor = [
+                            {
+                                **artigo_base,
+                                "processo_artigo_id": processo_artigos[0]["processo_artigo_id"],
+                                "ordem": processo_artigos[0]["ordem"],
+                            }
+                        ]
+
+                        rfq_id, numero_proc_ret, _, _ = criar_rfq(
+                            fornecedor[0],
+                            datetime.today(),
+                            artigos_fornecedor,
+                            dados["referencia"],
+                            cliente_id,
+                            processo_id=processo_id,
+                            numero_processo=numero_processo,
+                            processo_artigos=processo_artigos,
                         )
-                        st.success(
-                            f"✅ Cotação {numero_processo} (Ref: {dados['referencia']}) criada com sucesso!"
-                        )
-                        pdf_pedido = obter_pdf_da_db(rfq_id, "pedido")
-                        if pdf_pedido:
-                            st.download_button(
-                                "📄 Download PDF",
-                                data=pdf_pedido,
-                                file_name=f"cotacao_{rfq_id}.pdf",
-                                mime="application/pdf",
+
+                        if rfq_id:
+                            rfqs_criados.append((rfq_id, fornecedor))
+                            guardar_pdf_upload(
+                                rfq_id,
+                                "anexo_cliente",
+                                upload_pdf.name,
+                                pdf_bytes,
                             )
+
+                    if rfqs_criados:
+                        st.success(
+                            f"✅ Cotação {numero_processo} (Ref: {dados['referencia']}) criada para {len(rfqs_criados)} fornecedor(es)!"
+                        )
+                        for rfq_id, fornecedor in rfqs_criados:
+                            st.write(f"• {fornecedor[1]}")
+                            pdf_pedido = obter_pdf_da_db(rfq_id, "pedido")
+                            if pdf_pedido:
+                                st.download_button(
+                                    f"📄 Download PDF - {fornecedor[1]}",
+                                    data=pdf_pedido,
+                                    file_name=f"cotacao_{numero_processo}_{fornecedor[1].replace(' ', '_')}.pdf",
+                                    mime="application/pdf",
+                                    key=f"smart_pdf_{rfq_id}",
+                                )
                     else:
                         st.error("Erro ao criar cotação.")
 
@@ -3093,7 +3437,7 @@ elif menu_option == "📩 Responder Cotações":
                         st.write(f"**Email:** {cotacao['email_solicitante'] if cotacao['email_solicitante'] else 'N/A'}")
                         st.write(f"**Criado por:** {cotacao['criador'] if cotacao['criador'] else 'N/A'}")
                         st.write(f"**Artigos:** {cotacao['num_artigos']}")
-                        
+
                         if respostas:
                             st.markdown("---")
                             st.markdown("**Resumo das Respostas:**")
@@ -3104,7 +3448,99 @@ elif menu_option == "📩 Responder Cotações":
                                 st.write(f"• {resp['descricao'][:50]}...")
                                 st.write(f"  Qtd: {resp['quantidade_final']} | P.V.: EUR {resp['preco_venda']:.2f} | Total: EUR {preco_total:.2f}")
                             st.success(f"**Total Geral: EUR {total_geral:.2f}**")
-                    
+
+                        artigos_processo, fornecedores_estado = ([], [])
+                        selecoes_existentes: dict[int, int | None] = {}
+                        if cotacao.get('processo_id'):
+                            artigos_processo, fornecedores_estado = obter_respostas_por_processo(cotacao['processo_id'])
+                            selecoes_existentes = obter_selecoes_processo(cotacao['processo_id'])
+
+                        if fornecedores_estado:
+                            st.markdown("---")
+                            st.markdown("**Estado dos Fornecedores no Processo:**")
+                            for fornecedor_estado in fornecedores_estado:
+                                emoji = "🟢" if (fornecedor_estado.get("estado") or "").lower() == "respondido" else "🟡"
+                                st.write(f"{emoji} {fornecedor_estado['nome']}")
+
+                        selecoes_novas: dict[int, int | None] = {}
+                        if artigos_processo:
+                            st.markdown("---")
+                            st.markdown("**Selecionar proposta por artigo:**")
+                            for artigo_proc in artigos_processo:
+                                st.markdown(
+                                    f"**{(artigo_proc['artigo_num'] + ' - ') if artigo_proc['artigo_num'] else ''}{artigo_proc['descricao']}**"
+                                )
+                                if artigo_proc['respostas']:
+                                    opcoes = [(None, "— Sem seleção —")]
+                                    for resposta in artigo_proc['respostas']:
+                                        preco = resposta.get('preco_venda') or 0
+                                        moeda = resposta.get('moeda') or 'EUR'
+                                        fornecedor_nome = resposta.get('fornecedor_nome') or 'Fornecedor'
+                                        etiqueta = f"{fornecedor_nome} • {preco:.2f} {moeda}"
+                                        if resposta.get('prazo'):
+                                            etiqueta += f" • {resposta['prazo']} dias"
+                                        opcoes.append((resposta['resposta_id'], etiqueta))
+
+                                    indice_default = 0
+                                    selecao_existente = selecoes_existentes.get(artigo_proc['processo_artigo_id'])
+                                    for idx_opt, opt in enumerate(opcoes):
+                                        if opt[0] == selecao_existente:
+                                            indice_default = idx_opt
+                                            break
+
+                                    escolha = st.selectbox(
+                                        "Fornecedor",
+                                        options=opcoes,
+                                        index=indice_default,
+                                        key=f"selec_{cotacao['processo_id']}_{artigo_proc['processo_artigo_id']}",
+                                        format_func=lambda opt: opt[1] if isinstance(opt, tuple) else opt,
+                                    )
+                                    selecoes_novas[artigo_proc['processo_artigo_id']] = escolha[0]
+                                else:
+                                    st.info("Ainda não existem respostas para este artigo.")
+                                    selecoes_novas[artigo_proc['processo_artigo_id']] = None
+
+                            col_sel1, col_sel2 = st.columns(2)
+
+                            with col_sel1:
+                                st.markdown(
+                                    "<div style='display:flex; justify-content:center;'>",
+                                    unsafe_allow_html=True,
+                                )
+                                if st.button("💾 Guardar Seleção", key=f"guardar_sel_{cotacao['processo_id']}"):
+                                    if guardar_selecoes_processo(selecoes_novas):
+                                        st.success("Seleção guardada com sucesso!")
+                                        st.rerun()
+                                st.markdown("</div>", unsafe_allow_html=True)
+
+                            with col_sel2:
+                                st.markdown(
+                                    "<div style='display:flex; justify-content:center;'>",
+                                    unsafe_allow_html=True,
+                                )
+                                if st.button("📤 Enviar para Cliente", key=f"enviar_cliente_{cotacao['processo_id']}"):
+                                    if any(valor is None for valor in selecoes_novas.values()):
+                                        st.error("Selecione um fornecedor para todos os artigos antes de enviar ao cliente.")
+                                    elif not cotacao['email_solicitante']:
+                                        st.error("Nenhum email de cliente definido para este processo.")
+                                    else:
+                                        if guardar_selecoes_processo(selecoes_novas):
+                                            if gerar_pdf_cliente(cotacao['id']):
+                                                if enviar_email_orcamento(
+                                                    cotacao['email_solicitante'],
+                                                    cotacao['nome_solicitante'] or "Cliente",
+                                                    cotacao['referencia'],
+                                                    cotacao['processo'],
+                                                    cotacao['id'],
+                                                    detalhes.get('observacoes', '') if detalhes else '',
+                                                ):
+                                                    st.success("Proposta enviada ao cliente com sucesso!")
+                                                else:
+                                                    st.error("Falha ao enviar o e-mail para o cliente.")
+                                            else:
+                                                st.error("Não foi possível gerar o PDF do cliente.")
+                                st.markdown("</div>", unsafe_allow_html=True)
+
                     with col2:
                         # Anexos
                         conn = obter_conexao()
@@ -3841,16 +4277,26 @@ elif menu_option == "⚙️ Configurações":
                                         col1, col2 = st.columns(2)
 
                                         with col1:
+                                            st.markdown(
+                                                "<div style='display:flex; justify-content:center;'>",
+                                                unsafe_allow_html=True,
+                                            )
                                             if st.button("💾 Atualizar", key=f"upd_{fornecedor_sel[0]}_{marca}"):
                                                 if configurar_margem_marca(fornecedor_sel[0], marca, nova_margem):
                                                     st.success("Margem atualizada!")
                                                     st.rerun()
+                                            st.markdown("</div>", unsafe_allow_html=True)
 
                                         with col2:
+                                            st.markdown(
+                                                "<div style='display:flex; justify-content:center;'>",
+                                                unsafe_allow_html=True,
+                                            )
                                             if st.button("🗑️ Remover", key=f"del_{fornecedor_sel[0]}_{marca}"):
                                                 if remover_marca_fornecedor(fornecedor_sel[0], marca):
                                                     st.success("Marca removida!")
                                                     st.rerun()
+                                            st.markdown("</div>", unsafe_allow_html=True)
                             else:
                                 st.info("Nenhuma marca configurada")
 

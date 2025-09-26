@@ -239,7 +239,25 @@ def criar_base_dados_completa():
     if "cliente_id" not in rfq_columns:
         c.execute("ALTER TABLE rfq ADD COLUMN cliente_id INTEGER")
 
-    # Tabela de artigos
+    # Tabela com artigos definidos ao nível de processo para permitir
+    # reutilização entre múltiplos fornecedores na mesma cotação
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS processo_artigo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            processo_id INTEGER NOT NULL,
+            artigo_num TEXT,
+            descricao TEXT NOT NULL,
+            quantidade INTEGER NOT NULL DEFAULT 1,
+            unidade TEXT NOT NULL DEFAULT 'Peças',
+            marca TEXT,
+            ordem INTEGER DEFAULT 1,
+            FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE CASCADE
+        )
+        """
+    )
+
+    # Tabela de artigos (cada RFQ referencia o artigo do processo)
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS artigo (
@@ -252,10 +270,20 @@ def criar_base_dados_completa():
             especificacoes TEXT,
             marca TEXT,
             ordem INTEGER DEFAULT 1,
-            FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
+            processo_artigo_id INTEGER,
+            FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE,
+            FOREIGN KEY (processo_artigo_id) REFERENCES processo_artigo(id) ON DELETE CASCADE
         )
         """
     )
+
+    # Garantir coluna de associação ao artigo do processo em bases já existentes
+    c.execute("PRAGMA table_info(artigo)")
+    artigo_cols = [row[1] for row in c.fetchall()]
+    if "processo_artigo_id" not in artigo_cols:
+        c.execute(
+            "ALTER TABLE artigo ADD COLUMN processo_artigo_id INTEGER REFERENCES processo_artigo(id)"
+        )
 
     # Tabela de catálogo de artigos
     c.execute(
@@ -267,6 +295,19 @@ def criar_base_dados_completa():
             fabricante TEXT,
             preco_venda REAL NOT NULL DEFAULT 0.0,
             validade_preco TEXT
+        )
+        """
+    )
+
+    # Seleção final de artigos por processo (fornecedor escolhido)
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS processo_artigo_selecao (
+            processo_artigo_id INTEGER PRIMARY KEY,
+            resposta_id INTEGER,
+            selecionado_em TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (processo_artigo_id) REFERENCES processo_artigo(id) ON DELETE CASCADE,
+            FOREIGN KEY (resposta_id) REFERENCES resposta_fornecedor(id) ON DELETE SET NULL
         )
         """
     )
