@@ -118,6 +118,25 @@ def criar_base_dados_completa():
     conn = get_connection()
     c = conn.cursor()
 
+    # Limpeza defensiva: versões anteriores podiam deixar a tabela temporária
+    # ``rfq_old`` para trás caso a migração fosse interrompida.  Isto fazia com
+    # que novas inserções tentassem aceder a ``rfq_old`` e falhassem com
+    # ``no such table``.  Garantimos que o esquema volta a um estado consistente
+    # antes de continuar com a criação/migração normal.
+    c.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='rfq_old'"
+    )
+    has_rfq_old = c.fetchone() is not None
+    if has_rfq_old:
+        c.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='rfq'"
+        )
+        has_rfq = c.fetchone() is not None
+        if not has_rfq:
+            c.execute("ALTER TABLE rfq_old RENAME TO rfq")
+        else:
+            c.execute("DROP TABLE rfq_old")
+
     # Improve concurrency
     c.execute("PRAGMA journal_mode=WAL")
     c.execute("PRAGMA busy_timeout=5000")
