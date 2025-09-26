@@ -1006,14 +1006,19 @@ def obter_respostas_cotacao(rfq_id):
     conn = obter_conexao()
     c = conn.cursor()
     
-    c.execute("""
-        SELECT rf.*, a.descricao as descricao_original, a.quantidade as quantidade_original
+    c.execute(
+        """
+        SELECT rf.*, a.descricao AS descricao_original,
+               a.quantidade AS quantidade_original,
+               a.processo_artigo_id
         FROM resposta_fornecedor rf
         JOIN artigo a ON rf.artigo_id = a.id
         WHERE rf.rfq_id = ?
         ORDER BY a.ordem, rf.artigo_id
-    """, (rfq_id,))
-    
+        """,
+        (rfq_id,),
+    )
+
     respostas = []
     for row in c.fetchall():
         respostas.append({
@@ -1021,19 +1026,23 @@ def obter_respostas_cotacao(rfq_id):
             "fornecedor_id": row[1],
             "rfq_id": row[2],
             "artigo_id": row[3],
-            "descricao": row[4] if row[4] else row[16],
+            "descricao": row[4] if row[4] else row[17],
             "custo": row[5],
             "prazo_entrega": row[6],
-            "quantidade_final": row[7] if row[7] else row[17],
+            "quantidade_final": row[7] if row[7] else row[18],
             "peso": row[8],
             "hs_code": row[9],
             "pais_origem": row[10],
             "moeda": row[11],
             "margem_utilizada": row[12],
             "preco_venda": row[13],
-            "observacoes": row[14]
+            "observacoes": row[14],
+            "validade_preco": row[16],
+            "descricao_original": row[17],
+            "quantidade_original": row[18],
+            "processo_artigo_id": row[19],
         })
-    
+
     conn.close()
     return respostas
 
@@ -2453,11 +2462,305 @@ def verificar_pdfs(rfq_id):
     cliente_existe = c.fetchone()[0] > 0
     
     conn.close()
-    
+
     return {
         'pedido': pedido_existe,
         'cliente': cliente_existe
     }
+
+
+@st.dialog("Responder Cotação")
+def responder_cotacao_dialog(cotacao):
+    st.markdown(
+        """
+        <style>
+        /* Occupy the full viewport with the dialog overlay */
+        [data-testid="stDialog"] {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        /* Expand inner dialog content to occupy full form */
+        [data-testid="stDialog"] > div {
+            width: 100%;
+            padding-top: 20px;
+            min-width: 60rem;
+        }
+        /* Ensure form stretches to fill available space */
+        [data-testid="stDialog"] form {
+            width: 100%;
+            height: 100%;
+        }
+        [data-testid="stDialog"] .st-ft {
+            min-width: 60rem;
+        }
+        [data-testid="stDialog"] hr {
+            margin: 1.3em 0px;
+        }
+
+        [data-testid="stVerticalBlock"]{
+            gap: .2rem;
+        }
+
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    detalhes = obter_detalhes_cotacao(cotacao['id'])
+    st.info(f"**Responder a Cotação {cotacao['processo']}**")
+
+    pdf_resposta_bytes = None
+    with st.form(f"resposta_form_{cotacao['id']}"):
+        respostas = []
+        pdf_resposta = st.file_uploader(
+            "Resposta do Fornecedor (PDF ou email)",
+            type=["pdf", "eml"],
+            key=f"pdf_{cotacao['id']}"
+        )
+        if pdf_resposta is not None:
+            _, pdf_resposta_bytes = processar_upload_pdf(pdf_resposta)
+
+        for i, artigo in enumerate(detalhes['artigos'], 1):
+            st.subheader(f"Artigo {i}: {artigo['artigo_num'] if artigo['artigo_num'] else 'S/N'}")
+
+            col1, col2, col3 = st.columns([2, 1, 1])
+
+            with col1:
+                descricao_editada = st.text_area(
+                    "Descrição (editável)",
+                    value=artigo['descricao'],
+                    key=f"desc_{artigo['id']}",
+                    height=180
+                )
+
+            with col2:
+                quantidade_original = artigo['quantidade']
+                quantidade_final = st.number_input(
+                    f"Qtd (Original: {quantidade_original})",
+                    min_value=1,
+                    value=quantidade_original,
+                    key=f"qtd_{artigo['id']}"
+                )
+                peso = st.number_input(
+                    "Peso Unitário(kg)",
+                    min_value=0.0,
+                    step=0.1,
+                    key=f"peso_{artigo['id']}"
+                )
+                prazo = st.number_input(
+                    "Prazo (dias)",
+                    min_value=0,
+                    step=1,
+                    key=f"prazo_{artigo['id']}"
+                )
+
+            with col3:
+                hs_code = st.text_input(
+                    "HS Code",
+                    key=f"hs_{artigo['id']}"
+                )
+                pais_origem = st.text_input(
+                    "País Origem",
+                    key=f"pais_{artigo['id']}"
+                )
+
+            margem = obter_margem_para_marca(
+                detalhes["fornecedor_id"], artigo.get("marca")
+            )
+
+            col4, col5 = st.columns(2)
+
+            with col4:
+                custo = st.number_input(
+                    "Preço Compra (EUR )",
+                    min_value=0.0,
+                    step=0.01,
+                    key=f"custo_{artigo['id']}"
+                )
+                if custo > 0:
+                    preco_venda = custo * (1 + margem / 100)
+                    st.caption(f"Margem aplicada: {margem:.1f}%")
+                    st.success(f"P.V.: EUR {preco_venda:.2f}")
+
+            with col5:
+                validade_default = date.today() + timedelta(days=30)
+                validade_preco = st.date_input(
+                    "Validade Preço",
+                    value=validade_default,
+                    key=f"val_{artigo['id']}"
+                )
+
+
+            respostas.append((
+                artigo['id'], custo, validade_preco.isoformat(), peso,
+                hs_code, pais_origem, descricao_editada, quantidade_final, prazo
+            ))
+
+        st.markdown("---")
+
+        col_obs, col_env = st.columns([3, 1])
+
+        with col_obs:
+            observacoes = st.text_area(
+                "Observações",
+                key=f"obs_{cotacao['id']}",
+                height=110
+            )
+
+        with col_env:
+            custo_envio = st.number_input(
+                "Custos Envio",
+                min_value=0.0,
+                step=0.01,
+                key=f"custo_envio_{cotacao['id']}"
+            )
+            custo_embalagem = st.number_input(
+                "Custos Embalagem",
+                min_value=0.0,
+                step=0.01,
+                key=f"custo_emb_{cotacao['id']}"
+            )
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            enviar = st.form_submit_button("✅ Enviar Resposta e Email", type="primary")
+
+        with col2:
+            cancelar = st.form_submit_button("❌ Cancelar")
+
+    if enviar:
+        respostas_validas = [r for r in respostas if r[1] > 0]
+
+        if respostas_validas:
+            if guardar_respostas(
+                cotacao['id'],
+                respostas_validas,
+                custo_envio,
+                custo_embalagem,
+                observacoes,
+            ):
+                if pdf_resposta_bytes is not None:
+                    with open(
+                        f"resposta_fornecedor_{cotacao['id']}.pdf", "wb"
+                    ) as f:
+                        f.write(pdf_resposta_bytes)
+                st.success("✅ Resposta guardada e email enviado com sucesso!")
+                st.rerun()
+        else:
+            st.error("Por favor, preencha pelo menos um preço")
+
+    if cancelar:
+        st.rerun()
+
+
+@st.dialog("Criar Cotação para Cliente")
+def criar_cotacao_cliente_dialog(
+    rfq_id,
+    numero_processo,
+    referencia_cliente,
+    nome_cliente,
+    email_cliente,
+):
+    respostas = obter_respostas_cotacao(rfq_id)
+
+    if not respostas:
+        st.info("Ainda não existem respostas registadas para esta cotação.")
+        return
+
+    with st.form(f"cliente_form_{rfq_id}"):
+        st.markdown(
+            "Selecione os artigos a incluir na cotação do cliente. Os artigos não selecionados serão ignorados.")
+
+        selecao_respostas: dict[int, bool] = {}
+        for resposta in respostas:
+            descricao = resposta.get("descricao") or resposta.get("descricao_original") or "Artigo"
+            preco = resposta.get("preco_venda") or 0
+            moeda = resposta.get("moeda") or "EUR"
+            validade = resposta.get("validade_preco") or ""
+            legenda = f"{descricao[:80]}"
+            legenda += f" • Qtd: {resposta.get('quantidade_final') or resposta.get('quantidade_original')}"
+            legenda += f" • P.V.: {preco:.2f} {moeda}"
+            if validade:
+                try:
+                    validade_fmt = _format_iso_date(validade)
+                except Exception:
+                    validade_fmt = validade
+                if validade_fmt:
+                    legenda += f" • Validade: {validade_fmt}"
+
+            incluir_default = bool((preco and preco > 0) or ((resposta.get("custo") or 0) > 0))
+            selecao_respostas[resposta['id']] = st.checkbox(
+                legenda,
+                value=incluir_default,
+                key=f"cliente_sel_{rfq_id}_{resposta['id']}"
+            )
+
+        enviar_email = False
+        if email_cliente:
+            enviar_email = st.checkbox(
+                f"Enviar PDF automaticamente para {email_cliente}",
+                value=False,
+                key=f"cliente_email_{rfq_id}"
+            )
+        submitted = st.form_submit_button("💰 Criar Cotação", type="primary")
+
+    if not submitted:
+        return
+
+    selecionados = [rid for rid, ativo in selecao_respostas.items() if ativo]
+    if not selecionados:
+        st.error("Selecione pelo menos um artigo para gerar a cotação do cliente.")
+        return
+
+    selecoes = {}
+    for resposta in respostas:
+        proc_art_id = resposta.get("processo_artigo_id")
+        if not proc_art_id:
+            continue
+        if selecao_respostas.get(resposta['id']):
+            selecoes[proc_art_id] = resposta['id']
+        else:
+            selecoes[proc_art_id] = None
+
+    if not selecoes:
+        st.error("Não foi possível associar os artigos selecionados ao processo.")
+        return
+
+    if not guardar_selecoes_processo(selecoes):
+        st.error("Não foi possível guardar a seleção de artigos para o processo.")
+        return
+
+    if not gerar_pdf_cliente(rfq_id):
+        st.error("Não foi possível gerar o PDF do cliente.")
+        return
+
+    st.success("Cotação do cliente gerada com sucesso!")
+
+    pdf_bytes = obter_pdf_da_db(rfq_id, "cliente")
+    if pdf_bytes:
+        nome_base = numero_processo or f"cotacao_{rfq_id}"
+        st.download_button(
+            "⬇️ Descarregar PDF Cliente",
+            data=pdf_bytes,
+            file_name=f"cliente_{nome_base}.pdf",
+            mime="application/pdf",
+            key=f"download_cliente_{rfq_id}"
+        )
+
+    if enviar_email and email_cliente:
+        if enviar_email_orcamento(
+            email_cliente,
+            nome_cliente or "Cliente",
+            referencia_cliente or "",
+            numero_processo or "",
+            rfq_id,
+        ):
+            st.success("E-mail enviado ao cliente com sucesso!")
+        else:
+            st.error("Falha ao enviar o e-mail ao cliente.")
 
 
 def extrair_texto_pdf(pdf_bytes):
@@ -3306,203 +3609,8 @@ elif menu_option == "📩 Responder Cotações":
     if "cotacoes_arq_page" not in st.session_state:
         st.session_state.cotacoes_arq_page = 0
 
-    @st.dialog("Responder Cotação")
-    def responder_cotacao_dialog(cotacao):
-        st.markdown(
-            """
-            <style>
-            /* Occupy the full viewport with the dialog overlay */
-            [data-testid="stDialog"] {
-                width: 100%;
-                height: 100%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            /* Expand inner dialog content to occupy full form */
-            [data-testid="stDialog"] > div {
-                width: 100%;
-                padding-top: 20px;
-                min-width: 60rem;
-            }
-            /* Ensure form stretches to fill available space */
-            [data-testid="stDialog"] form {
-                width: 100%;
-                height: 100%;
-            }
-            [data-testid="stDialog"] .st-ft {
-                min-width: 60rem;
-            }
-            [data-testid="stDialog"] hr {
-                margin: 1.3em 0px;
-            }
-
-            [data-testid="stVerticalBlock"]{
-                gap: .2rem;
-            }
-            
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
-        detalhes = obter_detalhes_cotacao(cotacao['id'])
-        st.info(f"**Responder a Cotação {cotacao['processo']}**")
-
-        pdf_resposta_bytes = None
-        with st.form(f"resposta_form_{cotacao['id']}"):
-            respostas = []
-            pdf_resposta = st.file_uploader(
-                "Resposta do Fornecedor (PDF ou email)",
-                type=["pdf", "eml"],
-                key=f"pdf_{cotacao['id']}"
-            )
-            if pdf_resposta is not None:
-                _, pdf_resposta_bytes = processar_upload_pdf(pdf_resposta)
-
-            for i, artigo in enumerate(detalhes['artigos'], 1):
-                st.subheader(f"Artigo {i}: {artigo['artigo_num'] if artigo['artigo_num'] else 'S/N'}")
-
-                col1, col2, col3 = st.columns([2, 1, 1])
-
-                with col1:
-                    descricao_editada = st.text_area(
-                        "Descrição (editável)",
-                        value=artigo['descricao'],
-                        key=f"desc_{artigo['id']}",
-                        height=180
-                    )
-
-                with col2:
-                    quantidade_original = artigo['quantidade']
-                    quantidade_final = st.number_input(
-                        f"Qtd (Original: {quantidade_original})",
-                        min_value=1,
-                        value=quantidade_original,
-                        key=f"qtd_{artigo['id']}"
-                    )
-                    peso = st.number_input(
-                        "Peso Unitário(kg)",
-                        min_value=0.0,
-                        step=0.1,
-                        key=f"peso_{artigo['id']}"
-                    )
-                    prazo = st.number_input(
-                        "Prazo (dias)",
-                        min_value=0,
-                        step=1,
-                        key=f"prazo_{artigo['id']}"
-                    )
-
-                with col3:
-                    hs_code = st.text_input(
-                        "HS Code",
-                        key=f"hs_{artigo['id']}"
-                    )
-                    pais_origem = st.text_input(
-                        "País Origem",
-                        key=f"pais_{artigo['id']}"
-                    )
-
-                margem = obter_margem_para_marca(
-                    detalhes["fornecedor_id"], artigo.get("marca")
-                )
-
-                col4, col5 = st.columns(2)
-
-                with col4:
-                    custo = st.number_input(
-                        "Preço Compra (EUR )",
-                        min_value=0.0,
-                        step=0.01,
-                        key=f"custo_{artigo['id']}"
-                    )
-                    if custo > 0:
-                        preco_venda = custo * (1 + margem / 100)
-                        st.caption(f"Margem aplicada: {margem:.1f}%")
-                        st.success(f"P.V.: EUR {preco_venda:.2f}")
-
-                with col5:
-                    validade_default = date.today() + timedelta(days=30)
-                    validade_preco = st.date_input(
-                        "Validade Preço",
-                        value=validade_default,
-                        key=f"val_{artigo['id']}"
-                    )
-
-
-                respostas.append((
-                    artigo['id'], custo, validade_preco.isoformat(), peso,
-                    hs_code, pais_origem, descricao_editada, quantidade_final, prazo
-                ))
-
-            st.markdown("---")
-
-            col_obs, col_env = st.columns([3, 1])
-
-            with col_obs:
-                observacoes = st.text_area(
-                    "Observações",
-                    key=f"obs_{cotacao['id']}",
-                    height=110
-                )
-
-            with col_env:
-                custo_envio = st.number_input(
-                    "Custos Envio",
-                    min_value=0.0,
-                    step=0.01,
-                    key=f"custo_envio_{cotacao['id']}",
-                )
-                custo_embalagem = st.number_input(
-                    "Custos Embalagem",
-                    min_value=0.0,
-                    step=0.01,
-                    key=f"custo_emb_{cotacao['id']}",
-                )
-
-                
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                enviar = st.form_submit_button("✅ Enviar Resposta e Email", type="primary")
-
-            with col2:
-                cancelar = st.form_submit_button("❌ Cancelar")
-
-        if enviar:
-            respostas_validas = [r for r in respostas if r[1] > 0]
-
-            if respostas_validas:
-                if guardar_respostas(
-                    cotacao['id'],
-                    respostas_validas,
-                    custo_envio,
-                    custo_embalagem,
-                    observacoes,
-                ):
-                    if pdf_resposta_bytes is not None:
-                        with open(
-                            f"resposta_fornecedor_{cotacao['id']}.pdf", "wb"
-                        ) as f:
-                            f.write(pdf_resposta_bytes)
-                    st.success("✅ Resposta guardada e email enviado com sucesso!")
-                    st.rerun()
-            else:
-                st.error("Por favor, preencha pelo menos um preço")
-
-        if cancelar:
-            st.rerun()
-    
-    if "process_center_results" not in st.session_state:
-        st.session_state.process_center_results = []
-    if "process_center_selected_id" not in st.session_state:
-        st.session_state.process_center_selected_id = None
-    if "process_center_focus_ref" not in st.session_state:
-        st.session_state.process_center_focus_ref = ""
-
-    tab_pendentes, tab_respondidas, tab_arquivados, tab_process_center = st.tabs(
-        ["Pendentes", "Respondidas", "Arquivados", "Process Center"]
+    tab_process_center, tab_pendentes, tab_respondidas, tab_arquivados = st.tabs(
+        ["Process Center", "Pendentes", "Respondidas", "Arquivados"]
     )
 
     with tab_pendentes:
@@ -4115,6 +4223,45 @@ elif menu_option == "📩 Responder Cotações":
                         expanded = foco_referencia and foco_referencia == (pedido.get("referencia") or "").lower()
 
                         with st.expander(titulo_expander, expanded=bool(expanded)):
+                            cotacao_contexto = {
+                                "id": pedido.get("id"),
+                                "processo": processo_info.get("numero") or "Processo",
+                            }
+                            botoes_acoes = st.columns([1, 1, 1])
+                            with botoes_acoes[0]:
+                                if st.button(
+                                    "💬 Responder",
+                                    key=f"pc_resp_{pedido.get('id')}",
+                                ):
+                                    responder_cotacao_dialog(cotacao_contexto)
+
+                            with botoes_acoes[1]:
+                                pdf_pedido = obter_pdf_da_db(pedido.get("id"), "pedido")
+                                if pdf_pedido:
+                                    st.download_button(
+                                        "📄 PDF Pedido",
+                                        data=pdf_pedido,
+                                        file_name=(
+                                            f"pedido_{processo_info.get('numero') or pedido.get('id')}.pdf"
+                                        ),
+                                        mime="application/pdf",
+                                        key=f"pc_pdf_{pedido.get('id')}"
+                                    )
+
+                            with botoes_acoes[2]:
+                                if st.button(
+                                    "💰 Criar Cotação Cliente",
+                                    key=f"pc_cliente_{pedido.get('id')}",
+                                ):
+                                    criar_cotacao_cliente_dialog(
+                                        pedido.get("id"),
+                                        processo_info.get("numero"),
+                                        pedido.get("referencia"),
+                                        pedido.get("nome_solicitante")
+                                        or pedido.get("cliente"),
+                                        pedido.get("email_solicitante"),
+                                    )
+
                             meta_cols = st.columns(3)
                             with meta_cols[0]:
                                 st.write(
