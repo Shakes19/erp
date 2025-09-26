@@ -651,7 +651,7 @@ def criar_rfq(
             st.error("Erro ao criar RFQ: referência já existente.")
         else:
             st.error(f"Erro ao criar RFQ: {str(e)}")
-        return None, None
+        return None, None, None, None
     finally:
         conn.close()
 
