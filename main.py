@@ -555,8 +555,14 @@ def criar_rfq(
     try:
         utilizador_id = st.session_state.get("user_id")
 
+        ordem_para_processo: dict[int, int | None] = {}
         if processo_id is None or numero_processo is None or processo_artigos is None:
             processo_id, numero_processo, processo_artigos = criar_processo_com_artigos(artigos)
+            ordem_para_processo = {
+                item.get("ordem", idx + 1): item.get("processo_artigo_id")
+                for idx, item in enumerate(processo_artigos)
+                if item.get("processo_artigo_id")
+            }
         else:
             # Garantir que temos um mapa por ordem caso não exista nos artigos
             ordem_para_processo = {
@@ -582,62 +588,91 @@ def criar_rfq(
             if row:
                 nome_solicitante, email_solicitante, empresa_solicitante = row
 
-        if engine.dialect.name == "sqlite":
-            c.execute(
-                """
-                INSERT INTO rfq (processo_id, fornecedor_id, cliente_id, data, referencia,
-                               nome_solicitante, email_solicitante, empresa_solicitante, estado, utilizador_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendente', ?)
-                """,
-                (
-                    processo_id,
-                    fornecedor_id,
-                    cliente_id,
-                    data.isoformat(),
-                    referencia,
-                    nome_solicitante,
-                    email_solicitante,
-                    empresa_solicitante,
-                    utilizador_id,
-                ),
-            )
-            rfq_id = c.lastrowid
-        else:
-            c.execute(
-                """
-                INSERT INTO rfq (processo_id, fornecedor_id, cliente_id, data, referencia,
-                               nome_solicitante, email_solicitante, empresa_solicitante, estado, utilizador_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendente', ?) RETURNING id
-                """,
-                (
-                    processo_id,
-                    fornecedor_id,
-                    cliente_id,
-                    data.isoformat(),
-                    referencia,
-                    nome_solicitante,
-                    email_solicitante,
-                    empresa_solicitante,
-                    utilizador_id,
-                ),
-            )
-            rfq_id = c.fetchone()[0]
+        def _executar_insercao(conexao: sqlite3.Connection) -> int:
+            cursor = conexao.cursor()
+            if engine.dialect.name == "sqlite":
+                cursor.execute(
+                    """
+                    INSERT INTO rfq (processo_id, fornecedor_id, cliente_id, data, referencia,
+                                   nome_solicitante, email_solicitante, empresa_solicitante, estado, utilizador_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendente', ?)
+                    """,
+                    (
+                        processo_id,
+                        fornecedor_id,
+                        cliente_id,
+                        data.isoformat(),
+                        referencia,
+                        nome_solicitante,
+                        email_solicitante,
+                        empresa_solicitante,
+                        utilizador_id,
+                    ),
+                )
+                rfq_pk = cursor.lastrowid
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO rfq (processo_id, fornecedor_id, cliente_id, data, referencia,
+                                   nome_solicitante, email_solicitante, empresa_solicitante, estado, utilizador_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendente', ?) RETURNING id
+                    """,
+                    (
+                        processo_id,
+                        fornecedor_id,
+                        cliente_id,
+                        data.isoformat(),
+                        referencia,
+                        nome_solicitante,
+                        email_solicitante,
+                        empresa_solicitante,
+                        utilizador_id,
+                    ),
+                )
+                rfq_pk = cursor.fetchone()[0]
 
-        # Inserir artigos
-        for ordem, art in enumerate(artigos, 1):
-            if art.get("descricao", "").strip():
-                processo_artigo_id = art.get("processo_artigo_id")
-                if not processo_artigo_id and processo_artigos:
-                    processo_artigo_id = ordem_para_processo.get(ordem) if "ordem_para_processo" in locals() else processo_artigos[ordem - 1].get("processo_artigo_id")
-                c.execute("""
-                    INSERT INTO artigo (rfq_id, artigo_num, descricao, quantidade,
-                                      unidade, especificacoes, marca, ordem, processo_artigo_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (rfq_id, art.get("artigo_num", ""), art["descricao"],
-                      art.get("quantidade", 1), art.get("unidade", "Peças"),
-                      art.get("especificacoes", ""), art.get("marca", ""), ordem, processo_artigo_id))
+            for ordem, art in enumerate(artigos, 1):
+                if art.get("descricao", "").strip():
+                    processo_artigo_id = art.get("processo_artigo_id")
+                    if not processo_artigo_id and processo_artigos:
+                        processo_artigo_id = ordem_para_processo.get(ordem)
+                        if not processo_artigo_id and ordem - 1 < len(processo_artigos):
+                            processo_artigo_id = processo_artigos[ordem - 1].get(
+                                "processo_artigo_id"
+                            )
+                    cursor.execute(
+                        """
+                        INSERT INTO artigo (rfq_id, artigo_num, descricao, quantidade,
+                                          unidade, especificacoes, marca, ordem, processo_artigo_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            rfq_pk,
+                            art.get("artigo_num", ""),
+                            art["descricao"],
+                            art.get("quantidade", 1),
+                            art.get("unidade", "Peças"),
+                            art.get("especificacoes", ""),
+                            art.get("marca", ""),
+                            ordem,
+                            processo_artigo_id,
+                        ),
+                    )
 
-        conn.commit()
+            conexao.commit()
+            return rfq_pk
+
+        try:
+            rfq_id = _executar_insercao(conn)
+        except sqlite3.OperationalError as db_err:
+            if "rfq_old" in str(db_err).lower():
+                conn.rollback()
+                conn.close()
+                criar_base_dados_completa()
+                conn = obter_conexao()
+                rfq_id = _executar_insercao(conn)
+            else:
+                raise
 
         # Gerar PDF
         gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos)
