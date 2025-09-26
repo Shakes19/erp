@@ -2819,6 +2819,10 @@ elif menu_option == "📩 Responder Cotações":
                         key=f"pais_{artigo['id']}"
                     )
 
+                margem = obter_margem_para_marca(
+                    detalhes["fornecedor_id"], artigo.get("marca")
+                )
+
                 col4, col5 = st.columns(2)
 
                 with col4:
@@ -2829,7 +2833,8 @@ elif menu_option == "📩 Responder Cotações":
                         key=f"custo_{artigo['id']}"
                     )
                     if custo > 0:
-                        preco_venda = custo * (1 + margem/100)
+                        preco_venda = custo * (1 + margem / 100)
+                        st.caption(f"Margem aplicada: {margem:.1f}%")
                         st.success(f"P.V.: EUR {preco_venda:.2f}")
 
                 with col5:
