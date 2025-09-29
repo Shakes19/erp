@@ -163,24 +163,45 @@ def obter_marcas_fornecedor(fornecedor_id):
     """Obter marcas associadas a um fornecedor"""
     conn = obter_conexao()
     c = conn.cursor()
-    c.execute("""
-        SELECT marca FROM fornecedor_marca 
-        WHERE fornecedor_id = ? 
-        ORDER BY marca
-    """, (fornecedor_id,))
-    marcas = [row[0] for row in c.fetchall()]
+    c.execute(
+        """
+        SELECT TRIM(marca) FROM fornecedor_marca
+        WHERE fornecedor_id = ?
+        AND marca IS NOT NULL
+        ORDER BY TRIM(marca)
+        """,
+        (fornecedor_id,),
+    )
+    marcas = [row[0] for row in c.fetchall() if row[0]]
     conn.close()
     return marcas
 
 def adicionar_marca_fornecedor(fornecedor_id, marca):
     """Adicionar marca a um fornecedor"""
+    marca_limpa = (marca or "").strip()
+    if not marca_limpa:
+        return False
+
     conn = obter_conexao()
     c = conn.cursor()
     try:
-        c.execute("""
+        c.execute(
+            """
+            SELECT 1 FROM fornecedor_marca
+            WHERE fornecedor_id = ? AND TRIM(marca) = ?
+            """,
+            (fornecedor_id, marca_limpa),
+        )
+        if c.fetchone():
+            return False
+
+        c.execute(
+            """
             INSERT INTO fornecedor_marca (fornecedor_id, marca)
             VALUES (?, ?)
-        """, (fornecedor_id, marca))
+            """,
+            (fornecedor_id, marca_limpa),
+        )
         conn.commit()
         return True
     except Exception:
@@ -190,12 +211,19 @@ def adicionar_marca_fornecedor(fornecedor_id, marca):
 
 def remover_marca_fornecedor(fornecedor_id, marca):
     """Remover marca de um fornecedor"""
+    marca_limpa = (marca or "").strip()
+    if not marca_limpa:
+        return False
+
     conn = obter_conexao()
     c = conn.cursor()
-    c.execute("""
+    c.execute(
+        """
         DELETE FROM fornecedor_marca
-        WHERE fornecedor_id = ? AND marca = ?
-    """, (fornecedor_id, marca))
+        WHERE fornecedor_id = ? AND TRIM(marca) = ?
+        """,
+        (fornecedor_id, marca_limpa),
+    )
     conn.commit()
     rows_affected = c.rowcount
     conn.close()
@@ -206,8 +234,15 @@ def listar_todas_marcas():
     """Obter todas as marcas disponíveis"""
     conn = obter_conexao()
     c = conn.cursor()
-    c.execute("SELECT DISTINCT marca FROM fornecedor_marca ORDER BY marca")
-    marcas = [row[0] for row in c.fetchall()]
+    c.execute(
+        """
+        SELECT DISTINCT TRIM(marca)
+        FROM fornecedor_marca
+        WHERE marca IS NOT NULL AND TRIM(marca) != ''
+        ORDER BY TRIM(marca)
+        """
+    )
+    marcas = [row[0] for row in c.fetchall() if row[0]]
     conn.close()
     return marcas
 
@@ -215,7 +250,8 @@ def listar_todas_marcas():
 def obter_fornecedores_por_marca(marca):
     """Retorna lista de fornecedores (id, nome, email) associados à marca."""
 
-    if not marca:
+    marca_limpa = (marca or "").strip()
+    if not marca_limpa:
         return []
 
     conn = obter_conexao()
@@ -225,10 +261,10 @@ def obter_fornecedores_por_marca(marca):
         SELECT f.id, f.nome, f.email
         FROM fornecedor f
         JOIN fornecedor_marca fm ON f.id = fm.fornecedor_id
-        WHERE fm.marca = ?
+        WHERE TRIM(fm.marca) = ?
         ORDER BY f.nome
         """,
-        (marca,),
+        (marca_limpa,),
     )
     res = c.fetchall()
     conn.close()
@@ -1432,16 +1468,20 @@ def obter_margem_para_marca(fornecedor_id, marca):
     devolvido ``0.0``.
     """
     try:
+        marca_limpa = (marca or "").strip()
         conn = obter_conexao()
         c = conn.cursor()
 
         # Procurar margem específica para fornecedor e marca
-        if marca:
-            c.execute("""
+        if marca_limpa:
+            c.execute(
+                """
                 SELECT margem_percentual FROM configuracao_margens
-                WHERE fornecedor_id = ? AND marca = ? AND ativo = TRUE
+                WHERE fornecedor_id = ? AND TRIM(marca) = ? AND ativo = TRUE
                 ORDER BY id DESC LIMIT 1
-            """, (fornecedor_id, marca))
+                """,
+                (fornecedor_id, marca_limpa),
+            )
             result = c.fetchone()
             if result:
                 conn.close()
@@ -1457,21 +1497,28 @@ def obter_margem_para_marca(fornecedor_id, marca):
 def configurar_margem_marca(fornecedor_id, marca, margem_percentual):
     """Configurar margem para fornecedor/marca"""
     try:
+        marca_limpa = (marca or "").strip()
+        if not marca_limpa:
+            return False
+
         conn = obter_conexao()
         c = conn.cursor()
-        
+
         # Desativar margens anteriores
-        c.execute("""
+        c.execute(
+            """
             UPDATE configuracao_margens SET ativo = FALSE
-            WHERE fornecedor_id = ? AND marca = ?
-        """, (fornecedor_id, marca))
-        
+            WHERE fornecedor_id = ? AND TRIM(marca) = ?
+            """,
+            (fornecedor_id, marca_limpa),
+        )
+
         # Inserir nova margem
         c.execute("""
             INSERT INTO configuracao_margens (fornecedor_id, marca, margem_percentual, ativo)
             VALUES (?, ?, ?, TRUE)
-        """, (fornecedor_id, marca, margem_percentual))
-        
+        """, (fornecedor_id, marca_limpa, margem_percentual))
+
         conn.commit()
         conn.close()
         return True
