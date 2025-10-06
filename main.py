@@ -3895,7 +3895,10 @@ elif menu_option == "📩 Responder Cotações":
                                         "Fornecedor",
                                         options=opcoes,
                                         index=indice_default,
-                                        key=f"selec_{cotacao['processo_id']}_{artigo_proc['processo_artigo_id']}_{idx_artigo}",
+                                        key=(
+                                            f"selec_{cotacao['id']}_{cotacao['processo_id']}"
+                                            f"_{artigo_proc['processo_artigo_id']}_{idx_artigo}"
+                                        ),
                                         format_func=lambda opt: opt[1] if isinstance(opt, tuple) else opt,
                                     )
                                     selecoes_novas[artigo_proc['processo_artigo_id']] = escolha[0]
