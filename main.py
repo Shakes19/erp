@@ -3108,6 +3108,15 @@ for artigo in st.session_state.artigos:
     if isinstance(artigo.get("quantidade"), (int, float)):
         artigo["quantidade"] = str(artigo["quantidade"])
 
+if 'nova_cotacao_referencia' not in st.session_state:
+    st.session_state.nova_cotacao_referencia = ""
+
+if 'nova_cotacao_data' not in st.session_state:
+    st.session_state.nova_cotacao_data = date.today()
+
+if 'cliente_select_nova' not in st.session_state:
+    st.session_state.cliente_select_nova = None
+
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.role = None
@@ -3334,19 +3343,28 @@ elif menu_option == "📝 Nova Cotação":
 
     with st.form(key="nova_cotacao_form"):
         clientes = listar_clientes()
+        clientes_opcoes = [None] + clientes
         col_data, col_ref, col_cliente = st.columns([1.2, 1.8, 2.5])
 
         with col_data:
-            data = st.date_input("Data da cotação", datetime.today())
+            data = st.date_input(
+                "Data da cotação",
+                value=st.session_state.nova_cotacao_data,
+                key="nova_cotacao_data",
+            )
 
         with col_ref:
-            referencia_input = st.text_input("Referência Cliente")
+            referencia_input = st.text_input(
+                "Referência Cliente",
+                value=st.session_state.nova_cotacao_referencia,
+                key="nova_cotacao_referencia",
+            )
 
         with col_cliente:
             cliente_sel = st.selectbox(
                 "Cliente",
-                options=clientes,
-                format_func=lambda x: x[1] if x else "",
+                options=clientes_opcoes,
+                format_func=lambda x: x[1] if x else "Selecione um cliente",
                 key="cliente_select_nova",
             )
 
@@ -3367,7 +3385,7 @@ elif menu_option == "📝 Nova Cotação":
                     artigo['descricao'] = st.text_area(
                         "Descrição *",
                         value=artigo['descricao'],
-                        key=f"desc_{i}",
+                        key=f"nova_desc_{i}",
                         height=120,
                     )
 
@@ -3375,7 +3393,7 @@ elif menu_option == "📝 Nova Cotação":
                     artigo['artigo_num'] = st.text_input(
                         "Nº Artigo",
                         value=artigo['artigo_num'],
-                        key=f"art_num_{i}",
+                        key=f"nova_art_num_{i}",
                     )
                     marca_opcoes = [""] + [m for m in marcas if m]
                     if artigo.get('marca') and artigo['marca'] not in marca_opcoes:
@@ -3384,14 +3402,14 @@ elif menu_option == "📝 Nova Cotação":
                         "Marca *",
                         marca_opcoes,
                         index=marca_opcoes.index(artigo['marca']) if artigo.get('marca') in marca_opcoes else 0,
-                        key=f"marca_{i}",
+                        key=f"nova_marca_{i}",
                     )
 
                 with col_qty:
                     artigo['quantidade'] = st.text_input(
                         "Quantidade *",
                         value=str(artigo.get('quantidade', "")),
-                        key=f"qtd_{i}",
+                        key=f"nova_qtd_{i}",
                         placeholder="Insira a quantidade",
                     )
 
@@ -3399,7 +3417,7 @@ elif menu_option == "📝 Nova Cotação":
                         "Unidade",
                         ["Peças", "Metros", "KG", "Litros", "Caixas", "Paletes"],
                         index=0,
-                        key=f"unidade_{i}",
+                        key=f"nova_unidade_{i}",
                     )
 
                 with col_del:
@@ -3438,22 +3456,10 @@ elif menu_option == "📝 Nova Cotação":
                 "<div style='height: 2.5rem;'></div>",
                 unsafe_allow_html=True,
             )
-            quantidades_preenchidas = any(
-                (
-                    isinstance(art.get('quantidade'), str)
-                    and art.get('quantidade').strip()
-                )
-                or (
-                    isinstance(art.get('quantidade'), (int, float))
-                    and art.get('quantidade') > 0
-                )
-                for art in st.session_state.artigos
-            )
             criar_cotacao = st.form_submit_button(
                 "✅ Criar Cotação",
                 type="primary",
                 use_container_width=True,
-                disabled=not quantidades_preenchidas,
             )
             limpar_form = st.form_submit_button(
                 "♻️ Limpar Formulário",
@@ -3618,6 +3624,15 @@ elif menu_option == "📝 Nova Cotação":
                             "marca": "",
                         }]
                         st.session_state.pedido_cliente_anexos = []
+                        st.session_state.nova_cotacao_referencia = ""
+                        st.session_state.nova_cotacao_data = date.today()
+                        st.session_state.cliente_select_nova = None
+                        st.session_state.pop('upload_pedido_cliente', None)
+                        for key in list(st.session_state.keys()):
+                            for prefix in ("nova_desc_", "nova_art_num_", "nova_qtd_", "nova_unidade_", "nova_marca_"):
+                                if key.startswith(prefix):
+                                    st.session_state.pop(key, None)
+                                    break
                         st.rerun()
                     else:
                         st.error("Não foi possível criar as cotações para os fornecedores selecionados.")
