@@ -3826,7 +3826,7 @@ elif menu_option == "📩 Responder Cotações":
             st.rerun()
 
         if cotacoes_respondidas:
-            for cotacao in cotacoes_respondidas:
+            for idx_cotacao, cotacao in enumerate(cotacoes_respondidas):
                 with st.expander(f"{cotacao['processo']} - {cotacao['fornecedor']} - Ref: {cotacao['referencia']}", expanded=False):
                     # Detalhes da cotação
                     detalhes = obter_detalhes_cotacao(cotacao['id'])
@@ -3915,7 +3915,7 @@ elif menu_option == "📩 Responder Cotações":
                                 )
                                 if st.button(
                                     "💾 Guardar Seleção",
-                                    key=f"guardar_sel_{cotacao['processo_id']}_{cotacao['id']}",
+                                    key=f"guardar_sel_{cotacao['processo_id']}_{cotacao['id']}_{idx_cotacao}",
                                 ):
                                     if guardar_selecoes_processo(selecoes_novas):
                                         st.success("Seleção guardada com sucesso!")
@@ -3929,7 +3929,7 @@ elif menu_option == "📩 Responder Cotações":
                                 )
                                 if st.button(
                                     "📤 Enviar para Cliente",
-                                    key=f"enviar_cliente_{cotacao['processo_id']}_{cotacao['id']}",
+                                    key=f"enviar_cliente_{cotacao['processo_id']}_{cotacao['id']}_{idx_cotacao}",
                                 ):
                                     if any(valor is None for valor in selecoes_novas.values()):
                                         st.error("Selecione um fornecedor para todos os artigos antes de enviar ao cliente.")
