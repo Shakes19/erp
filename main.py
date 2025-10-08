@@ -3069,10 +3069,14 @@ if 'artigos' not in st.session_state:
     st.session_state.artigos = [{
         "artigo_num": "",
         "descricao": "",
-        "quantidade": 1,
+        "quantidade": "",
         "unidade": "Peças",
         "marca": ""
     }]
+
+for artigo in st.session_state.artigos:
+    if isinstance(artigo.get("quantidade"), (int, float)):
+        artigo["quantidade"] = str(artigo["quantidade"])
 
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
@@ -3300,10 +3304,13 @@ elif menu_option == "📝 Nova Cotação":
 
     with st.form(key="nova_cotacao_form"):
         clientes = listar_clientes()
-        col_data, col_cliente, col_ref = st.columns([1.2, 2.5, 1.6])
+        col_data, col_ref, col_cliente = st.columns([1.2, 1.8, 2.5])
 
         with col_data:
             data = st.date_input("Data da cotação", datetime.today())
+
+        with col_ref:
+            referencia_input = st.text_input("Referência Cliente")
 
         with col_cliente:
             cliente_sel = st.selectbox(
@@ -3312,9 +3319,6 @@ elif menu_option == "📝 Nova Cotação":
                 format_func=lambda x: x[1] if x else "",
                 key="cliente_select_nova",
             )
-
-        with col_ref:
-            referencia_input = st.text_input("Referência Cliente")
 
         nome_solicitante = cliente_sel[1] if cliente_sel else ""
         email_solicitante = cliente_sel[2] if cliente_sel else ""
@@ -3354,11 +3358,11 @@ elif menu_option == "📝 Nova Cotação":
                     )
 
                 with col_qty:
-                    artigo['quantidade'] = st.number_input(
-                        "Quantidade",
-                        min_value=1,
-                        value=artigo['quantidade'],
+                    artigo['quantidade'] = st.text_input(
+                        "Quantidade *",
+                        value=str(artigo.get('quantidade', "")),
                         key=f"qtd_{i}",
+                        placeholder="Insira a quantidade",
                     )
 
                     artigo['unidade'] = st.selectbox(
@@ -3377,28 +3381,50 @@ elif menu_option == "📝 Nova Cotação":
                     if st.form_submit_button(delete_label):
                         remover_indice = i - 1
 
-        col_acoes_1, col_acoes_2, _ = st.columns([1, 1, 2])
+        col_acoes_1, _, _ = st.columns([1, 1, 2])
 
         with col_acoes_1:
             adicionar_artigo = st.form_submit_button("➕ Adicionar Artigo")
 
-        with col_acoes_2:
-            limpar_form = st.form_submit_button("🗑️ Limpar Formulário")
-
         st.markdown("### 📎 Pedido do cliente")
-        upload_pedido_cliente = st.file_uploader(
-            "📎 Pedido do cliente (PDF ou email)",
-            type=["pdf", "eml"],
-            key='upload_pedido_cliente'
-        )
-        if upload_pedido_cliente is not None:
-            pedido_nome_pdf, pedido_pdf_bytes = processar_upload_pdf(upload_pedido_cliente)
-            exibir_pdf("👁️ PDF carregado", pedido_pdf_bytes, expanded=True)
+        col_upload, col_submit = st.columns([3, 1.2])
 
-        col_submit_left, col_submit_center, col_submit_right = st.columns([1, 1, 1])
+        with col_upload:
+            upload_pedido_cliente = st.file_uploader(
+                "📎 Pedido do cliente (PDF ou email)",
+                type=["pdf", "eml"],
+                key='upload_pedido_cliente'
+            )
+            if upload_pedido_cliente is not None:
+                pedido_nome_pdf, pedido_pdf_bytes = processar_upload_pdf(upload_pedido_cliente)
+                exibir_pdf("👁️ PDF carregado", pedido_pdf_bytes, expanded=True)
 
-        with col_submit_center:
-            criar_cotacao = st.form_submit_button("✅ Criar Cotação", type="primary")
+        with col_submit:
+            st.markdown(
+                "<div style='height: 2.5rem;'></div>",
+                unsafe_allow_html=True,
+            )
+            quantidades_preenchidas = any(
+                (
+                    isinstance(art.get('quantidade'), str)
+                    and art.get('quantidade').strip()
+                )
+                or (
+                    isinstance(art.get('quantidade'), (int, float))
+                    and art.get('quantidade') > 0
+                )
+                for art in st.session_state.artigos
+            )
+            criar_cotacao = st.form_submit_button(
+                "✅ Criar Cotação",
+                type="primary",
+                use_container_width=True,
+                disabled=not quantidades_preenchidas,
+            )
+            limpar_form = st.form_submit_button(
+                "♻️ Limpar Formulário",
+                use_container_width=True,
+            )
     
     # Processar ações
     if remover_indice is not None:
@@ -3407,7 +3433,7 @@ elif menu_option == "📝 Nova Cotação":
             st.session_state.artigos = [{
                 "artigo_num": "",
                 "descricao": "",
-                "quantidade": 1,
+                "quantidade": "",
                 "unidade": "Peças",
                 "marca": ""
             }]
@@ -3417,7 +3443,7 @@ elif menu_option == "📝 Nova Cotação":
         st.session_state.artigos.append({
             "artigo_num": "",
             "descricao": "",
-            "quantidade": 1,
+            "quantidade": "",
             "unidade": "Peças",
             "marca": ""
         })
@@ -3427,7 +3453,7 @@ elif menu_option == "📝 Nova Cotação":
         st.session_state.artigos = [{
             "artigo_num": "",
             "descricao": "",
-            "quantidade": 1,
+            "quantidade": "",
             "unidade": "Peças",
             "marca": ""
         }]
@@ -3449,10 +3475,24 @@ elif menu_option == "📝 Nova Cotação":
                 if not marca:
                     erros.append(f"Artigo {idx}: selecione uma marca")
                     continue
+                quantidade_str = str(art.get('quantidade', '')).strip()
+                if not quantidade_str:
+                    erros.append(f"Artigo {idx}: indique uma quantidade")
+                    continue
+                try:
+                    quantidade_valor = float(quantidade_str.replace(',', '.'))
+                except ValueError:
+                    erros.append(f"Artigo {idx}: quantidade inválida")
+                    continue
+                if quantidade_valor <= 0:
+                    erros.append(f"Artigo {idx}: a quantidade deve ser superior a zero")
+                    continue
+                if quantidade_valor.is_integer():
+                    quantidade_valor = int(quantidade_valor)
                 artigos_validos.append({
                     "artigo_num": art.get('artigo_num', ''),
                     "descricao": descricao,
-                    "quantidade": art.get('quantidade', 1),
+                    "quantidade": quantidade_valor,
                     "unidade": art.get('unidade', 'Peças'),
                     "marca": marca,
                 })
@@ -3539,7 +3579,7 @@ elif menu_option == "📝 Nova Cotação":
                         st.session_state.artigos = [{
                             "artigo_num": "",
                             "descricao": "",
-                            "quantidade": 1,
+                            "quantidade": "",
                             "unidade": "Peças",
                             "marca": "",
                         }]
