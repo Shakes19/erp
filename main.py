@@ -3297,43 +3297,52 @@ elif menu_option == "📝 Nova Cotação":
     st.title("📝 Criar Nova Cotação")
 
     marcas = listar_todas_marcas()
-    data = st.date_input("Data da cotação", datetime.today())
 
     with st.form(key="nova_cotacao_form"):
         clientes = listar_clientes()
-        cliente_sel = st.selectbox(
-            "Cliente",
-            options=clientes,
-            format_func=lambda x: x[1] if x else "",
-            key="cliente_select_nova",
-        )
+        col_data, col_cliente, col_ref = st.columns([1.2, 2.5, 1.6])
+
+        with col_data:
+            data = st.date_input("Data da cotação", datetime.today())
+
+        with col_cliente:
+            cliente_sel = st.selectbox(
+                "Cliente",
+                options=clientes,
+                format_func=lambda x: x[1] if x else "",
+                key="cliente_select_nova",
+            )
+
+        with col_ref:
+            referencia_input = st.text_input("Referência Cliente")
+
         nome_solicitante = cliente_sel[1] if cliente_sel else ""
         email_solicitante = cliente_sel[2] if cliente_sel else ""
 
-        col_ref, col_pdf = st.columns(2)
-        with col_ref:
-            referencia_input = st.text_input("Referência Cliente")
+        st.markdown("### 📦 Artigos")
+
         pedido_nome_pdf = None
         pedido_pdf_bytes = None
-        with col_pdf:
-            upload_pedido_cliente = st.file_uploader(
-                "📎 Pedido do cliente (PDF ou email)",
-                type=["pdf", "eml"],
-                key='upload_pedido_cliente'
-            )
-            if upload_pedido_cliente is not None:
-                pedido_nome_pdf, pedido_pdf_bytes = processar_upload_pdf(upload_pedido_cliente)
-                exibir_pdf("👁️ PDF carregado", pedido_pdf_bytes, expanded=True)
-
-        st.markdown("### 📦 Artigos")
 
         remover_indice = None
         for i, artigo in enumerate(st.session_state.artigos, 1):
             with st.expander(f"Artigo {i}", expanded=(i == 1)):
-                col1, col2, col3, col_del = st.columns([1, 3, 1, 0.5])
+                col_desc, col_id, col_qty, col_del = st.columns([3, 1.5, 1, 0.5])
 
-                with col1:
-                    artigo['artigo_num'] = st.text_input("Nº Artigo", value=artigo['artigo_num'], key=f"art_num_{i}")
+                with col_desc:
+                    artigo['descricao'] = st.text_area(
+                        "Descrição *",
+                        value=artigo['descricao'],
+                        key=f"desc_{i}",
+                        height=120,
+                    )
+
+                with col_id:
+                    artigo['artigo_num'] = st.text_input(
+                        "Nº Artigo",
+                        value=artigo['artigo_num'],
+                        key=f"art_num_{i}",
+                    )
                     marca_opcoes = [""] + [m for m in marcas if m]
                     if artigo.get('marca') and artigo['marca'] not in marca_opcoes:
                         marca_opcoes.append(artigo['marca'])
@@ -3344,17 +3353,19 @@ elif menu_option == "📝 Nova Cotação":
                         key=f"marca_{i}",
                     )
 
-                with col2:
-                    artigo['descricao'] = st.text_area("Descrição *", value=artigo['descricao'], key=f"desc_{i}", height=100)
-
-                with col3:
-                    artigo['quantidade'] = st.number_input("Quantidade", min_value=1, value=artigo['quantidade'], key=f"qtd_{i}")
+                with col_qty:
+                    artigo['quantidade'] = st.number_input(
+                        "Quantidade",
+                        min_value=1,
+                        value=artigo['quantidade'],
+                        key=f"qtd_{i}",
+                    )
 
                     artigo['unidade'] = st.selectbox(
                         "Unidade",
                         ["Peças", "Metros", "KG", "Litros", "Caixas", "Paletes"],
                         index=0,
-                        key=f"unidade_{i}"
+                        key=f"unidade_{i}",
                     )
 
                 with col_del:
@@ -3366,16 +3377,28 @@ elif menu_option == "📝 Nova Cotação":
                     if st.form_submit_button(delete_label):
                         remover_indice = i - 1
 
-        col1, col2, col3 = st.columns(3)
+        col_acoes_1, col_acoes_2, _ = st.columns([1, 1, 2])
 
-        with col1:
+        with col_acoes_1:
             adicionar_artigo = st.form_submit_button("➕ Adicionar Artigo")
 
-        with col2:
-            criar_cotacao = st.form_submit_button("✅ Criar Cotação", type="primary")
-
-        with col3:
+        with col_acoes_2:
             limpar_form = st.form_submit_button("🗑️ Limpar Formulário")
+
+        st.markdown("### 📎 Pedido do cliente")
+        upload_pedido_cliente = st.file_uploader(
+            "📎 Pedido do cliente (PDF ou email)",
+            type=["pdf", "eml"],
+            key='upload_pedido_cliente'
+        )
+        if upload_pedido_cliente is not None:
+            pedido_nome_pdf, pedido_pdf_bytes = processar_upload_pdf(upload_pedido_cliente)
+            exibir_pdf("👁️ PDF carregado", pedido_pdf_bytes, expanded=True)
+
+        col_submit_left, col_submit_center, col_submit_right = st.columns([1, 1, 1])
+
+        with col_submit_center:
+            criar_cotacao = st.form_submit_button("✅ Criar Cotação", type="primary")
     
     # Processar ações
     if remover_indice is not None:
