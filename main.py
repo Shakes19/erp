@@ -3913,7 +3913,10 @@ elif menu_option == "📩 Responder Cotações":
                                     "<div style='display:flex; justify-content:center;'>",
                                     unsafe_allow_html=True,
                                 )
-                                if st.button("💾 Guardar Seleção", key=f"guardar_sel_{cotacao['processo_id']}"):
+                                if st.button(
+                                    "💾 Guardar Seleção",
+                                    key=f"guardar_sel_{cotacao['processo_id']}_{cotacao['id']}",
+                                ):
                                     if guardar_selecoes_processo(selecoes_novas):
                                         st.success("Seleção guardada com sucesso!")
                                         st.rerun()
@@ -3924,7 +3927,10 @@ elif menu_option == "📩 Responder Cotações":
                                     "<div style='display:flex; justify-content:center;'>",
                                     unsafe_allow_html=True,
                                 )
-                                if st.button("📤 Enviar para Cliente", key=f"enviar_cliente_{cotacao['processo_id']}"):
+                                if st.button(
+                                    "📤 Enviar para Cliente",
+                                    key=f"enviar_cliente_{cotacao['processo_id']}_{cotacao['id']}",
+                                ):
                                     if any(valor is None for valor in selecoes_novas.values()):
                                         st.error("Selecione um fornecedor para todos os artigos antes de enviar ao cliente.")
                                     elif not cotacao['email_solicitante']:
