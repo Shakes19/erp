@@ -4211,55 +4211,58 @@ elif menu_option == "📩 Responder Cotações":
 
             if detalhes_processo:
                 processo_info = detalhes_processo.get("processo", {})
-                st.markdown(f"### {processo_info.get('numero', 'Processo')}")
-                if processo_info.get("descricao"):
-                    st.caption(processo_info.get("descricao"))
+                resumo_col, pedido_cliente_col = st.columns(2)
 
-                info_cols = st.columns(3)
-                with info_cols[0]:
-                    st.write(
-                        f"**Abertura:** {_format_iso_date(processo_info.get('data_abertura')) or '—'}"
-                    )
-                with info_cols[1]:
-                    estado = processo_info.get("estado") or ""
-                    st.write(f"**Estado:** {estado.title() if estado else '—'}")
-                with info_cols[2]:
-                    st.write(
-                        f"**Artigos registados:** {len(detalhes_processo.get('artigos', []))}"
-                    )
+                with resumo_col:
+                    st.markdown(f"### {processo_info.get('numero', 'Processo')}")
+                    if processo_info.get("descricao"):
+                        st.caption(processo_info.get("descricao"))
 
-                metric_cols = st.columns(3)
-                with metric_cols[0]:
-                    st.metric("Pedidos fornecedor", detalhes_processo.get("total_rfqs", 0))
-                with metric_cols[1]:
-                    st.metric("Respostas recebidas", detalhes_processo.get("respondidas", 0))
-                with metric_cols[2]:
-                    pendentes = max(
-                        detalhes_processo.get("total_rfqs", 0) - detalhes_processo.get("respondidas", 0),
-                        0,
-                    )
-                    st.metric("Pendentes", pendentes)
+                    info_cols = st.columns(3)
+                    with info_cols[0]:
+                        st.write(
+                            f"**Abertura:** {_format_iso_date(processo_info.get('data_abertura')) or '—'}"
+                        )
+                    with info_cols[1]:
+                        estado = processo_info.get("estado") or ""
+                        st.write(f"**Estado:** {estado.title() if estado else '—'}")
+                    with info_cols[2]:
+                        st.write(
+                            f"**Artigos registados:** {len(detalhes_processo.get('artigos', []))}"
+                        )
 
-                st.markdown("---")
-                st.subheader("Pedido Cliente")
+                    metric_cols = st.columns(3)
+                    with metric_cols[0]:
+                        st.metric("Pedidos fornecedor", detalhes_processo.get("total_rfqs", 0))
+                    with metric_cols[1]:
+                        st.metric("Respostas recebidas", detalhes_processo.get("respondidas", 0))
+                    with metric_cols[2]:
+                        pendentes = max(
+                            detalhes_processo.get("total_rfqs", 0) - detalhes_processo.get("respondidas", 0),
+                            0,
+                        )
+                        st.metric("Pendentes", pendentes)
 
-                artigos_processo = detalhes_processo.get("artigos", [])
-                if artigos_processo:
-                    df_cliente = pd.DataFrame(
-                        [
-                            {
-                                "Nº Artigo": artigo.get("artigo_num") or "",
-                                "Descrição": artigo.get("descricao"),
-                                "Qtd": artigo.get("quantidade"),
-                                "Unidade": artigo.get("unidade"),
-                                "Marca": artigo.get("marca") or "",
-                            }
-                            for artigo in artigos_processo
-                        ]
-                    )
-                    st.dataframe(df_cliente, use_container_width=True, hide_index=True)
-                else:
-                    st.info("Nenhum artigo registado para este processo.")
+                with pedido_cliente_col:
+                    st.subheader("Pedido Cliente")
+
+                    artigos_processo = detalhes_processo.get("artigos", [])
+                    if artigos_processo:
+                        df_cliente = pd.DataFrame(
+                            [
+                                {
+                                    "Nº Artigo": artigo.get("artigo_num") or "",
+                                    "Descrição": artigo.get("descricao"),
+                                    "Qtd": artigo.get("quantidade"),
+                                    "Unidade": artigo.get("unidade"),
+                                    "Marca": artigo.get("marca") or "",
+                                }
+                                for artigo in artigos_processo
+                            ]
+                        )
+                        st.dataframe(df_cliente, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Nenhum artigo registado para este processo.")
 
                 st.markdown("---")
                 st.subheader("Pedidos Fornecedor")
