@@ -1725,28 +1725,48 @@ Thank you in advance for your prompt response.
         st.error(f"Falha ao enviar email ao fornecedor: {e}")
         return False
 
-def guardar_pdf_upload(rfq_id, tipo_pdf, nome_ficheiro, bytes_):
-    """Guarda um PDF carregado pelo utilizador na tabela pdf_storage."""
+def guardar_pdf_uploads(rfq_id, tipo_pdf_base, ficheiros):
+    """Guardar múltiplos PDFs carregados pelo utilizador na tabela ``pdf_storage``."""
+
+    if not ficheiros:
+        return True
+
     try:
         conn = obter_conexao()
         c = conn.cursor()
+
         c.execute(
             """
-            INSERT INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes, nome_ficheiro)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT (rfq_id, tipo_pdf) DO UPDATE SET
-                pdf_data = excluded.pdf_data,
-                tamanho_bytes = excluded.tamanho_bytes,
-                nome_ficheiro = excluded.nome_ficheiro
+            DELETE FROM pdf_storage
+            WHERE rfq_id = ? AND (
+                tipo_pdf = ? OR tipo_pdf LIKE ?
+            )
             """,
-            (str(rfq_id), tipo_pdf, bytes_, len(bytes_), nome_ficheiro),
+            (str(rfq_id), tipo_pdf_base, f"{tipo_pdf_base}_%"),
         )
+
+        for idx, (nome_ficheiro, bytes_) in enumerate(ficheiros, start=1):
+            tipo_pdf = tipo_pdf_base if len(ficheiros) == 1 else f"{tipo_pdf_base}_{idx}"
+            c.execute(
+                """
+                INSERT INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes, nome_ficheiro)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (str(rfq_id), tipo_pdf, bytes_, len(bytes_), nome_ficheiro),
+            )
+
         conn.commit()
         conn.close()
         return True
     except Exception as e:
         st.error(f"Erro a guardar PDF: {e}")
         return False
+
+
+def guardar_pdf_upload(rfq_id, tipo_pdf, nome_ficheiro, bytes_):
+    """Compatibilidade retroativa para guardar um único PDF."""
+
+    return guardar_pdf_uploads(rfq_id, tipo_pdf, [(nome_ficheiro, bytes_)])
 
 # ========================== CLASSES PDF ==========================
 
@@ -2558,16 +2578,23 @@ def responder_cotacao_dialog(cotacao):
     detalhes = obter_detalhes_cotacao(cotacao['id'])
     st.info(f"**Responder a Cotação {cotacao['processo']}**")
 
-    pdf_resposta_bytes = None
+    anexos_resposta_key = f"anexos_resposta_{cotacao['id']}"
+    if anexos_resposta_key not in st.session_state:
+        st.session_state[anexos_resposta_key] = []
     with st.form(f"resposta_form_{cotacao['id']}"):
         respostas = []
         pdf_resposta = st.file_uploader(
             "Resposta do Fornecedor (PDF ou email)",
-            type=["pdf", "eml"],
+            type=["pdf", "eml", "msg"],
+            accept_multiple_files=True,
             key=f"pdf_{cotacao['id']}"
         )
-        if pdf_resposta is not None:
-            _, pdf_resposta_bytes = processar_upload_pdf(pdf_resposta)
+        if pdf_resposta:
+            st.session_state[anexos_resposta_key] = processar_upload_pdf(pdf_resposta)
+
+        if st.session_state[anexos_resposta_key]:
+            for idx, (nome_resposta, resposta_bytes) in enumerate(st.session_state[anexos_resposta_key], start=1):
+                exibir_pdf(f"📄 Resposta carregada {idx} - {nome_resposta}", resposta_bytes, expanded=False)
 
         for i, artigo in enumerate(detalhes['artigos'], 1):
             st.subheader(f"Artigo {i}: {artigo['artigo_num'] if artigo['artigo_num'] else 'S/N'}")
@@ -2689,11 +2716,14 @@ def responder_cotacao_dialog(cotacao):
                 custo_embalagem,
                 observacoes,
             ):
-                if pdf_resposta_bytes is not None:
-                    with open(
-                        f"resposta_fornecedor_{cotacao['id']}.pdf", "wb"
-                    ) as f:
-                        f.write(pdf_resposta_bytes)
+                anexos_resposta = st.session_state.get(anexos_resposta_key, [])
+                if anexos_resposta:
+                    guardar_pdf_uploads(
+                        cotacao['id'],
+                        'anexo_fornecedor',
+                        anexos_resposta,
+                    )
+                    st.session_state[anexos_resposta_key] = []
                 st.success("✅ Resposta guardada e email enviado com sucesso!")
                 st.rerun()
         else:
@@ -3325,8 +3355,8 @@ elif menu_option == "📝 Nova Cotação":
 
         st.markdown("### 📦 Artigos")
 
-        pedido_nome_pdf = None
-        pedido_pdf_bytes = None
+        if "pedido_cliente_anexos" not in st.session_state:
+            st.session_state.pedido_cliente_anexos = []
 
         remover_indice = None
         for i, artigo in enumerate(st.session_state.artigos, 1):
@@ -3392,12 +3422,16 @@ elif menu_option == "📝 Nova Cotação":
         with col_upload:
             upload_pedido_cliente = st.file_uploader(
                 "📎 Pedido do cliente (PDF ou email)",
-                type=["pdf", "eml"],
+                type=["pdf", "eml", "msg"],
+                accept_multiple_files=True,
                 key='upload_pedido_cliente'
             )
-            if upload_pedido_cliente is not None:
-                pedido_nome_pdf, pedido_pdf_bytes = processar_upload_pdf(upload_pedido_cliente)
-                exibir_pdf("👁️ PDF carregado", pedido_pdf_bytes, expanded=True)
+            if upload_pedido_cliente:
+                st.session_state.pedido_cliente_anexos = processar_upload_pdf(upload_pedido_cliente)
+
+            if st.session_state.pedido_cliente_anexos:
+                for idx, (nome_pdf, pdf_bytes) in enumerate(st.session_state.pedido_cliente_anexos, start=1):
+                    exibir_pdf(f"👁️ PDF carregado {idx} - {nome_pdf}", pdf_bytes, expanded=idx == 1)
 
         with col_submit:
             st.markdown(
@@ -3549,12 +3583,12 @@ elif menu_option == "📝 Nova Cotação":
 
                         if rfq_id:
                             rfqs_criados.append((rfq_id, fornecedores_info[fornecedor_id]))
-                            if pedido_pdf_bytes is not None:
-                                guardar_pdf_upload(
+                            anexos_cliente = st.session_state.get("pedido_cliente_anexos", [])
+                            if anexos_cliente:
+                                guardar_pdf_uploads(
                                     rfq_id,
                                     'anexo_cliente',
-                                    pedido_nome_pdf,
-                                    pedido_pdf_bytes,
+                                    anexos_cliente,
                                 )
 
                     if rfqs_criados:
@@ -3583,6 +3617,7 @@ elif menu_option == "📝 Nova Cotação":
                             "unidade": "Peças",
                             "marca": "",
                         }]
+                        st.session_state.pedido_cliente_anexos = []
                         st.rerun()
                     else:
                         st.error("Não foi possível criar as cotações para os fornecedores selecionados.")
@@ -3595,118 +3630,124 @@ elif menu_option == "🤖 Smart Quotation":
     with tab_cot:
         upload_pdf = st.file_uploader(
             "📎 Pedido do cliente (PDF ou email)",
-            type=["pdf", "eml"],
+            type=["pdf", "eml", "msg"],
+            accept_multiple_files=True,
             key="smart_pdf",
         )
-        if upload_pdf is not None:
-            _, pdf_bytes = processar_upload_pdf(upload_pdf)
-            exibir_pdf("👁️ PDF carregado", pdf_bytes, expanded=True)
-            dados = extrair_dados_pdf(pdf_bytes)
+        if upload_pdf:
+            anexos_processados = processar_upload_pdf(upload_pdf)
+            if anexos_processados:
+                nome_pdf, pdf_bytes = anexos_processados[0]
+                exibir_pdf(f"👁️ PDF carregado - {nome_pdf}", pdf_bytes, expanded=True)
+                dados = extrair_dados_pdf(pdf_bytes)
+                custo_embalagem = st.number_input(
+                    "Custos Embalagem",
+                    min_value=0.0,
+                    step=0.01,
+                    key=f"custo_emb_{cotacao['id']}"
+                )
 
-            # Novo: custos separados de embalagem
-            custo_embalagem = st.number_input(
-                "Custos Embalagem",
-                min_value=0.0,
-                step=0.01,
-                key=f"custo_emb_{cotacao['id']}"
-            )
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.text_input("Referência Cliente", value=dados["referencia"], disabled=True)
+                with col2:
+                    st.text_input("Cliente", value=dados["cliente"], disabled=True)
 
-            col1, col2 = st.columns(2)
-            with col1:
-                st.text_input("Referência Cliente", value=dados["referencia"], disabled=True)
-            with col2:
-                st.text_input("Cliente", value=dados["cliente"], disabled=True)
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.text_input("Nº Artigo", value=dados["artigo_num"], disabled=True)
+                with col2:
+                    st.text_input("Quantidade", value=str(dados["quantidade"]), disabled=True)
 
-            col1, col2 = st.columns(2)
-            with col1:
-                st.text_input("Nº Artigo", value=dados["artigo_num"], disabled=True)
-            with col2:
-                st.text_input("Quantidade", value=str(dados["quantidade"]), disabled=True)
+                st.text_area("Descrição", value=dados["descricao"], disabled=True, height=100)
+                st.text_input("Unidade", value="Peças", disabled=True)
+                st.text_input("Marca", value=dados["marca"], disabled=True)
 
-            st.text_area("Descrição", value=dados["descricao"], disabled=True, height=100)
-            st.text_input("Unidade", value="Peças", disabled=True)
-            st.text_input("Marca", value=dados["marca"], disabled=True)
+                if st.button("Submeter", type="primary"):
+                    fornecedores = obter_fornecedores_por_marca(dados["marca"])
+                    if not fornecedores:
+                        st.error("Marca não encontrada. Configure a marca para um fornecedor.")
+                    else:
+                        clientes = listar_clientes()
+                        cliente_id = None
+                        for cli in clientes:
+                            if cli[1].lower() == dados["cliente"].lower():
+                                cliente_id = cli[0]
+                                break
 
-            if st.button("Submeter", type="primary"):
-                fornecedores = obter_fornecedores_por_marca(dados["marca"])
-                if not fornecedores:
-                    st.error("Marca não encontrada. Configure a marca para um fornecedor.")
-                else:
-                    clientes = listar_clientes()
-                    cliente_id = None
-                    for cli in clientes:
-                        if cli[1].lower() == dados["cliente"].lower():
-                            cliente_id = cli[0]
-                            break
+                        artigo_base = {
+                            "artigo_num": dados["artigo_num"],
+                            "descricao": dados["descricao"],
+                            "quantidade": dados["quantidade"],
+                            "unidade": "Peças",
+                            "marca": dados["marca"],
+                        }
 
-                    artigo_base = {
-                        "artigo_num": dados["artigo_num"],
-                        "descricao": dados["descricao"],
-                        "quantidade": dados["quantidade"],
-                        "unidade": "Peças",
-                        "marca": dados["marca"],
-                    }
+                        processo_id, numero_processo, processo_artigos = criar_processo_com_artigos([artigo_base])
+                        rfqs_criados: list[tuple[int, tuple]] = []
 
-                    processo_id, numero_processo, processo_artigos = criar_processo_com_artigos([artigo_base])
-                    rfqs_criados: list[tuple[int, tuple]] = []
+                        for fornecedor in fornecedores:
+                            artigos_fornecedor = [
+                                {
+                                    **artigo_base,
+                                    "processo_artigo_id": processo_artigos[0]["processo_artigo_id"],
+                                    "ordem": processo_artigos[0]["ordem"],
+                                }
+                            ]
 
-                    for fornecedor in fornecedores:
-                        artigos_fornecedor = [
-                            {
-                                **artigo_base,
-                                "processo_artigo_id": processo_artigos[0]["processo_artigo_id"],
-                                "ordem": processo_artigos[0]["ordem"],
-                            }
-                        ]
-
-                        rfq_id, numero_proc_ret, _, _ = criar_rfq(
-                            fornecedor[0],
-                            datetime.today(),
-                            artigos_fornecedor,
-                            dados["referencia"],
-                            cliente_id,
-                            processo_id=processo_id,
-                            numero_processo=numero_processo,
-                            processo_artigos=processo_artigos,
-                        )
-
-                        if rfq_id:
-                            rfqs_criados.append((rfq_id, fornecedor))
-                            guardar_pdf_upload(
-                                rfq_id,
-                                "anexo_cliente",
-                                upload_pdf.name,
-                                pdf_bytes,
+                            rfq_id, numero_proc_ret, _, _ = criar_rfq(
+                                fornecedor[0],
+                                datetime.today(),
+                                artigos_fornecedor,
+                                dados["referencia"],
+                                cliente_id,
+                                processo_id=processo_id,
+                                numero_processo=numero_processo,
+                                processo_artigos=processo_artigos,
                             )
 
-                    if rfqs_criados:
-                        st.success(
-                            f"✅ Cotação {numero_processo} (Ref: {dados['referencia']}) criada para {len(rfqs_criados)} fornecedor(es)!"
-                        )
-                        for rfq_id, fornecedor in rfqs_criados:
-                            st.write(f"• {fornecedor[1]}")
-                            pdf_pedido = obter_pdf_da_db(rfq_id, "pedido")
-                            if pdf_pedido:
-                                st.download_button(
-                                    f"📄 Download PDF - {fornecedor[1]}",
-                                    data=pdf_pedido,
-                                    file_name=f"cotacao_{numero_processo}_{fornecedor[1].replace(' ', '_')}.pdf",
-                                    mime="application/pdf",
-                                    key=f"smart_pdf_{rfq_id}",
-                                )
-                    else:
-                        st.error("Erro ao criar cotação.")
+                            if rfq_id:
+                                rfqs_criados.append((rfq_id, fornecedor))
+                                if anexos_processados:
+                                    guardar_pdf_uploads(
+                                        rfq_id,
+                                        "anexo_cliente",
+                                        anexos_processados,
+                                    )
+
+                        if rfqs_criados:
+                            st.success(
+                                f"✅ Cotação {numero_processo} (Ref: {dados['referencia']}) criada para {len(rfqs_criados)} fornecedor(es)!"
+                            )
+                            for rfq_id, fornecedor in rfqs_criados:
+                                st.write(f"• {fornecedor[1]}")
+                                pdf_pedido = obter_pdf_da_db(rfq_id, "pedido")
+                                if pdf_pedido:
+                                    st.download_button(
+                                        f"📄 Download PDF - {fornecedor[1]}",
+                                        data=pdf_pedido,
+                                        file_name=f"cotacao_{numero_processo}_{fornecedor[1].replace(' ', '_')}.pdf",
+                                        mime="application/pdf",
+                                        key=f"smart_pdf_{rfq_id}",
+                                    )
+                        else:
+                            st.error("Erro ao criar cotação.")
+            else:
+                st.warning("Ficheiro carregado não pôde ser processado.")
 
     with tab_text:
         pdf_text = st.file_uploader(
             "📎 PDF ou email",
-            type=["pdf", "eml"],
+            type=["pdf", "eml", "msg"],
+            accept_multiple_files=True,
             key="extract_pdf",
         )
-        if pdf_text is not None:
-            _, pdf_bytes = processar_upload_pdf(pdf_text)
-            texto = extrair_texto_pdf(pdf_bytes)
-            st.text_area("Texto extraído", value=texto, height=400)
+        if pdf_text:
+            anexos_texto = processar_upload_pdf(pdf_text)
+            if anexos_texto:
+                _, pdf_bytes = anexos_texto[0]
+                texto = extrair_texto_pdf(pdf_bytes)
+                st.text_area("Texto extraído", value=texto, height=400)
 
 elif menu_option == "📩 Responder Cotações":
     st.title("📩 Responder Cotações")
@@ -3778,7 +3819,11 @@ elif menu_option == "📩 Responder Cotações":
                             """
                             SELECT tipo_pdf, nome_ficheiro, pdf_data
                             FROM pdf_storage
-                            WHERE rfq_id = ? AND tipo_pdf IN ('anexo_cliente', 'anexo_fornecedor')
+                            WHERE rfq_id = ? AND (
+                                tipo_pdf = 'anexo_cliente' OR tipo_pdf LIKE 'anexo_cliente_%'
+                                OR tipo_pdf = 'anexo_fornecedor' OR tipo_pdf LIKE 'anexo_fornecedor_%'
+                            )
+                            ORDER BY data_criacao
                             """,
                             (cotacao["id"],),
                         )
@@ -4020,7 +4065,18 @@ elif menu_option == "📩 Responder Cotações":
                         # Anexos
                         conn = obter_conexao()
                         c = conn.cursor()
-                        c.execute("SELECT tipo_pdf, nome_ficheiro, pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf IN ('anexo_cliente', 'anexo_fornecedor')", (str(cotacao['id']),))
+                        c.execute(
+                            """
+                            SELECT tipo_pdf, nome_ficheiro, pdf_data
+                            FROM pdf_storage
+                            WHERE rfq_id = ? AND (
+                                tipo_pdf = 'anexo_cliente' OR tipo_pdf LIKE 'anexo_cliente_%'
+                                OR tipo_pdf = 'anexo_fornecedor' OR tipo_pdf LIKE 'anexo_fornecedor_%'
+                            )
+                            ORDER BY data_criacao
+                            """,
+                            (str(cotacao['id']),),
+                        )
                         anexos = c.fetchall()
                         conn.close()
                         if anexos:
@@ -4760,13 +4816,15 @@ elif menu_option == "📄 PDFs":
                 tipo_pdf = next(t for lbl, t, _ in pdf_types if lbl == label_selec)
                 novo_pdf = st.file_uploader(
                     "Substituir PDF",
-                    type=["pdf", "eml"],
+                    type=["pdf", "eml", "msg"],
                     key="upload_pdf_gest",
                 )
                 if novo_pdf and st.button("💾 Guardar PDF"):
-                    nome_pdf, bytes_pdf = processar_upload_pdf(novo_pdf)
-                    if guardar_pdf_upload(cot_sel["id"], tipo_pdf, nome_pdf, bytes_pdf):
-                        st.success("PDF atualizado com sucesso!")
+                    anexos_novos = processar_upload_pdf(novo_pdf)
+                    if anexos_novos:
+                        nome_pdf, bytes_pdf = anexos_novos[0]
+                        if guardar_pdf_upload(cot_sel["id"], tipo_pdf, nome_pdf, bytes_pdf):
+                            st.success("PDF atualizado com sucesso!")
             else:
                 st.info("Apenas administradores podem atualizar o PDF.")
     else:
