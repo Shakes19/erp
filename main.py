@@ -3931,8 +3931,8 @@ elif menu_option == "📩 Responder Cotações":
                                     "📤 Enviar para Cliente",
                                     key=f"enviar_cliente_{cotacao['processo_id']}_{cotacao['id']}_{idx_cotacao}",
                                 ):
-                                    if any(valor is None for valor in selecoes_novas.values()):
-                                        st.error("Selecione um fornecedor para todos os artigos antes de enviar ao cliente.")
+                                    if all(valor is None for valor in selecoes_novas.values()):
+                                        st.error("Selecione pelo menos um artigo antes de enviar ao cliente.")
                                     elif not cotacao['email_solicitante']:
                                         st.error("Nenhum email de cliente definido para este processo.")
                                     else:
@@ -4151,18 +4151,18 @@ elif menu_option == "📩 Responder Cotações":
             st.rerun()
 
     with tab_process_center:
-        st.subheader("Process Center")
-        st.caption(
-            "Pesquise pelo número do processo (ex.: QT2025-0001) ou pela referência do cliente para ver todos os pedidos"
-        )
-
         with st.form("process_center_form"):
-            termo_pesquisa = st.text_input(
-                "Processo ou referência",
-                key="process_center_term",
-                placeholder="QT2025-0001 ou REF123",
-            )
-            submitted = st.form_submit_button("Pesquisar", type="primary")
+            col_input, col_button = st.columns([6, 1])
+            with col_input:
+                termo_pesquisa = st.text_input(
+                    "Processo ou referência",
+                    key="process_center_term",
+                    placeholder="QT2025-0001 ou REF123",
+                )
+            with col_button:
+                submitted = st.form_submit_button(
+                    "Pesquisar", type="primary", use_container_width=True
+                )
 
         if submitted:
             termo = (termo_pesquisa or "").strip()
@@ -4265,6 +4265,7 @@ elif menu_option == "📩 Responder Cotações":
                 st.subheader("Pedidos Fornecedor")
 
                 pedidos_fornecedor = detalhes_processo.get("rfqs", [])
+                pedidos_com_resposta = []
                 if pedidos_fornecedor:
                     for pedido in pedidos_fornecedor:
                         estado_lower = (pedido.get("estado") or "").lower()
@@ -4283,7 +4284,7 @@ elif menu_option == "📩 Responder Cotações":
                                 "id": pedido.get("id"),
                                 "processo": processo_info.get("numero") or "Processo",
                             }
-                            botoes_acoes = st.columns([1, 1, 1])
+                            botoes_acoes = st.columns([1, 1])
                             with botoes_acoes[0]:
                                 if st.button(
                                     "💬 Responder",
@@ -4304,19 +4305,8 @@ elif menu_option == "📩 Responder Cotações":
                                         key=f"pc_pdf_{pedido.get('id')}"
                                     )
 
-                            with botoes_acoes[2]:
-                                if st.button(
-                                    "💰 Criar Cotação Cliente",
-                                    key=f"pc_cliente_{pedido.get('id')}",
-                                ):
-                                    criar_cotacao_cliente_dialog(
-                                        pedido.get("id"),
-                                        processo_info.get("numero"),
-                                        pedido.get("referencia"),
-                                        pedido.get("nome_solicitante")
-                                        or pedido.get("cliente"),
-                                        pedido.get("email_solicitante"),
-                                    )
+                            if (pedido.get("total_respostas", 0) or 0) > 0 or estado_lower == "respondido":
+                                pedidos_com_resposta.append(pedido)
 
                             meta_cols = st.columns(3)
                             with meta_cols[0]:
@@ -4363,6 +4353,48 @@ elif menu_option == "📩 Responder Cotações":
                                 )
                             else:
                                 st.info("Nenhum artigo associado a este pedido.")
+                    if pedidos_com_resposta:
+                        st.markdown("---")
+                        st.markdown("### Cotação Cliente")
+
+                        indices_resposta = list(range(len(pedidos_com_resposta)))
+
+                        def _format_pedido(idx: int) -> str:
+                            item = pedidos_com_resposta[idx]
+                            fornecedor = item.get("fornecedor") or "Fornecedor"
+                            referencia = item.get("referencia") or "—"
+                            total = item.get("total_respostas", 0) or 0
+                            return (
+                                f"{fornecedor} • Ref: {referencia}"
+                                f" • {total} resposta(s)"
+                            )
+
+                        selecao_cliente = st.selectbox(
+                            "Selecionar pedido respondido",
+                            options=indices_resposta,
+                            format_func=_format_pedido,
+                            key=f"pc_cliente_select_{processo_escolhido.get('id')}",
+                        )
+
+                        col_criar, _ = st.columns([1, 5])
+                        with col_criar:
+                            if st.button(
+                                "💰 Criar Cotação Cliente",
+                                key=f"pc_cliente_{processo_escolhido.get('id')}",
+                            ):
+                                pedido_sel = pedidos_com_resposta[selecao_cliente]
+                                criar_cotacao_cliente_dialog(
+                                    pedido_sel.get("id"),
+                                    processo_info.get("numero"),
+                                    pedido_sel.get("referencia"),
+                                    pedido_sel.get("nome_solicitante")
+                                    or pedido_sel.get("cliente"),
+                                    pedido_sel.get("email_solicitante"),
+                                )
+                    else:
+                        st.info(
+                            "Ainda não existem respostas de fornecedores para gerar a cotação do cliente."
+                        )
                 else:
                     st.info("Nenhum pedido enviado aos fornecedores para este processo.")
             else:
