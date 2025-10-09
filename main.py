@@ -3697,7 +3697,7 @@ elif menu_option == "🤖 Smart Quotation":
                     "Custos Embalagem",
                     min_value=0.0,
                     step=0.01,
-                    key=f"custo_emb_{cotacao['id']}"
+                    key="custo_emb_smart"
                 )
 
                 col1, col2 = st.columns(2)
