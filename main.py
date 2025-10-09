@@ -2512,7 +2512,14 @@ def obter_pdf_da_db(rfq_id, tipo_pdf="pedido"):
     return result[0] if result else None
 
 
-def exibir_pdf(label, data_pdf, *, height: int = 600, expanded: bool = False):
+def exibir_pdf(
+    label,
+    data_pdf,
+    *,
+    height: int = 600,
+    expanded: bool = False,
+    use_expander: bool = True,
+):
     """Mostra PDF com fallback para pdf.js e opção de abrir em nova aba."""
     if not data_pdf:
         st.warning("PDF não disponível")
@@ -2520,13 +2527,18 @@ def exibir_pdf(label, data_pdf, *, height: int = 600, expanded: bool = False):
 
     b64 = base64.b64encode(data_pdf).decode()
 
-    with st.expander(label, expanded=expanded):
-        pdf_html = f"""
-        <object data="data:application/pdf;base64,{b64}" type="application/pdf" width="100%" height="{height}">
-            <iframe src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}" width="100%" height="{height}" style="border:none;"></iframe>
-        </object>
-        <div style="text-align:right;margin-top:4px;"><a href="data:application/pdf;base64,{b64}" target="_blank">🔎 Abrir em nova aba</a></div>
-        """
+    pdf_html = f"""
+    <object data="data:application/pdf;base64,{b64}" type="application/pdf" width="100%" height="{height}">
+        <iframe src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}" width="100%" height="{height}" style="border:none;"></iframe>
+    </object>
+    <div style="text-align:right;margin-top:4px;"><a href="data:application/pdf;base64,{b64}" target="_blank">🔎 Abrir em nova aba</a></div>
+    """
+
+    if use_expander:
+        with st.expander(label, expanded=expanded):
+            st.markdown(pdf_html, unsafe_allow_html=True)
+    else:
+        st.markdown(f"**{label}**")
         st.markdown(pdf_html, unsafe_allow_html=True)
 
 
@@ -3723,94 +3735,177 @@ elif menu_option == "🤖 Smart Quotation":
             anexos_processados = processar_upload_pdf(upload_pdf)
             if anexos_processados:
                 nome_pdf, pdf_bytes = anexos_processados[0]
-                exibir_pdf(f"👁️ PDF carregado - {nome_pdf}", pdf_bytes, expanded=True)
                 dados = extrair_dados_pdf(pdf_bytes)
+                clientes = listar_clientes()
+                cliente_options: list[tuple | None] = [None] + clientes
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.text_input("Referência Cliente", value=dados["referencia"], disabled=True)
-                with col2:
-                    st.text_input("Cliente", value=dados["cliente"], disabled=True)
+                pdf_uid = f"{nome_pdf}:{len(pdf_bytes)}"
+                descricao_formatada = (dados.get("descricao") or "").replace(",", "\n")
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.text_input("Nº Artigo", value=dados["artigo_num"], disabled=True)
-                with col2:
-                    st.text_input("Quantidade", value=str(dados["quantidade"]), disabled=True)
+                if st.session_state.get("smart_pdf_uid") != pdf_uid:
+                    st.session_state.smart_pdf_uid = pdf_uid
+                    st.session_state.smart_referencia = dados.get("referencia") or ""
+                    st.session_state.smart_artigo_num = dados.get("artigo_num") or ""
+                    st.session_state.smart_quantidade = str(dados.get("quantidade") or "")
+                    st.session_state.smart_descricao = descricao_formatada
+                    st.session_state.smart_unidade = "Peças"
+                    st.session_state.smart_marca = dados.get("marca") or ""
+                    st.session_state.smart_contacto = dados.get("nome") or dados.get("cliente") or ""
 
-                st.text_area("Descrição", value=dados["descricao"], disabled=True, height=100)
-                st.text_input("Unidade", value="Peças", disabled=True)
-                st.text_input("Marca", value=dados["marca"], disabled=True)
-
-                if st.button("Submeter", type="primary"):
-                    fornecedores = obter_fornecedores_por_marca(dados["marca"])
-                    if not fornecedores:
-                        st.error("Marca não encontrada. Configure a marca para um fornecedor.")
-                    else:
-                        clientes = listar_clientes()
-                        cliente_id = None
-                        for cli in clientes:
-                            if cli[1].lower() == dados["cliente"].lower():
-                                cliente_id = cli[0]
+                    cliente_extraido = (dados.get("cliente") or "").strip().lower()
+                    default_idx = 0
+                    if cliente_extraido:
+                        for idx, cli in enumerate(cliente_options):
+                            if cli and cli[1].strip().lower() == cliente_extraido:
+                                default_idx = idx
                                 break
+                    st.session_state.smart_cliente_index = default_idx
+                else:
+                    # Garantir que descrições posteriores mantêm a regra das vírgulas
+                    st.session_state.smart_descricao = (
+                        st.session_state.get("smart_descricao", "").replace(",", "\n")
+                    )
 
-                        artigo_base = {
-                            "artigo_num": dados["artigo_num"],
-                            "descricao": dados["descricao"],
-                            "quantidade": dados["quantidade"],
-                            "unidade": "Peças",
-                            "marca": dados["marca"],
-                        }
+                def _format_cliente(idx: int) -> str:
+                    cli = cliente_options[idx]
+                    if not cli:
+                        return "Selecione um cliente"
+                    nome_cli = cli[1]
+                    empresa_cli = cli[4] if len(cli) > 4 else ""
+                    if empresa_cli:
+                        return f"{nome_cli} ({empresa_cli})"
+                    return nome_cli
 
-                        processo_id, numero_processo, processo_artigos = criar_processo_com_artigos([artigo_base])
-                        rfqs_criados: list[tuple[int, tuple]] = []
+                col_pdf, col_form = st.columns(2)
 
-                        for fornecedor in fornecedores:
-                            artigos_fornecedor = [
-                                {
-                                    **artigo_base,
-                                    "processo_artigo_id": processo_artigos[0]["processo_artigo_id"],
-                                    "ordem": processo_artigos[0]["ordem"],
-                                }
-                            ]
+                with col_pdf:
+                    exibir_pdf(
+                        f"👁️ PDF carregado - {nome_pdf}",
+                        pdf_bytes,
+                        expanded=True,
+                        use_expander=False,
+                    )
 
-                            rfq_id, numero_proc_ret, _, _ = criar_rfq(
-                                fornecedor[0],
-                                datetime.today(),
-                                artigos_fornecedor,
-                                dados["referencia"],
-                                cliente_id,
-                                processo_id=processo_id,
-                                numero_processo=numero_processo,
-                                processo_artigos=processo_artigos,
-                            )
+                with col_form:
+                    st.text_input(
+                        "Referência Cliente",
+                        key="smart_referencia",
+                    )
+                    cliente_idx = st.selectbox(
+                        "Cliente (Gestão de Clientes)",
+                        options=list(range(len(cliente_options))),
+                        format_func=_format_cliente,
+                        key="smart_cliente_index",
+                    )
+                    st.text_input(
+                        "Nome/Contacto do Cliente",
+                        key="smart_contacto",
+                        help="Nome do contacto associado ao pedido.",
+                    )
 
-                            if rfq_id:
-                                rfqs_criados.append((rfq_id, fornecedor))
-                                if anexos_processados:
-                                    guardar_pdf_uploads(
-                                        rfq_id,
-                                        "anexo_cliente",
-                                        anexos_processados,
-                                    )
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.text_input("Nº Artigo", key="smart_artigo_num")
+                    with col2:
+                        st.text_input("Quantidade", key="smart_quantidade")
 
-                        if rfqs_criados:
-                            st.success(
-                                f"✅ Cotação {numero_processo} (Ref: {dados['referencia']}) criada para {len(rfqs_criados)} fornecedor(es)!"
-                            )
-                            for rfq_id, fornecedor in rfqs_criados:
-                                st.write(f"• {fornecedor[1]}")
-                                pdf_pedido = obter_pdf_da_db(rfq_id, "pedido")
-                                if pdf_pedido:
-                                    st.download_button(
-                                        f"📄 Download PDF - {fornecedor[1]}",
-                                        data=pdf_pedido,
-                                        file_name=f"cotacao_{numero_processo}_{fornecedor[1].replace(' ', '_')}.pdf",
-                                        mime="application/pdf",
-                                        key=f"smart_pdf_{rfq_id}",
-                                    )
+                    st.text_area(
+                        "Descrição",
+                        key="smart_descricao",
+                        height=140,
+                        help="Cada vírgula é tratada como quebra de linha na geração da cotação.",
+                    )
+                    st.text_input("Unidade", key="smart_unidade")
+                    st.text_input("Marca", key="smart_marca")
+
+                    cliente_selecionado = (
+                        cliente_options[cliente_idx]
+                        if 0 <= cliente_idx < len(cliente_options)
+                        else None
+                    )
+
+                    if st.button("Submeter", type="primary", key="smart_submit"):
+                        marca_escolhida = (st.session_state.get("smart_marca") or "").strip()
+                        fornecedores = obter_fornecedores_por_marca(marca_escolhida)
+                        if not fornecedores:
+                            st.error("Marca não encontrada. Configure a marca para um fornecedor.")
+                        elif not cliente_selecionado:
+                            st.error("Selecione um cliente existente na gestão de clientes.")
                         else:
-                            st.error("Erro ao criar cotação.")
+                            referencia = (st.session_state.get("smart_referencia") or "").strip()
+                            artigo_num = (st.session_state.get("smart_artigo_num") or "").strip()
+                            quantidade_raw = st.session_state.get("smart_quantidade") or ""
+                            unidade = (st.session_state.get("smart_unidade") or "Peças").strip() or "Peças"
+                            descricao_input = st.session_state.get("smart_descricao") or ""
+                            descricao_final = re.sub(r",\s*", "\n", descricao_input.strip())
+
+                            quantidade_valor: int | float | str
+                            quantidade_str = str(quantidade_raw).strip()
+                            try:
+                                quantidade_valor = int(quantidade_str)
+                            except ValueError:
+                                try:
+                                    quantidade_valor = float(quantidade_str.replace(",", "."))
+                                except ValueError:
+                                    quantidade_valor = quantidade_str or 1
+
+                            artigo_base = {
+                                "artigo_num": artigo_num,
+                                "descricao": descricao_final,
+                                "quantidade": quantidade_valor,
+                                "unidade": unidade,
+                                "marca": marca_escolhida,
+                            }
+
+                            processo_id, numero_processo, processo_artigos = criar_processo_com_artigos([artigo_base])
+                            rfqs_criados: list[tuple[int, tuple]] = []
+
+                            for fornecedor in fornecedores:
+                                artigos_fornecedor = [
+                                    {
+                                        **artigo_base,
+                                        "processo_artigo_id": processo_artigos[0]["processo_artigo_id"],
+                                        "ordem": processo_artigos[0]["ordem"],
+                                    }
+                                ]
+
+                                rfq_id, numero_proc_ret, _, _ = criar_rfq(
+                                    fornecedor[0],
+                                    datetime.today(),
+                                    artigos_fornecedor,
+                                    referencia,
+                                    cliente_selecionado[0],
+                                    processo_id=processo_id,
+                                    numero_processo=numero_processo,
+                                    processo_artigos=processo_artigos,
+                                )
+
+                                if rfq_id:
+                                    rfqs_criados.append((rfq_id, fornecedor))
+                                    if anexos_processados:
+                                        guardar_pdf_uploads(
+                                            rfq_id,
+                                            "anexo_cliente",
+                                            anexos_processados,
+                                        )
+
+                            if rfqs_criados:
+                                st.success(
+                                    f"✅ Cotação {numero_processo} (Ref: {referencia}) criada para {len(rfqs_criados)} fornecedor(es)!"
+                                )
+                                for rfq_id, fornecedor in rfqs_criados:
+                                    st.write(f"• {fornecedor[1]}")
+                                    pdf_pedido = obter_pdf_da_db(rfq_id, "pedido")
+                                    if pdf_pedido:
+                                        st.download_button(
+                                            f"📄 Download PDF - {fornecedor[1]}",
+                                            data=pdf_pedido,
+                                            file_name=f"cotacao_{numero_processo}_{fornecedor[1].replace(' ', '_')}.pdf",
+                                            mime="application/pdf",
+                                            key=f"smart_pdf_{rfq_id}",
+                                        )
+                            else:
+                                st.error("Erro ao criar cotação.")
             else:
                 st.warning("Ficheiro carregado não pôde ser processado.")
 
