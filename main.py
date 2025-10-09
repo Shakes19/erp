@@ -1877,11 +1877,12 @@ class InquiryPDF(FPDF):
             "legal_info",
             ["VAT ID: PT123", "EORI: PT123", "Registry: 123", "Managing Directors: N/A"],
         )
+        start_y = self.get_y()
         col_w = (self.w - 30) / (len(bank_cols) + 1)
-        y = self.get_y()
+        max_y = start_y
         for i, col in enumerate(bank_cols):
             x = 15 + i * col_w
-            self.set_xy(x, y)
+            self.set_xy(x, start_y)
             iban = col.get("IBAN / Account No.")
             nif = col.get("NIF")
             if iban and nif:
@@ -1898,17 +1899,29 @@ class InquiryPDF(FPDF):
                 self.cell(col_w, 4, k, ln=1)
                 self.set_font("Helvetica", "", 9)
                 self.multi_cell(col_w, 4, v)
-            y = self.get_y()
+            max_y = max(max_y, self.get_y())
         # Última coluna com info legal
-        self.set_xy(15 + len(bank_cols) * col_w, self.get_y())
+        legal_x = 15 + len(bank_cols) * col_w
+        self.set_xy(legal_x, start_y)
         self.set_font("Helvetica", "", 9)
         self.multi_cell(col_w, 4, "\n".join(legal_info), align="R")
+        max_y = max(max_y, self.get_y())
+        self.set_y(max_y)
 
         # Logo do myERP com hyperlink no canto inferior direito
         try:
             logo_w = 20
-            x = self.w - self.r_margin - logo_w
-            y = self.h - self.b_margin - logo_w / 2
+            logo_ratio = (
+                LOGO_IMAGE.height / LOGO_IMAGE.width if LOGO_IMAGE.width else 1
+            )
+            logo_h = logo_w * logo_ratio
+            margin_px = 50
+            px_to_mm = 0.2645833333
+            margin_mm = margin_px * px_to_mm
+            x = self.w - margin_mm - logo_w
+            y = self.h - margin_mm - logo_h
+            x = max(self.l_margin, x)
+            y = max(max_y + 2, y)
             self.image(
                 LOGO_PATH,
                 x=x,
@@ -1962,6 +1975,8 @@ class InquiryPDF(FPDF):
     def add_item(self, idx, item):
         col_w = self._table_col_widths()
         line_height = 5
+        # Garantir texto dos itens em estilo regular
+        self.set_font("Helvetica", "", 10)
         # Preparar texto do item
         # ``descricao`` might be ``None`` if the item was partially filled in
         # the UI, so fall back to an empty string before splitting.
