@@ -3341,6 +3341,25 @@ elif menu_option == "📝 Nova Cotação":
 
     marcas = listar_todas_marcas()
 
+    st.markdown(
+        """
+        <style>
+        .delete-button-wrapper {
+            display: flex;
+            height: 100%;
+            align-items: flex-end;
+        }
+        .delete-button-wrapper > div {
+            width: 100%;
+        }
+        .delete-button-wrapper button {
+            width: 100%;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     with st.form(key="nova_cotacao_form"):
         clientes = listar_clientes()
         clientes_opcoes = [None] + clientes
@@ -3349,15 +3368,14 @@ elif menu_option == "📝 Nova Cotação":
         with col_data:
             data = st.date_input(
                 "Data da cotação",
-                value=st.session_state.nova_cotacao_data,
                 key="nova_cotacao_data",
             )
 
         with col_ref:
             referencia_input = st.text_input(
                 "Referência Cliente",
-                value=st.session_state.nova_cotacao_referencia,
                 key="nova_cotacao_referencia",
+                placeholder="Insira a referência do cliente",
             )
 
         with col_cliente:
@@ -3426,7 +3444,10 @@ elif menu_option == "📝 Nova Cotação":
                     # visible numbering, append invisible zero‑width characters so each
                     # label remains unique while displaying only the trash icon.
                     delete_label = "🗑️" + "\u200B" * i
-                    if st.form_submit_button(delete_label):
+                    st.markdown("<div class='delete-button-wrapper'>", unsafe_allow_html=True)
+                    delete_clicked = st.form_submit_button(delete_label)
+                    st.markdown("</div>", unsafe_allow_html=True)
+                    if delete_clicked:
                         remover_indice = i - 1
 
         col_acoes_1, _, _ = st.columns([1, 1, 2])
@@ -3453,7 +3474,7 @@ elif menu_option == "📝 Nova Cotação":
 
         with col_submit:
             st.markdown(
-                "<div style='height: 2.5rem;'></div>",
+                "<div style='height: 20px;'></div>",
                 unsafe_allow_html=True,
             )
             criar_cotacao = st.form_submit_button(
@@ -3503,6 +3524,8 @@ elif menu_option == "📝 Nova Cotação":
         # Validar campos obrigatórios
         if not referencia_input.strip():
             st.error("Por favor, indique uma referência")
+        elif not cliente_sel:
+            st.error("Por favor, selecione um cliente")
         else:
             artigos_validos: list[dict] = []
             erros: list[str] = []
@@ -3624,9 +3647,9 @@ elif menu_option == "📝 Nova Cotação":
                             "marca": "",
                         }]
                         st.session_state.pedido_cliente_anexos = []
-                        st.session_state.nova_cotacao_referencia = ""
-                        st.session_state.nova_cotacao_data = date.today()
-                        st.session_state.cliente_select_nova = None
+                        st.session_state["nova_cotacao_referencia"] = ""
+                        st.session_state["nova_cotacao_data"] = date.today()
+                        st.session_state["cliente_select_nova"] = None
                         st.session_state.pop('upload_pedido_cliente', None)
                         for key in list(st.session_state.keys()):
                             for prefix in ("nova_desc_", "nova_art_num_", "nova_qtd_", "nova_unidade_", "nova_marca_"):
