@@ -2872,6 +2872,8 @@ def extrair_dados_pdf(pdf_bytes):
         page_text = page.extract_text() or ""
         texto += page_text + "\n"
 
+    linhas_pdf = texto.splitlines()
+
     def linha_apos(label):
         idx = texto.find(label)
         if idx == -1:
@@ -2881,6 +2883,16 @@ def extrair_dados_pdf(pdf_bytes):
             linha = linha.strip()
             if linha:
                 return linha
+        return ""
+
+    def proxima_linha_apos(conteudo):
+        for idx, linha in enumerate(linhas_pdf):
+            if conteudo in linha:
+                for prox in linhas_pdf[idx + 1:]:
+                    prox = prox.strip()
+                    if prox:
+                        return prox
+                break
         return ""
 
     referencia = linha_apos("Our reference:")
@@ -2913,8 +2925,13 @@ def extrair_dados_pdf(pdf_bytes):
                     continue
                 cliente = linha
                 break
-    if not cliente:
-        cliente = linha_apos("21079 Hamburg - Germany")
+
+    cliente_hamburg = proxima_linha_apos("21079 Hamburg - Germany")
+    if cliente_hamburg:
+        if not cliente or cliente == nome or cliente.lower() in {"info"}:
+            cliente = cliente_hamburg
+        if not nome:
+            nome = cliente_hamburg
     if "Gro\u00dfmoorring 9" in texto:
         idx_addr = texto.find("Gro\u00dfmoorring 9")
         linhas_antes = texto[:idx_addr].splitlines()
@@ -2928,6 +2945,14 @@ def extrair_dados_pdf(pdf_bytes):
     # Garantir que o campo "nome" reflete o contacto identificado
     if not nome and cliente:
         nome = cliente
+
+    def limpar_ktb(texto_desc):
+        if not texto_desc:
+            return ""
+        idx = texto_desc.lower().find("ktb-code")
+        if idx != -1:
+            return texto_desc[:idx].strip()
+        return texto_desc
 
     descricao = ""
     artigo = ""
@@ -2951,7 +2976,6 @@ def extrair_dados_pdf(pdf_bytes):
                 descricao = f"{descricao} {extra}".strip()
             break
 
-    linhas_pdf = texto.splitlines()
     itens = []
     padrao_item = re.compile(r"^\s*(\d{3}\.\d{2})\s*(.*)")
     padrao_piece_qtd = re.compile(r"Piece\s*(\d+)", re.IGNORECASE)
@@ -2975,7 +2999,9 @@ def extrair_dados_pdf(pdf_bytes):
                 quantidade_item = int(match_piece.group(1))
                 restante = restante[:match_piece.start()].strip()
             if restante:
-                desc_partes.append(restante)
+                restante_limpo = limpar_ktb(restante)
+                if restante_limpo:
+                    desc_partes.append(restante_limpo)
             else:
                 # Se a linha do código não tiver descrição, procurar nas linhas anteriores
                 k = i - 1
@@ -3003,6 +3029,8 @@ def extrair_dados_pdf(pdf_bytes):
                 if prox.lower() in {"piece", "quantity", "description", "unit"}:
                     j += 1
                     continue
+                if "ktb-code" in prox.lower():
+                    break
                 match_piece = padrao_piece_qtd.search(prox)
                 if match_piece:
                     quantidade_item = int(match_piece.group(1))
@@ -3018,10 +3046,12 @@ def extrair_dados_pdf(pdf_bytes):
                         quantidade_item = int(tokens[-1])
                         prox = resto_tokens
                 if prox:
-                    desc_partes.append(prox)
+                    prox_limpo = limpar_ktb(prox)
+                    if prox_limpo:
+                        desc_partes.append(prox_limpo)
                 j += 1
 
-            desc = " ".join(desc_partes).strip()
+            desc = limpar_ktb(" ".join(desc_partes).strip())
             item = {"codigo": codigo, "descricao": desc}
             if quantidade_item is not None:
                 item["quantidade"] = quantidade_item
@@ -3038,6 +3068,8 @@ def extrair_dados_pdf(pdf_bytes):
         if not descricao:
             descricao = linha_apos("Piece")
         quantidade = 1
+
+    descricao = limpar_ktb(descricao)
 
     marca = descricao.split()[0] if descricao else ""
 
@@ -3693,12 +3725,6 @@ elif menu_option == "🤖 Smart Quotation":
                 nome_pdf, pdf_bytes = anexos_processados[0]
                 exibir_pdf(f"👁️ PDF carregado - {nome_pdf}", pdf_bytes, expanded=True)
                 dados = extrair_dados_pdf(pdf_bytes)
-                custo_embalagem = st.number_input(
-                    "Custos Embalagem",
-                    min_value=0.0,
-                    step=0.01,
-                    key="custo_emb_smart"
-                )
 
                 col1, col2 = st.columns(2)
                 with col1:
