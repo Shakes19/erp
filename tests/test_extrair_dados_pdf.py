@@ -59,6 +59,36 @@ def test_extrair_dados_pdf_hamburg():
     assert dados["descricao"] == "Widget Part ABC"
 
 
+def criar_pdf_contact_hamburg_bytes():
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(0, 10, "Our reference:")
+    pdf.ln()
+    pdf.cell(0, 10, "REF-999")
+    pdf.ln()
+    pdf.cell(0, 10, "Contact: John Doe")
+    pdf.ln()
+    pdf.cell(0, 10, "21079 Hamburg - Germany")
+    pdf.ln()
+    pdf.cell(0, 10, "Mega Corp GmbH")
+    pdf.ln()
+    pdf.cell(0, 10, "001.00 Widget Prime Piece5")
+    pdf.ln()
+    pdf.cell(0, 10, "KTB-code:")
+    pdf.ln()
+    pdf.cell(0, 10, "MC12345")
+    return pdf.output(dest="S").encode("latin-1")
+
+
+def test_extrair_dados_pdf_contact_hamburg():
+    dados = extrair_dados_pdf(criar_pdf_contact_hamburg_bytes())
+    assert dados["cliente"] == "Mega Corp GmbH"
+    assert dados["nome"] == "John Doe"
+    assert dados["descricao"] == "Widget Prime"
+    assert dados["quantidade"] == 5
+
+
 def criar_pdf_grossmoorring_bytes():
     pdf = FPDF()
     pdf.add_page()
