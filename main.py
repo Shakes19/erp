@@ -2540,6 +2540,8 @@ def exibir_pdf(
     height: int = 600,
     expanded: bool = False,
     use_expander: bool = True,
+    sticky: bool = False,
+    sticky_top: int = 80,
 ):
     """Mostra PDF com fallback para pdf.js."""
     if not data_pdf:
@@ -2553,6 +2555,21 @@ def exibir_pdf(
         <iframe src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}" width="100%" height="{height}" style="border:none;"></iframe>
     </object>
     """
+
+    if sticky:
+        st.markdown(
+            f"""
+            <style>
+            .pdf-fixed-container {{
+                position: sticky;
+                top: {sticky_top}px;
+                z-index: 10;
+            }}
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        pdf_html = f'<div class="pdf-fixed-container">{pdf_html}</div>'
 
     if use_expander:
         with st.expander(label, expanded=expanded):
@@ -3894,7 +3911,6 @@ elif menu_option == "🤖 Smart Quotation":
                     marca_padrao_pdf = (dados.get("marca") or "").strip()
 
                     for item in itens_extraidos:
-                        codigo_item = (item.get("codigo") or "").strip()
                         ktb_code_item = (item.get("ktb_code") or "").strip()
                         descricao_item = normalizar_quebras_linha(
                             (item.get("descricao") or "").strip()
@@ -3911,14 +3927,10 @@ elif menu_option == "🤖 Smart Quotation":
                         marca_item = (item.get("marca") or marca_padrao_pdf).strip()
                         if not marca_item and descricao_item:
                             marca_item = descricao_item.split()[0]
-                        descricao_item = garantir_marca_primeira_palavra(
-                            descricao_item, marca_item
-                        )
 
                         artigos_extraidos.append(
                             {
                                 "artigo_num": ktb_code_item
-                                or codigo_item
                                 or (dados.get("artigo_num") or ""),
                                 "descricao": descricao_item,
                                 "quantidade": quantidade_str,
@@ -4151,9 +4163,6 @@ elif menu_option == "🤖 Smart Quotation":
                                 descricao_normalizada = normalizar_quebras_linha(
                                     descricao_input
                                 )
-                                descricao_normalizada = garantir_marca_primeira_palavra(
-                                    descricao_normalizada, marca_val
-                                )
 
                                 artigos_final.append(
                                     {
@@ -4261,6 +4270,7 @@ elif menu_option == "🤖 Smart Quotation":
                         pdf_bytes,
                         expanded=True,
                         use_expander=False,
+                        sticky=True,
                     )
             else:
                 st.warning("Ficheiro carregado não pôde ser processado.")
