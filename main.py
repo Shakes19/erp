@@ -2541,7 +2541,7 @@ def exibir_pdf(
     expanded: bool = False,
     use_expander: bool = True,
     sticky: bool = False,
-    sticky_top: int = 80,
+    sticky_top: int = 0,
 ):
     """Mostra PDF com fallback para pdf.js."""
     if not data_pdf:
@@ -2561,8 +2561,10 @@ def exibir_pdf(
             f"""
             <style>
             .pdf-fixed-container {{
-                position: sticky;
+                position: fixed;
                 top: {sticky_top}px;
+                right: 0;
+                width: inherit;
                 z-index: 10;
             }}
             </style>
@@ -2603,6 +2605,20 @@ def normalizar_quebras_linha(texto: str) -> str:
         return ""
 
     return texto.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def extrair_primeira_palavra(texto: str) -> str:
+    """Obtém a primeira palavra alfanumérica presente no texto fornecido."""
+
+    if not texto:
+        return ""
+
+    texto_limpo = texto.strip()
+    if not texto_limpo:
+        return ""
+
+    correspondencia = re.search(r"[\wÀ-ÿ0-9][\wÀ-ÿ0-9\-/]*", texto_limpo)
+    return correspondencia.group(0) if correspondencia else ""
 
 
 def garantir_marca_primeira_palavra(descricao: str, marca: str) -> str:
@@ -3879,7 +3895,6 @@ elif menu_option == "🤖 Smart Quotation":
 
     with tab_cot:
         unidades_padrao = ["Peças", "Metros", "KG", "Litros", "Caixas", "Paletes"]
-        marcas_disponiveis = listar_todas_marcas()
         upload_pdf = st.file_uploader(
             "📎 Pedido do cliente (PDF ou email)",
             type=["pdf", "eml", "msg"],
@@ -3961,18 +3976,18 @@ elif menu_option == "🤖 Smart Quotation":
                         st.session_state[f"smart_artigos_{idx}_artigo_num"] = artigo.get(
                             "artigo_num", "",
                         )
-                        st.session_state[f"smart_artigos_{idx}_descricao"] = artigo.get(
-                            "descricao", "",
-                        )
+                        descricao_guardada = artigo.get("descricao", "")
+                        st.session_state[f"smart_artigos_{idx}_descricao"] = descricao_guardada
                         st.session_state[f"smart_artigos_{idx}_quantidade"] = artigo.get(
                             "quantidade", "",
                         )
                         st.session_state[f"smart_artigos_{idx}_unidade"] = artigo.get(
                             "unidade", "Peças"
                         ) or "Peças"
-                        st.session_state[f"smart_artigos_{idx}_marca"] = artigo.get(
-                            "marca", ""
-                        ) or ""
+                        marca_extraida = extrair_primeira_palavra(descricao_guardada)
+                        if not marca_extraida:
+                            marca_extraida = artigo.get("marca", "") or ""
+                        st.session_state[f"smart_artigos_{idx}_marca"] = marca_extraida
 
 
                     cliente_extraido = (dados.get("cliente") or "").strip().lower()
@@ -4018,6 +4033,14 @@ elif menu_option == "🤖 Smart Quotation":
                     artigos_guardados = st.session_state.get("smart_artigos", [])
                     for idx, _ in enumerate(artigos_guardados):
                         st.markdown(f"**Artigo {idx + 1}**")
+                        descricao_key = f"smart_artigos_{idx}_descricao"
+                        marca_key = f"smart_artigos_{idx}_marca"
+                        descricao_atual = st.session_state.get(descricao_key, "")
+                        marca_detectada = extrair_primeira_palavra(descricao_atual)
+                        marca_registada = st.session_state.get(marca_key, "")
+                        if marca_detectada != marca_registada:
+                            st.session_state[marca_key] = marca_detectada
+
                         col_art, col_qtd, col_uni, col_marca = st.columns([1.4, 1, 1, 1.6])
                         with col_art:
                             st.text_input(
@@ -4044,18 +4067,11 @@ elif menu_option == "🤖 Smart Quotation":
                                 key=unidade_key,
                             )
                         with col_marca:
-                            marca_key = f"smart_artigos_{idx}_marca"
-                            marca_atual = st.session_state.get(marca_key, "")
-                            marca_opcoes = [""] + [m for m in marcas_disponiveis if m]
-                            if marca_atual and marca_atual not in marca_opcoes:
-                                marca_opcoes.append(marca_atual)
-                            st.selectbox(
+                            st.text_input(
                                 f"Marca {idx + 1}",
-                                options=marca_opcoes,
-                                index=marca_opcoes.index(marca_atual)
-                                if marca_atual in marca_opcoes
-                                else 0,
                                 key=marca_key,
+                                disabled=True,
+                                help="A marca é preenchida automaticamente com a primeira palavra da descrição.",
                             )
 
                         st.text_area(
@@ -4120,14 +4136,17 @@ elif menu_option == "🤖 Smart Quotation":
                                 if not descricao_input:
                                     continue
 
-                                marca_val = (
-                                    st.session_state.get(
-                                        f"smart_artigos_{idx}_marca", ""
-                                    )
-                                    or ""
-                                ).strip()
+                                marca_key = f"smart_artigos_{idx}_marca"
+                                marca_val = extrair_primeira_palavra(descricao_input)
+                                if marca_val:
+                                    st.session_state[marca_key] = marca_val
+                                else:
+                                    st.session_state[marca_key] = ""
+
                                 if not marca_val:
-                                    erros.append(f"Artigo {idx + 1}: selecione uma marca")
+                                    erros.append(
+                                        f"Artigo {idx + 1}: a descrição deve começar por uma marca."
+                                    )
                                     continue
 
                                 unidade_val = (
@@ -4160,8 +4179,8 @@ elif menu_option == "🤖 Smart Quotation":
                                         except ValueError:
                                             quantidade_valor = quantidade_str
 
-                                descricao_normalizada = normalizar_quebras_linha(
-                                    descricao_input
+                                descricao_normalizada = garantir_marca_primeira_palavra(
+                                    normalizar_quebras_linha(descricao_input), marca_val
                                 )
 
                                 artigos_final.append(
