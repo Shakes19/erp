@@ -258,6 +258,49 @@ def test_extrair_dados_pdf_ktb():
     assert dados["itens"][0]["ktb_code"] == "2167704"
 
 
+def criar_pdf_ktb_inline_bytes():
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(0, 10, "Our reference: INLINE")
+    pdf.ln()
+    pdf.cell(0, 10, "Client: Inline Brand")
+    pdf.ln()
+    pdf.cell(0, 10, "001.00 INLINE Part")
+    pdf.ln()
+    pdf.cell(0, 10, "KTB-code: 998877, extra text")
+    return pdf.output(dest="S").encode("latin-1")
+
+
+def test_extrair_dados_pdf_ktb_inline():
+    dados = extrair_dados_pdf(criar_pdf_ktb_inline_bytes())
+    assert dados["artigo_num"] == "998877"
+
+
+def criar_pdf_marca_descricao_preservada_bytes():
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(0, 10, "Our reference: MARCA")
+    pdf.ln()
+    pdf.cell(0, 10, "Client: Marca Test")
+    pdf.ln()
+    pdf.cell(0, 10, "001.00 TURCK Sensor TURCK")
+    pdf.ln()
+    pdf.cell(0, 10, "Piece2")
+    pdf.ln()
+    pdf.cell(0, 10, "KTB-code:")
+    pdf.ln()
+    pdf.cell(0, 10, "445566")
+    return pdf.output(dest="S").encode("latin-1")
+
+
+def test_extrair_dados_pdf_marca_descricao_preservada():
+    dados = extrair_dados_pdf(criar_pdf_marca_descricao_preservada_bytes())
+    assert dados["descricao"] == "TURCK Sensor TURCK"
+    assert dados["marca"] == "TURCK"
+
+
 def criar_pdf_multi_ktb_bytes():
     pdf = FPDF()
     pdf.add_page()

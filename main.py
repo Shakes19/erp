@@ -3050,24 +3050,49 @@ def extrair_dados_pdf(pdf_bytes):
             return texto_desc[:idx].strip()
         return texto_desc
 
+    def extrair_codigo_segmento(segmento: str) -> str:
+        """Devolve o primeiro token alfanumérico de um segmento de texto."""
+
+        if not segmento:
+            return ""
+
+        segmento = segmento.strip()
+        match_codigo = re.search(r"([A-Za-z0-9][A-Za-z0-9/.-]*)", segmento)
+        if match_codigo:
+            return match_codigo.group(1)
+        return segmento
+
     descricao = ""
     artigo = ""
     ktb_codes: list[str] = []
     for idx, linha in enumerate(linhas_pdf):
         if "ktb-code" in linha.lower():
             codigo_ktb = ""
-            prox_idx = idx + 1
-            while prox_idx < len(linhas_pdf):
-                prox_linha = linhas_pdf[prox_idx].strip()
-                if prox_linha:
-                    codigo_ktb = prox_linha
-                    break
-                prox_idx += 1
+
+            match_inline = re.search(
+                r"ktb[-\s]*code\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9/.-]*)",
+                linha,
+                re.IGNORECASE,
+            )
+            if match_inline:
+                codigo_ktb = match_inline.group(1)
+            else:
+                prox_idx = idx + 1
+                while prox_idx < len(linhas_pdf):
+                    prox_linha = linhas_pdf[prox_idx].strip()
+                    if prox_linha:
+                        codigo_ktb = extrair_codigo_segmento(prox_linha)
+                        break
+                    prox_idx += 1
+
             if codigo_ktb:
                 ktb_codes.append(codigo_ktb.strip())
+                if not artigo:
+                    artigo = codigo_ktb.strip()
     idx_ktb = texto.find("KTB-code:")
     if idx_ktb != -1:
-        artigo = linha_apos("KTB-code:")
+        if not artigo:
+            artigo = extrair_codigo_segmento(linha_apos("KTB-code:"))
         linhas_antes = texto[:idx_ktb].splitlines()
         padrao_item = re.compile(r"\b\d{3}\.00\b")
         extra = ""
@@ -3186,8 +3211,6 @@ def extrair_dados_pdf(pdf_bytes):
 
     descricao = limpar_ktb(descricao)
 
-    marca = descricao.split()[0] if descricao else ""
-    descricao = garantir_marca_primeira_palavra(descricao, marca)
     marca = descricao.split()[0] if descricao else ""
 
     return {
