@@ -4036,20 +4036,22 @@ elif menu_option == "🤖 Smart Quotation":
                         descricao_key = f"smart_artigos_{idx}_descricao"
                         marca_key = f"smart_artigos_{idx}_marca"
                         descricao_atual = st.session_state.get(descricao_key, "")
-                        marca_detectada = extrair_primeira_palavra(descricao_atual)
-                        marca_registada = st.session_state.get(marca_key, "")
-                        if marca_detectada != marca_registada:
-                            st.session_state[marca_key] = marca_detectada
+                        marca_registada = (st.session_state.get(marca_key) or "").strip()
+                        if not marca_registada:
+                            marca_detectada = extrair_primeira_palavra(descricao_atual)
+                            if marca_detectada:
+                                st.session_state[marca_key] = marca_detectada
+                                marca_registada = marca_detectada
 
                         col_art, col_qtd, col_uni, col_marca = st.columns([1.4, 1, 1, 1.6])
                         with col_art:
                             st.text_input(
-                                f"Nº Artigo {idx + 1}",
+                                "Nº Artigo",
                                 key=f"smart_artigos_{idx}_artigo_num",
                             )
                         with col_qtd:
                             st.text_input(
-                                f"Quantidade {idx + 1}",
+                                "Quantidade",
                                 key=f"smart_artigos_{idx}_quantidade",
                             )
                         with col_uni:
@@ -4059,7 +4061,7 @@ elif menu_option == "🤖 Smart Quotation":
                             if unidade_atual not in opcoes_unidade:
                                 opcoes_unidade.append(unidade_atual)
                             st.selectbox(
-                                f"Unidade {idx + 1}",
+                                "Unidade",
                                 options=opcoes_unidade,
                                 index=opcoes_unidade.index(unidade_atual)
                                 if unidade_atual in opcoes_unidade
@@ -4068,14 +4070,16 @@ elif menu_option == "🤖 Smart Quotation":
                             )
                         with col_marca:
                             st.text_input(
-                                f"Marca {idx + 1}",
+                                "Marca",
                                 key=marca_key,
-                                disabled=True,
-                                help="A marca é preenchida automaticamente com a primeira palavra da descrição.",
+                                help=(
+                                    "A marca é sugerida automaticamente com base na descrição,"
+                                    " mas pode ser editada."
+                                ),
                             )
 
                         st.text_area(
-                            f"Descrição {idx + 1}",
+                            "Descrição",
                             key=f"smart_artigos_{idx}_descricao",
                             height=140,
                             help="As quebras de linha serão mantidas na geração da cotação.",
@@ -4137,15 +4141,11 @@ elif menu_option == "🤖 Smart Quotation":
                                     continue
 
                                 marca_key = f"smart_artigos_{idx}_marca"
-                                marca_val = extrair_primeira_palavra(descricao_input)
-                                if marca_val:
-                                    st.session_state[marca_key] = marca_val
-                                else:
-                                    st.session_state[marca_key] = ""
+                                marca_val = (st.session_state.get(marca_key) or "").strip()
 
                                 if not marca_val:
                                     erros.append(
-                                        f"Artigo {idx + 1}: a descrição deve começar por uma marca."
+                                        f"Artigo {idx + 1}: indique a marca do artigo."
                                     )
                                     continue
 
@@ -4182,6 +4182,8 @@ elif menu_option == "🤖 Smart Quotation":
                                 descricao_normalizada = garantir_marca_primeira_palavra(
                                     normalizar_quebras_linha(descricao_input), marca_val
                                 )
+
+                                st.session_state[marca_key] = marca_val
 
                                 artigos_final.append(
                                     {
@@ -4290,6 +4292,7 @@ elif menu_option == "🤖 Smart Quotation":
                         expanded=True,
                         use_expander=False,
                         sticky=True,
+                        sticky_top=110,
                     )
             else:
                 st.warning("Ficheiro carregado não pôde ser processado.")
