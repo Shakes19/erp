@@ -5293,8 +5293,11 @@ elif menu_option == "📊 Relatórios":
         rows = c.fetchall()
         if rows:
             df = pd.DataFrame(rows, columns=["data", "total"])
-            df["data"] = pd.to_datetime(df["data"])
-            df = df.set_index("data").sort_index()
+            df["data"] = pd.to_datetime(
+                df["data"].astype(str).str.replace("T", " ", regex=False),
+                errors="coerce",
+            )
+            df = df.dropna(subset=["data"]).set_index("data").sort_index()
             df["cumulativo"] = df["total"].cumsum()
             st.markdown("**Cotações por Dia (Cumulativo)**")
             st.line_chart(df["cumulativo"], height=300)
@@ -5314,8 +5317,11 @@ elif menu_option == "📊 Relatórios":
         rows = c.fetchall()
         if rows:
             df_val = pd.DataFrame(rows, columns=["data", "total"])
-            df_val["data"] = pd.to_datetime(df_val["data"])
-            df_val = df_val.set_index("data").sort_index()
+            df_val["data"] = pd.to_datetime(
+                df_val["data"].astype(str).str.replace("T", " ", regex=False),
+                errors="coerce",
+            )
+            df_val = df_val.dropna(subset=["data"]).set_index("data").sort_index()
             df_val["cumulativo"] = df_val["total"].cumsum()
             st.markdown("**Preço de Venda por Dia (Cumulativo)**")
             st.line_chart(df_val["cumulativo"], height=300)
