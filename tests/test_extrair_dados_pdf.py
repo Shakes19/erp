@@ -255,3 +255,36 @@ def test_extrair_dados_pdf_ktb():
     assert dados["artigo_num"] == "2167704"
     assert dados["descricao"] == "TURCK Sensor BI2-G08-VP6X-0,15-PSG4S 4602652"
     assert dados["quantidade"] == 2
+    assert dados["itens"][0]["ktb_code"] == "2167704"
+
+
+def criar_pdf_multi_ktb_bytes():
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(0, 10, "Our reference: MULTI-KTB")
+    pdf.ln()
+    pdf.cell(0, 10, "Client: Multi Brand")
+    pdf.ln()
+    pdf.cell(0, 10, "001.00 Item Alpha")
+    pdf.ln()
+    pdf.cell(0, 10, "Piece1")
+    pdf.ln()
+    pdf.cell(0, 10, "KTB-code:")
+    pdf.ln()
+    pdf.cell(0, 10, "A12345")
+    pdf.ln()
+    pdf.cell(0, 10, "002.00 Item Beta")
+    pdf.ln()
+    pdf.cell(0, 10, "Piece3")
+    pdf.ln()
+    pdf.cell(0, 10, "KTB-code:")
+    pdf.ln()
+    pdf.cell(0, 10, "B67890")
+    return pdf.output(dest="S").encode("latin-1")
+
+
+def test_extrair_dados_pdf_multi_ktb():
+    dados = extrair_dados_pdf(criar_pdf_multi_ktb_bytes())
+    assert [item.get("ktb_code") for item in dados["itens"]] == ["A12345", "B67890"]
+    assert dados["artigo_num"] == "A12345"

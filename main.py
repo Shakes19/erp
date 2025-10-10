@@ -2995,6 +2995,19 @@ def extrair_dados_pdf(pdf_bytes):
 
     descricao = ""
     artigo = ""
+    ktb_codes: list[str] = []
+    for idx, linha in enumerate(linhas_pdf):
+        if "ktb-code" in linha.lower():
+            codigo_ktb = ""
+            prox_idx = idx + 1
+            while prox_idx < len(linhas_pdf):
+                prox_linha = linhas_pdf[prox_idx].strip()
+                if prox_linha:
+                    codigo_ktb = prox_linha
+                    break
+                prox_idx += 1
+            if codigo_ktb:
+                ktb_codes.append(codigo_ktb.strip())
     idx_ktb = texto.find("KTB-code:")
     if idx_ktb != -1:
         artigo = linha_apos("KTB-code:")
@@ -3014,6 +3027,9 @@ def extrair_dados_pdf(pdf_bytes):
             if extra:
                 descricao = f"{descricao} {extra}".strip()
             break
+
+    if not artigo and ktb_codes:
+        artigo = ktb_codes[0]
 
     itens = []
     padrao_item = re.compile(r"^\s*(\d{3}\.\d{2})\s*(.*)")
@@ -3091,7 +3107,10 @@ def extrair_dados_pdf(pdf_bytes):
                 j += 1
 
             desc = limpar_ktb(" ".join(desc_partes).strip())
+            item_index = len(itens)
             item = {"codigo": codigo, "descricao": desc}
+            if item_index < len(ktb_codes):
+                item["ktb_code"] = ktb_codes[item_index]
             if quantidade_item is not None:
                 item["quantidade"] = quantidade_item
             itens.append(item)
@@ -3757,6 +3776,8 @@ elif menu_option == "🤖 Smart Quotation":
     tab_cot, tab_text = st.tabs(["Preencher Cotação", "Text Extraction"])
 
     with tab_cot:
+        unidades_padrao = ["Peças", "Metros", "KG", "Litros", "Caixas", "Paletes"]
+        marcas_disponiveis = listar_todas_marcas()
         upload_pdf = st.file_uploader(
             "📎 Pedido do cliente (PDF ou email)",
             type=["pdf", "eml", "msg"],
@@ -3785,9 +3806,11 @@ elif menu_option == "🤖 Smart Quotation":
 
                     itens_extraidos = dados.get("itens") or []
                     artigos_extraidos: list[dict[str, str]] = []
+                    marca_padrao_pdf = (dados.get("marca") or "").strip()
 
                     for item in itens_extraidos:
                         codigo_item = (item.get("codigo") or "").strip()
+                        ktb_code_item = (item.get("ktb_code") or "").strip()
                         descricao_item = normalizar_quebras_linha(
                             (item.get("descricao") or "").strip()
                         )
@@ -3799,11 +3822,18 @@ elif menu_option == "🤖 Smart Quotation":
                             else:
                                 quantidade_str = str(quantidade_item).strip()
 
+                        unidade_item = (item.get("unidade") or "Peças").strip() or "Peças"
+                        marca_item = (item.get("marca") or marca_padrao_pdf).strip()
+
                         artigos_extraidos.append(
                             {
-                                "artigo_num": codigo_item or (dados.get("artigo_num") or ""),
+                                "artigo_num": ktb_code_item
+                                or codigo_item
+                                or (dados.get("artigo_num") or ""),
                                 "descricao": descricao_item,
                                 "quantidade": quantidade_str,
+                                "unidade": unidade_item,
+                                "marca": marca_item,
                             }
                         )
 
@@ -3819,20 +3849,29 @@ elif menu_option == "🤖 Smart Quotation":
                                 "artigo_num": dados.get("artigo_num") or "",
                                 "descricao": descricao_formatada,
                                 "quantidade": quantidade_base_str,
+                                "unidade": "Peças",
+                                "marca": marca_padrao_pdf,
                             }
                         ]
 
                     st.session_state.smart_artigos = artigos_extraidos
                     for idx, artigo in enumerate(artigos_extraidos):
                         st.session_state[f"smart_artigos_{idx}_artigo_num"] = artigo.get(
-                            "artigo_num", ""
+                            "artigo_num", "",
                         )
                         st.session_state[f"smart_artigos_{idx}_descricao"] = artigo.get(
-                            "descricao", ""
+                            "descricao", "",
                         )
                         st.session_state[f"smart_artigos_{idx}_quantidade"] = artigo.get(
-                            "quantidade", ""
+                            "quantidade", "",
                         )
+                        st.session_state[f"smart_artigos_{idx}_unidade"] = artigo.get(
+                            "unidade", "Peças"
+                        ) or "Peças"
+                        st.session_state[f"smart_artigos_{idx}_marca"] = artigo.get(
+                            "marca", ""
+                        ) or ""
+
 
                     cliente_extraido = (dados.get("cliente") or "").strip().lower()
                     default_idx = 0
@@ -3877,7 +3916,7 @@ elif menu_option == "🤖 Smart Quotation":
                     artigos_guardados = st.session_state.get("smart_artigos", [])
                     for idx, _ in enumerate(artigos_guardados):
                         st.markdown(f"**Artigo {idx + 1}**")
-                        col_art, col_qtd = st.columns(2)
+                        col_art, col_qtd, col_uni, col_marca = st.columns([1.4, 1, 1, 1.6])
                         with col_art:
                             st.text_input(
                                 f"Nº Artigo {idx + 1}",
@@ -3887,6 +3926,34 @@ elif menu_option == "🤖 Smart Quotation":
                             st.text_input(
                                 f"Quantidade {idx + 1}",
                                 key=f"smart_artigos_{idx}_quantidade",
+                            )
+                        with col_uni:
+                            unidade_key = f"smart_artigos_{idx}_unidade"
+                            unidade_atual = st.session_state.get(unidade_key, "Peças")
+                            opcoes_unidade = [*unidades_padrao]
+                            if unidade_atual not in opcoes_unidade:
+                                opcoes_unidade.append(unidade_atual)
+                            st.selectbox(
+                                f"Unidade {idx + 1}",
+                                options=opcoes_unidade,
+                                index=opcoes_unidade.index(unidade_atual)
+                                if unidade_atual in opcoes_unidade
+                                else 0,
+                                key=unidade_key,
+                            )
+                        with col_marca:
+                            marca_key = f"smart_artigos_{idx}_marca"
+                            marca_atual = st.session_state.get(marca_key, "")
+                            marca_opcoes = [""] + [m for m in marcas_disponiveis if m]
+                            if marca_atual and marca_atual not in marca_opcoes:
+                                marca_opcoes.append(marca_atual)
+                            st.selectbox(
+                                f"Marca {idx + 1}",
+                                options=marca_opcoes,
+                                index=marca_opcoes.index(marca_atual)
+                                if marca_atual in marca_opcoes
+                                else 0,
+                                key=marca_key,
                             )
 
                         st.text_area(
@@ -3909,11 +3976,15 @@ elif menu_option == "🤖 Smart Quotation":
                                 "quantidade": st.session_state.get(
                                     f"smart_artigos_{idx}_quantidade", ""
                                 ),
+                                "unidade": st.session_state.get(
+                                    f"smart_artigos_{idx}_unidade", "Peças"
+                                ),
+                                "marca": st.session_state.get(
+                                    f"smart_artigos_{idx}_marca", ""
+                                ),
                             }
                         )
                     st.session_state.smart_artigos = artigos_atualizados
-                    st.text_input("Unidade", key="smart_unidade")
-                    st.text_input("Marca", key="smart_marca")
 
                     cliente_selecionado = (
                         cliente_options[cliente_idx]
@@ -3922,18 +3993,14 @@ elif menu_option == "🤖 Smart Quotation":
                     )
 
                     if st.button("Submeter", type="primary", key="smart_submit"):
-                        marca_escolhida = (st.session_state.get("smart_marca") or "").strip()
-                        fornecedores = obter_fornecedores_por_marca(marca_escolhida)
-                        if not fornecedores:
-                            st.error("Marca não encontrada. Configure a marca para um fornecedor.")
-                        elif not cliente_selecionado:
+                        if not cliente_selecionado:
                             st.error("Selecione um cliente existente na gestão de clientes.")
                         else:
                             referencia = (st.session_state.get("smart_referencia") or "").strip()
-                            unidade = (st.session_state.get("smart_unidade") or "Peças").strip() or "Peças"
-
                             artigos_info = st.session_state.get("smart_artigos") or []
                             artigos_final: list[dict] = []
+                            artigos_posicoes: list[int] = []
+                            erros: list[str] = []
 
                             for idx, _ in enumerate(artigos_info):
                                 artigo_num_val = (
@@ -3950,6 +4017,24 @@ elif menu_option == "🤖 Smart Quotation":
                                 ).strip()
                                 if not descricao_input:
                                     continue
+
+                                marca_val = (
+                                    st.session_state.get(
+                                        f"smart_artigos_{idx}_marca", ""
+                                    )
+                                    or ""
+                                ).strip()
+                                if not marca_val:
+                                    erros.append(f"Artigo {idx + 1}: selecione uma marca")
+                                    continue
+
+                                unidade_val = (
+                                    st.session_state.get(
+                                        f"smart_artigos_{idx}_unidade", "Peças"
+                                    )
+                                    or "Peças"
+                                )
+                                unidade_val = str(unidade_val).strip() or "Peças"
 
                                 quantidade_raw = (
                                     st.session_state.get(
@@ -3978,50 +4063,82 @@ elif menu_option == "🤖 Smart Quotation":
                                         "artigo_num": artigo_num_val,
                                         "descricao": normalizar_quebras_linha(descricao_input),
                                         "quantidade": quantidade_valor,
-                                        "unidade": unidade,
-                                        "marca": marca_escolhida,
+                                        "unidade": unidade_val,
+                                        "marca": marca_val,
                                     }
                                 )
+                                artigos_posicoes.append(idx + 1)
 
                             if not artigos_final:
-                                st.error(
-                                    "Indique pelo menos um artigo com descrição para gerar a cotação."
-                                )
-                                st.stop()
-
-                            processo_id, numero_processo, processo_artigos = criar_processo_com_artigos(artigos_final)
-                            rfqs_criados: list[tuple[int, tuple]] = []
-
-                            for fornecedor in fornecedores:
-                                artigos_fornecedor: list[dict] = []
-                                for artigo, processo_info in zip(artigos_final, processo_artigos):
-                                    artigos_fornecedor.append(
-                                        {
-                                            **artigo,
-                                            "processo_artigo_id": processo_info["processo_artigo_id"],
-                                            "ordem": processo_info["ordem"],
-                                        }
+                                if erros:
+                                    for mensagem in erros:
+                                        st.error(mensagem)
+                                else:
+                                    st.error(
+                                        "Indique pelo menos um artigo com descrição para gerar a cotação."
                                     )
+                            elif erros:
+                                for mensagem in erros:
+                                    st.error(mensagem)
+                            else:
+                                fornecedores_map: defaultdict[int, list[int]] = defaultdict(list)
+                                fornecedores_info: dict[int, tuple] = {}
+                                erros_fornecedores: list[str] = []
 
-                                    rfq_id, numero_proc_ret, _, _ = criar_rfq(
-                                        fornecedor[0],
-                                        datetime.today(),
-                                        artigos_fornecedor,
-                                        referencia,
-                                        cliente_selecionado[0],
-                                        processo_id=processo_id,
-                                        numero_processo=numero_processo,
-                                        processo_artigos=processo_artigos,
-                                )
-
-                                if rfq_id:
-                                    rfqs_criados.append((rfq_id, fornecedor))
-                                    if anexos_processados:
-                                        guardar_pdf_uploads(
-                                            rfq_id,
-                                            "anexo_cliente",
-                                            anexos_processados,
+                                for idx, artigo in enumerate(artigos_final):
+                                    fornecedores = obter_fornecedores_por_marca(artigo["marca"])
+                                    if not fornecedores:
+                                        erros_fornecedores.append(
+                                            f"Artigo {artigos_posicoes[idx]}: configure fornecedores para a marca '{artigo['marca']}'."
                                         )
+                                        continue
+                                    for fornecedor in fornecedores:
+                                        fornecedores_map[fornecedor[0]].append(idx)
+                                        fornecedores_info[fornecedor[0]] = fornecedor
+
+                                if erros_fornecedores:
+                                    for mensagem in erros_fornecedores:
+                                        st.error(mensagem)
+                                elif not fornecedores_map:
+                                    st.error(
+                                        "Não foram encontrados fornecedores elegíveis para os artigos selecionados"
+                                    )
+                                else:
+                                    processo_id, numero_processo, processo_artigos = criar_processo_com_artigos(artigos_final)
+                                    rfqs_criados: list[tuple[int, tuple]] = []
+
+                                    for fornecedor_id, indices_artigos in fornecedores_map.items():
+                                        artigos_fornecedor: list[dict] = []
+                                        for indice_artigo in indices_artigos:
+                                            processo_info = processo_artigos[indice_artigo]
+                                            artigos_fornecedor.append(
+                                                {
+                                                    **artigos_final[indice_artigo],
+                                                    "processo_artigo_id": processo_info["processo_artigo_id"],
+                                                    "ordem": processo_info["ordem"],
+                                                }
+                                            )
+
+                                        rfq_id, numero_proc_ret, _, _ = criar_rfq(
+                                            fornecedor_id,
+                                            datetime.today(),
+                                            artigos_fornecedor,
+                                            referencia,
+                                            cliente_selecionado[0],
+                                            processo_id=processo_id,
+                                            numero_processo=numero_processo,
+                                            processo_artigos=processo_artigos,
+                                        )
+
+                                        if rfq_id:
+                                            rfqs_criados.append((rfq_id, fornecedores_info[fornecedor_id]))
+                                            if anexos_processados:
+                                                guardar_pdf_uploads(
+                                                    rfq_id,
+                                                    "anexo_cliente",
+                                                    anexos_processados,
+                                                )
+
 
                             if rfqs_criados:
                                 st.success(
