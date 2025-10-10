@@ -47,3 +47,20 @@ def test_obter_fornecedores_por_marca_ignores_whitespace():
     # The lookup should also succeed when the query contains whitespace
     fornecedores_ws = main.obter_fornecedores_por_marca("  Marca Trim  ")
     assert any(f[0] == forn_id for f in fornecedores_ws)
+
+
+def test_obter_fornecedores_por_marca_is_case_insensitive():
+    forn_id = main.inserir_fornecedor("Fornecedor Case")
+    assert forn_id > 0
+
+    assert main.adicionar_marca_fornecedor(forn_id, "Marca Maiuscula") is True
+
+    fornecedores_lower = main.obter_fornecedores_por_marca("marca maiuscula")
+    assert any(f[0] == forn_id for f in fornecedores_lower)
+
+
+def test_normalizar_quebras_linha_preserves_commas():
+    texto = "Linha 1\r\nLinha 2, valor adicional\rLinha 3"
+    esperado = "Linha 1\nLinha 2, valor adicional\nLinha 3"
+
+    assert main.normalizar_quebras_linha(texto) == esperado

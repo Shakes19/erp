@@ -254,6 +254,8 @@ def obter_fornecedores_por_marca(marca):
     if not marca_limpa:
         return []
 
+    marca_normalizada = marca_limpa.lower()
+
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
@@ -261,10 +263,10 @@ def obter_fornecedores_por_marca(marca):
         SELECT f.id, f.nome, f.email
         FROM fornecedor f
         JOIN fornecedor_marca fm ON f.id = fm.fornecedor_id
-        WHERE TRIM(fm.marca) = ?
+        WHERE LOWER(TRIM(fm.marca)) = ?
         ORDER BY f.nome
         """,
-        (marca_limpa,),
+        (marca_normalizada,),
     )
     res = c.fetchall()
     conn.close()
@@ -2556,6 +2558,15 @@ def reset_smart_quotation_state():
         st.session_state.pop(key, None)
 
 
+def normalizar_quebras_linha(texto: str) -> str:
+    """Normaliza caracteres de quebra de linha preservando a estrutura original."""
+
+    if not texto:
+        return ""
+
+    return texto.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def verificar_pdfs(rfq_id):
     """Verifica se os PDFs existem na base de dados"""
     conn = obter_conexao()
@@ -3747,7 +3758,7 @@ elif menu_option == "🤖 Smart Quotation":
         upload_pdf = st.file_uploader(
             "📎 Pedido do cliente (PDF ou email)",
             type=["pdf", "eml", "msg"],
-            accept_multiple_files=True,
+            accept_multiple_files=False,
             key="smart_pdf",
         )
         if upload_pdf:
@@ -3759,7 +3770,9 @@ elif menu_option == "🤖 Smart Quotation":
                 cliente_options: list[tuple | None] = [None] + clientes
 
                 pdf_uid = f"{nome_pdf}:{len(pdf_bytes)}"
-                descricao_formatada = (dados.get("descricao") or "").replace(",", "\n")
+                descricao_formatada = normalizar_quebras_linha(
+                    dados.get("descricao") or ""
+                )
 
                 if st.session_state.get("smart_pdf_uid") != pdf_uid:
                     st.session_state.smart_pdf_uid = pdf_uid
@@ -3778,9 +3791,8 @@ elif menu_option == "🤖 Smart Quotation":
                                 break
                     st.session_state.smart_cliente_index = default_idx
                 else:
-                    # Garantir que descrições posteriores mantêm a regra das vírgulas
-                    st.session_state.smart_descricao = (
-                        st.session_state.get("smart_descricao", "").replace(",", "\n")
+                    st.session_state.smart_descricao = normalizar_quebras_linha(
+                        st.session_state.get("smart_descricao", "")
                     )
 
                 def _format_cliente(idx: int) -> str:
@@ -3816,7 +3828,7 @@ elif menu_option == "🤖 Smart Quotation":
                         "Descrição",
                         key="smart_descricao",
                         height=140,
-                        help="Cada vírgula é tratada como quebra de linha na geração da cotação.",
+                        help="As quebras de linha serão mantidas na geração da cotação.",
                     )
                     st.text_input("Unidade", key="smart_unidade")
                     st.text_input("Marca", key="smart_marca")
@@ -3840,7 +3852,9 @@ elif menu_option == "🤖 Smart Quotation":
                             quantidade_raw = st.session_state.get("smart_quantidade") or ""
                             unidade = (st.session_state.get("smart_unidade") or "Peças").strip() or "Peças"
                             descricao_input = st.session_state.get("smart_descricao") or ""
-                            descricao_final = re.sub(r",\s*", "\n", descricao_input.strip())
+                            descricao_final = normalizar_quebras_linha(
+                                descricao_input.strip()
+                            )
 
                             quantidade_valor: int | float | str
                             quantidade_str = str(quantidade_raw).strip()
