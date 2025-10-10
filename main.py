@@ -11,6 +11,7 @@ import shutil
 import imghdr
 import tempfile
 import re
+from uuid import uuid4
 from pypdf import PdfReader
 from PIL import Image
 import pandas as pd
@@ -2556,29 +2557,40 @@ def exibir_pdf(
     </object>
     """
 
-    if sticky:
-        st.markdown(
-            f"""
-            <style>
-            .pdf-fixed-container {{
-                position: fixed;
-                top: {sticky_top}px;
-                right: 0;
-                width: inherit;
-                z-index: 10;
-            }}
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
-        pdf_html = f'<div class="pdf-fixed-container">{pdf_html}</div>'
-
     if use_expander:
         with st.expander(label, expanded=expanded):
             st.markdown(pdf_html, unsafe_allow_html=True)
     else:
-        st.markdown(f"**{label}**")
-        st.markdown(pdf_html, unsafe_allow_html=True)
+        if sticky:
+            container_id = f"pdf-sticky-{uuid4().hex}"
+            st.markdown(
+                f"""
+                <style>
+                #{container_id} {{
+                    position: sticky;
+                    top: {sticky_top}px;
+                    z-index: 10;
+                }}
+                #{container_id} .pdf-title {{
+                    font-weight: 600;
+                    margin-bottom: 0.5rem;
+                }}
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f"""
+                <div id="{container_id}">
+                    <div class="pdf-title">{label}</div>
+                    {pdf_html}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(f"**{label}**")
+            st.markdown(pdf_html, unsafe_allow_html=True)
 
 
 def reset_smart_quotation_state():
