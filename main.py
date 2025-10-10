@@ -2520,7 +2520,7 @@ def exibir_pdf(
     expanded: bool = False,
     use_expander: bool = True,
 ):
-    """Mostra PDF com fallback para pdf.js e opção de abrir em nova aba."""
+    """Mostra PDF com fallback para pdf.js."""
     if not data_pdf:
         st.warning("PDF não disponível")
         return
@@ -2531,7 +2531,6 @@ def exibir_pdf(
     <object data="data:application/pdf;base64,{b64}" type="application/pdf" width="100%" height="{height}">
         <iframe src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}" width="100%" height="{height}" style="border:none;"></iframe>
     </object>
-    <div style="text-align:right;margin-top:4px;"><a href="data:application/pdf;base64,{b64}" target="_blank">🔎 Abrir em nova aba</a></div>
     """
 
     if use_expander:
@@ -2540,6 +2539,21 @@ def exibir_pdf(
     else:
         st.markdown(f"**{label}**")
         st.markdown(pdf_html, unsafe_allow_html=True)
+
+
+def reset_smart_quotation_state():
+    """Limpa os valores guardados para o módulo Smart Quotation."""
+    for key in (
+        "smart_pdf_uid",
+        "smart_referencia",
+        "smart_artigo_num",
+        "smart_quantidade",
+        "smart_descricao",
+        "smart_unidade",
+        "smart_marca",
+        "smart_cliente_index",
+    ):
+        st.session_state.pop(key, None)
 
 
 def verificar_pdfs(rfq_id):
@@ -3352,6 +3366,11 @@ with st.sidebar:
 
 # ========================== PÁGINAS DO SISTEMA ==========================
 
+previous_menu_option = st.session_state.get("last_menu_option")
+if previous_menu_option != menu_option and menu_option == "🤖 Smart Quotation":
+    reset_smart_quotation_state()
+st.session_state.last_menu_option = menu_option
+
 if menu_option == "🏠 Dashboard":
     # Métricas principais
     col1, col2, col3, col4 = st.columns(4)
@@ -3750,8 +3769,6 @@ elif menu_option == "🤖 Smart Quotation":
                     st.session_state.smart_descricao = descricao_formatada
                     st.session_state.smart_unidade = "Peças"
                     st.session_state.smart_marca = dados.get("marca") or ""
-                    st.session_state.smart_contacto = dados.get("nome") or dados.get("cliente") or ""
-
                     cliente_extraido = (dados.get("cliente") or "").strip().lower()
                     default_idx = 0
                     if cliente_extraido:
@@ -3776,15 +3793,7 @@ elif menu_option == "🤖 Smart Quotation":
                         return f"{nome_cli} ({empresa_cli})"
                     return nome_cli
 
-                col_pdf, col_form = st.columns(2)
-
-                with col_pdf:
-                    exibir_pdf(
-                        f"👁️ PDF carregado - {nome_pdf}",
-                        pdf_bytes,
-                        expanded=True,
-                        use_expander=False,
-                    )
+                col_form, col_pdf = st.columns(2)
 
                 with col_form:
                     st.text_input(
@@ -3797,12 +3806,6 @@ elif menu_option == "🤖 Smart Quotation":
                         format_func=_format_cliente,
                         key="smart_cliente_index",
                     )
-                    st.text_input(
-                        "Nome/Contacto do Cliente",
-                        key="smart_contacto",
-                        help="Nome do contacto associado ao pedido.",
-                    )
-
                     col1, col2 = st.columns(2)
                     with col1:
                         st.text_input("Nº Artigo", key="smart_artigo_num")
@@ -3906,6 +3909,14 @@ elif menu_option == "🤖 Smart Quotation":
                                         )
                             else:
                                 st.error("Erro ao criar cotação.")
+
+                with col_pdf:
+                    exibir_pdf(
+                        f"👁️ PDF carregado - {nome_pdf}",
+                        pdf_bytes,
+                        expanded=True,
+                        use_expander=False,
+                    )
             else:
                 st.warning("Ficheiro carregado não pôde ser processado.")
 
