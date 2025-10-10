@@ -546,6 +546,13 @@ def criar_processo_com_artigos(artigos):
 
     try:
         for ordem, art in enumerate(artigos, 1):
+            artigo_num = (art.get("artigo_num") or "").strip()
+            marca_artigo = (art.get("marca") or "").strip()
+            descricao_artigo = garantir_marca_primeira_palavra(
+                art.get("descricao", ""), marca_artigo
+            )
+            quantidade_artigo = art.get("quantidade", 1)
+            unidade_artigo = art.get("unidade", "Peças")
             c.execute(
                 """
                 INSERT INTO processo_artigo (processo_id, artigo_num, descricao,
@@ -554,17 +561,22 @@ def criar_processo_com_artigos(artigos):
                 """,
                 (
                     processo_id,
-                    art.get("artigo_num", ""),
-                    art.get("descricao", ""),
-                    art.get("quantidade", 1),
-                    art.get("unidade", "Peças"),
-                    art.get("marca", ""),
+                    artigo_num,
+                    descricao_artigo,
+                    quantidade_artigo,
+                    unidade_artigo,
+                    marca_artigo,
                     ordem,
                 ),
             )
             processo_artigos.append(
                 {
                     **art,
+                    "artigo_num": artigo_num,
+                    "descricao": descricao_artigo,
+                    "quantidade": quantidade_artigo,
+                    "unidade": unidade_artigo,
+                    "marca": marca_artigo,
                     "ordem": ordem,
                     "processo_artigo_id": c.lastrowid,
                 }
@@ -671,6 +683,13 @@ def criar_rfq(
 
             for ordem, art in enumerate(artigos, 1):
                 if art.get("descricao", "").strip():
+                    marca_art = (art.get("marca") or "").strip()
+                    descricao_art = garantir_marca_primeira_palavra(
+                        art.get("descricao", ""), marca_art
+                    )
+                    art["descricao"] = descricao_art
+                    art["marca"] = marca_art
+                    art["artigo_num"] = (art.get("artigo_num") or "").strip()
                     processo_artigo_id = art.get("processo_artigo_id")
                     if not processo_artigo_id and processo_artigos:
                         processo_artigo_id = ordem_para_processo.get(ordem)
@@ -687,11 +706,11 @@ def criar_rfq(
                         (
                             rfq_pk,
                             art.get("artigo_num", ""),
-                            art["descricao"],
+                            descricao_art,
                             art.get("quantidade", 1),
                             art.get("unidade", "Peças"),
                             art.get("especificacoes", ""),
-                            art.get("marca", ""),
+                            marca_art,
                             ordem,
                             processo_artigo_id,
                         ),
@@ -2569,6 +2588,44 @@ def normalizar_quebras_linha(texto: str) -> str:
     return texto.replace("\r\n", "\n").replace("\r", "\n")
 
 
+def garantir_marca_primeira_palavra(descricao: str, marca: str) -> str:
+    """Garante que a marca aparece como primeira palavra da descrição.
+
+    Caso a descrição não comece pela marca fornecida, esta função remove
+    ocorrências posteriores (ignorando maiúsculas/minúsculas) e coloca a
+    marca no início.  Espaços supérfluos são também normalizados para
+    evitar duplicações indesejadas.
+    """
+
+    descricao_limpa = (descricao or "").strip()
+    marca_limpa = (marca or "").strip()
+
+    if not marca_limpa:
+        return descricao_limpa
+
+    if not descricao_limpa:
+        return marca_limpa
+
+    # Normalizar espaços para facilitar a comparação
+    descricao_limpa = re.sub(r"\s+", " ", descricao_limpa)
+
+    padrao_inicio = re.compile(rf"^{re.escape(marca_limpa)}\b", re.IGNORECASE)
+    if padrao_inicio.search(descricao_limpa):
+        # Substituir a primeira palavra pela marca limpa para manter o
+        # formato consistente (ex.: capitalização definida pelo utilizador).
+        resto = padrao_inicio.sub("", descricao_limpa, count=1).lstrip()
+        return f"{marca_limpa}{(' ' + resto) if resto else ''}".strip()
+
+    padrao = re.compile(rf"\b{re.escape(marca_limpa)}\b", re.IGNORECASE)
+    descricao_sem_marca = padrao.sub("", descricao_limpa).strip()
+    descricao_sem_marca = re.sub(r"\s+", " ", descricao_sem_marca)
+
+    if descricao_sem_marca:
+        return f"{marca_limpa} {descricao_sem_marca}".strip()
+
+    return marca_limpa
+
+
 def verificar_pdfs(rfq_id):
     """Verifica se os PDFs existem na base de dados"""
     conn = obter_conexao()
@@ -3130,6 +3187,8 @@ def extrair_dados_pdf(pdf_bytes):
     descricao = limpar_ktb(descricao)
 
     marca = descricao.split()[0] if descricao else ""
+    descricao = garantir_marca_primeira_palavra(descricao, marca)
+    marca = descricao.split()[0] if descricao else ""
 
     return {
         "referencia": referencia,
@@ -3662,9 +3721,12 @@ elif menu_option == "📝 Nova Cotação":
                     continue
                 if quantidade_valor.is_integer():
                     quantidade_valor = int(quantidade_valor)
+                descricao_normalizada = garantir_marca_primeira_palavra(
+                    descricao, marca
+                )
                 artigos_validos.append({
-                    "artigo_num": art.get('artigo_num', ''),
-                    "descricao": descricao,
+                    "artigo_num": (art.get('artigo_num', '') or '').strip(),
+                    "descricao": descricao_normalizada,
                     "quantidade": quantidade_valor,
                     "unidade": art.get('unidade', 'Peças'),
                     "marca": marca,
@@ -3824,6 +3886,11 @@ elif menu_option == "🤖 Smart Quotation":
 
                         unidade_item = (item.get("unidade") or "Peças").strip() or "Peças"
                         marca_item = (item.get("marca") or marca_padrao_pdf).strip()
+                        if not marca_item and descricao_item:
+                            marca_item = descricao_item.split()[0]
+                        descricao_item = garantir_marca_primeira_palavra(
+                            descricao_item, marca_item
+                        )
 
                         artigos_extraidos.append(
                             {
@@ -4058,10 +4125,17 @@ elif menu_option == "🤖 Smart Quotation":
                                         except ValueError:
                                             quantidade_valor = quantidade_str
 
+                                descricao_normalizada = normalizar_quebras_linha(
+                                    descricao_input
+                                )
+                                descricao_normalizada = garantir_marca_primeira_palavra(
+                                    descricao_normalizada, marca_val
+                                )
+
                                 artigos_final.append(
                                     {
                                         "artigo_num": artigo_num_val,
-                                        "descricao": normalizar_quebras_linha(descricao_input),
+                                        "descricao": descricao_normalizada,
                                         "quantidade": quantidade_valor,
                                         "unidade": unidade_val,
                                         "marca": marca_val,
