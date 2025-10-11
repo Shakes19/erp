@@ -8,7 +8,9 @@ database dependencies.
 
 import os
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timedelta
+from typing import Any, Iterable, Sequence
 
 import bcrypt
 from sqlalchemy import create_engine, text
@@ -25,6 +27,57 @@ engine = create_engine(
 )
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
+
+@contextmanager
+def managed_cursor():
+    """Provide a cursor with automatic connection cleanup."""
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        yield conn, cursor
+    finally:
+        conn.close()
+
+
+def fetch_all(
+    query: str,
+    params: Sequence[Any] | Iterable[Any] | tuple[Any, ...] = (),
+    *,
+    ensure_schema: bool = False,
+):
+    """Execute ``SELECT`` queries returning all rows while avoiding repetition."""
+
+    try:
+        with managed_cursor() as (_, cursor):
+            cursor.execute(query, params)
+            return cursor.fetchall()
+    except sqlite3.OperationalError as exc:
+        if ensure_schema and "no such table" in str(exc).lower():
+            criar_base_dados_completa()
+            return []
+        raise
+
+
+def fetch_one(
+    query: str,
+    params: Sequence[Any] | Iterable[Any] | tuple[Any, ...] = (),
+    *,
+    ensure_schema: bool = False,
+):
+    """Execute ``SELECT`` queries returning a single row."""
+
+    try:
+        with managed_cursor() as (_, cursor):
+            cursor.execute(query, params)
+            return cursor.fetchone()
+    except sqlite3.OperationalError as exc:
+        if ensure_schema and "no such table" in str(exc).lower():
+            criar_base_dados_completa()
+            return None
+        raise
+
 
 def get_connection():
     """Return a DB-API connection bound to the global engine.

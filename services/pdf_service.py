@@ -7,7 +7,7 @@ from email.parser import BytesParser
 import streamlit as st
 from fpdf import FPDF
 
-from db import get_connection as obter_conexao
+from db import fetch_one
 import extract_msg
 
 @st.cache_data(show_spinner=False)
@@ -37,13 +37,10 @@ def save_pdf_config(tipo, config):
 @st.cache_data(show_spinner=False)
 def obter_config_empresa():
     """Fetch company configuration data for PDFs."""
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute(
-        "SELECT nome, morada, nif, iban, telefone, email, website, logo FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
+    row = fetch_one(
+        "SELECT nome, morada, nif, iban, telefone, email, website, logo "
+        "FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
     )
-    row = c.fetchone()
-    conn.close()
     if row:
         return {
             "nome": row[0],
@@ -60,14 +57,10 @@ def obter_config_empresa():
 
 def obter_pdf_da_db(rfq_id, tipo_pdf="pedido"):
     """Retrieve stored PDF bytes from the database."""
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute(
+    result = fetch_one(
         "SELECT pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf = ?",
         (str(rfq_id), tipo_pdf),
     )
-    result = c.fetchone()
-    conn.close()
     return result[0] if result else None
 
 

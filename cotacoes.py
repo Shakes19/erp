@@ -1,13 +1,22 @@
 import streamlit as st
 from sqlalchemy import text
+from contextlib import contextmanager
+
 from db import SessionLocal
 
 st.set_page_config(page_title="Preencher Cotações", layout="centered")
 st.title("📥 Preencher Cotações Recebidas")
 
 
-def obter_conexao():
-    return SessionLocal()
+@contextmanager
+def obter_sessao():
+    """Fornece uma sessão SQLAlchemy garantindo o fecho da ligação."""
+
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
 
 
 # Obter todos os processos com número + id (paginado)
@@ -23,8 +32,7 @@ def listar_processos(page: int = 0, page_size: int = 10):
         total de processos existentes.
     """
 
-    session = obter_conexao()
-    try:
+    with obter_sessao() as session:
         offset = page * page_size
         processos = session.execute(
             text(
@@ -35,59 +43,44 @@ def listar_processos(page: int = 0, page_size: int = 10):
         ).fetchall()
         total = session.execute(text("SELECT COUNT(*) FROM processo")).scalar()
         return processos, total
-    finally:
-        session.close()
 
 
 def contar_processos() -> int:
     """Devolve o número total de processos existentes."""
-    session = obter_conexao()
-    try:
+    with obter_sessao() as session:
         return session.execute(text("SELECT COUNT(*) FROM processo")).scalar()
-    finally:
-        session.close()
 
 
 # Obter fornecedores
 def listar_fornecedores():
-    session = obter_conexao()
-    try:
+    with obter_sessao() as session:
         result = session.execute(text("SELECT id, nome FROM fornecedor"))
         return result.fetchall()
-    finally:
-        session.close()
 
 
 # Obter artigos de um RFQ
 def obter_artigos(rfq_id):
-    session = obter_conexao()
-    try:
+    with obter_sessao() as session:
         result = session.execute(
             text("SELECT id, descricao, quantidade, unidade FROM artigo WHERE rfq_id = :rfq_id"),
             {"rfq_id": rfq_id},
         )
         return result.fetchall()
-    finally:
-        session.close()
 
 
 # Obter o id do RFQ com base no processo e fornecedor
 def obter_rfq_id(processo_id, fornecedor_id):
-    session = obter_conexao()
-    try:
+    with obter_sessao() as session:
         result = session.execute(
             text("SELECT id FROM rfq WHERE processo_id = :processo_id AND fornecedor_id = :fornecedor_id"),
             {"processo_id": processo_id, "fornecedor_id": fornecedor_id},
         ).fetchone()
         return result[0] if result else None
-    finally:
-        session.close()
 
 
 # Guardar resposta
 def guardar_resposta(fornecedor_id, rfq_id, artigo_id, custo, prazo_entrega):
-    session = obter_conexao()
-    try:
+    with obter_sessao() as session:
         session.execute(
             text(
                 """
@@ -104,8 +97,6 @@ def guardar_resposta(fornecedor_id, rfq_id, artigo_id, custo, prazo_entrega):
             },
         )
         session.commit()
-    finally:
-        session.close()
 
 
 # Seleção de processo e fornecedor

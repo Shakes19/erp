@@ -27,6 +27,8 @@ from db import (
     engine,
     inserir_artigo_catalogo,
     procurar_artigos_catalogo,
+    fetch_all,
+    fetch_one,
 )
 from services.pdf_service import (
     load_pdf_config,
@@ -91,14 +93,9 @@ def listar_fornecedores():
     Resultados memorizados para reduzir acessos à base de dados quando o
     utilizador navega entre páginas.
     """
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute(
+    return fetch_all(
         "SELECT id, nome, email, telefone, morada, nif FROM fornecedor ORDER BY nome"
     )
-    fornecedores = c.fetchall()
-    conn.close()
-    return fornecedores
 
 def inserir_fornecedor(nome, email="", telefone="", morada="", nif=""):
     """Inserir novo fornecedor"""
@@ -162,9 +159,7 @@ def eliminar_fornecedor_db(fornecedor_id):
 
 def obter_marcas_fornecedor(fornecedor_id):
     """Obter marcas associadas a um fornecedor"""
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute(
+    rows = fetch_all(
         """
         SELECT TRIM(marca) FROM fornecedor_marca
         WHERE fornecedor_id = ?
@@ -173,9 +168,7 @@ def obter_marcas_fornecedor(fornecedor_id):
         """,
         (fornecedor_id,),
     )
-    marcas = [row[0] for row in c.fetchall() if row[0]]
-    conn.close()
-    return marcas
+    return [row[0] for row in rows if row[0]]
 
 def adicionar_marca_fornecedor(fornecedor_id, marca):
     """Adicionar marca a um fornecedor"""
@@ -233,9 +226,7 @@ def remover_marca_fornecedor(fornecedor_id, marca):
 
 def listar_todas_marcas():
     """Obter todas as marcas disponíveis"""
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute(
+    rows = fetch_all(
         """
         SELECT DISTINCT TRIM(marca)
         FROM fornecedor_marca
@@ -243,9 +234,7 @@ def listar_todas_marcas():
         ORDER BY TRIM(marca)
         """
     )
-    marcas = [row[0] for row in c.fetchall() if row[0]]
-    conn.close()
-    return marcas
+    return [row[0] for row in rows if row[0]]
 
 
 def obter_fornecedores_por_marca(marca):
@@ -257,9 +246,7 @@ def obter_fornecedores_por_marca(marca):
 
     marca_normalizada = marca_limpa.lower()
 
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute(
+    return fetch_all(
         """
         SELECT f.id, f.nome, f.email
         FROM fornecedor f
@@ -269,9 +256,6 @@ def obter_fornecedores_por_marca(marca):
         """,
         (marca_normalizada,),
     )
-    res = c.fetchall()
-    conn.close()
-    return res
 
 
 # ========================== FUNÇÕES DE GESTÃO DE CLIENTES ==========================
@@ -286,23 +270,10 @@ def listar_empresas():
     erro é interceptado e a base de dados é criada automaticamente,
     devolvendo uma lista vazia.
     """
-    conn = obter_conexao()
-    c = conn.cursor()
-    try:
-        c.execute(
-            "SELECT id, nome, morada, condicoes_pagamento FROM cliente_empresa ORDER BY nome"
-        )
-        empresas = c.fetchall()
-    except sqlite3.OperationalError as e:
-        conn.close()
-        if "no such table" in str(e).lower():
-            criar_base_dados_completa()
-            empresas = []
-        else:
-            raise
-    else:
-        conn.close()
-    return empresas
+    return fetch_all(
+        "SELECT id, nome, morada, condicoes_pagamento FROM cliente_empresa ORDER BY nome",
+        ensure_schema=True,
+    )
 
 
 @st.cache_data(show_spinner=False)
@@ -316,28 +287,15 @@ def listar_clientes():
     previamente.  Agora a função verifica essa condição e cria a base de
     dados quando necessário, devolvendo uma lista vazia."""
 
-    conn = obter_conexao()
-    c = conn.cursor()
-    try:
-        c.execute(
-            """
-            SELECT c.id, c.nome, c.email, c.empresa_id, e.nome
-            FROM cliente c
-            LEFT JOIN cliente_empresa e ON c.empresa_id = e.id
-            ORDER BY c.nome
-            """
-        )
-        clientes = c.fetchall()
-    except sqlite3.OperationalError as e:
-        conn.close()
-        if "no such table" in str(e).lower():
-            criar_base_dados_completa()
-            clientes = []
-        else:
-            raise
-    else:
-        conn.close()
-    return clientes
+    return fetch_all(
+        """
+        SELECT c.id, c.nome, c.email, c.empresa_id, e.nome
+        FROM cliente c
+        LEFT JOIN cliente_empresa e ON c.empresa_id = e.id
+        ORDER BY c.nome
+        """,
+        ensure_schema=True,
+    )
 
 
 def inserir_empresa(nome, morada="", condicoes_pagamento=""):
@@ -443,40 +401,25 @@ def eliminar_cliente_db(cliente_id):
 
 def listar_utilizadores():
     """Obter todos os utilizadores"""
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute(
+    return fetch_all(
         "SELECT id, username, nome, email, role, email_password FROM utilizador ORDER BY username"
     )
-    utilizadores = c.fetchall()
-    conn.close()
-    return utilizadores
 
 
 def obter_utilizador_por_username(username):
     """Obter utilizador pelo username"""
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute(
+    return fetch_one(
         "SELECT id, username, password, nome, email, role, email_password FROM utilizador WHERE username = ?",
         (username,),
     )
-    user = c.fetchone()
-    conn.close()
-    return user
 
 
 def obter_utilizador_por_id(user_id):
     """Obter utilizador pelo ID"""
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute(
+    return fetch_one(
         "SELECT id, username, password, nome, email, role, email_password FROM utilizador WHERE id = ?",
         (user_id,),
     )
-    user = c.fetchone()
-    conn.close()
-    return user
 
 
 def inserir_utilizador(username, password, nome="", email="", role="user", email_password=""):
