@@ -11,6 +11,7 @@ import shutil
 import imghdr
 import tempfile
 import re
+import copy
 from uuid import uuid4
 from pypdf import PdfReader
 from PIL import Image
@@ -256,6 +257,206 @@ def obter_fornecedores_por_marca(marca):
         """,
         (marca_normalizada,),
     )
+
+
+def referencia_cliente_existe(referencia: str, cliente_id: int | None = None) -> bool:
+    """Verifica se já existe uma cotação com a mesma referência para o cliente."""
+
+    referencia_limpa = (referencia or "").strip()
+    if not referencia_limpa:
+        return False
+
+    params: list = [referencia_limpa]
+    query = "SELECT 1 FROM rfq WHERE TRIM(referencia) = ?"
+    if cliente_id is not None:
+        query += " AND COALESCE(cliente_id, -1) = COALESCE(?, -1)"
+        params.append(cliente_id)
+    query += " LIMIT 1"
+    row = fetch_one(query, tuple(params))
+    return bool(row)
+
+
+def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
+    """Processa a criação de cotações para fornecedores, com verificação de duplicados."""
+
+    if not contexto:
+        return False
+
+    referencia = (contexto.get("referencia") or "").strip()
+    cliente_id = contexto.get("cliente_id")
+    origem = contexto.get("origem", "manual")
+    artigos = contexto.get("artigos") or []
+    if not forcar and referencia_cliente_existe(referencia, cliente_id):
+        st.session_state["duplicated_ref_context"] = copy.deepcopy(contexto)
+        st.session_state["show_duplicate_ref_dialog"] = True
+        st.session_state.pop("duplicated_ref_force", None)
+        return False
+
+    if not artigos:
+        return False
+
+    artigos_posicoes = contexto.get("artigos_posicoes") or [idx + 1 for idx in range(len(artigos))]
+    anexos = contexto.get("anexos") or []
+    anexo_tipo = contexto.get("anexo_tipo", "anexo_cliente")
+    data_cotacao = contexto.get("data") or date.today()
+
+    fornecedores_map: defaultdict[int, list[int]] = defaultdict(list)
+    fornecedores_info: dict[int, tuple] = {}
+    erros_fornecedores: list[str] = []
+
+    for idx, artigo in enumerate(artigos):
+        fornecedores = obter_fornecedores_por_marca(artigo.get("marca"))
+        if not fornecedores:
+            if origem == "smart":
+                pos = artigos_posicoes[idx] if idx < len(artigos_posicoes) else idx + 1
+                erros_fornecedores.append(
+                    f"Artigo {pos}: configure fornecedores para a marca '{artigo.get('marca', '')}'."
+                )
+            else:
+                erros_fornecedores.append(
+                    f"Nenhum fornecedor configurado para a marca '{artigo.get('marca', '')}'"
+                )
+            continue
+        for fornecedor in fornecedores:
+            fornecedores_map[fornecedor[0]].append(idx)
+            fornecedores_info[fornecedor[0]] = fornecedor
+
+    if erros_fornecedores:
+        for mensagem in erros_fornecedores:
+            st.error(mensagem)
+        return False
+
+    if not fornecedores_map:
+        st.error("Não foram encontrados fornecedores elegíveis para os artigos selecionados")
+        return False
+
+    processo_id, numero_processo, processo_artigos = criar_processo_com_artigos(artigos)
+    rfqs_criados: list[tuple[int, tuple]] = []
+
+    for fornecedor_id, indices in fornecedores_map.items():
+        artigos_fornecedor: list[dict] = []
+        for indice in indices:
+            if indice >= len(processo_artigos):
+                continue
+            processo_info = processo_artigos[indice]
+            artigos_fornecedor.append(
+                {
+                    **artigos[indice],
+                    "processo_artigo_id": processo_info.get("processo_artigo_id"),
+                    "ordem": processo_info.get("ordem"),
+                }
+            )
+
+        rfq_id, _, _, _ = criar_rfq(
+            fornecedor_id,
+            data_cotacao,
+            artigos_fornecedor,
+            referencia,
+            cliente_id,
+            processo_id=processo_id,
+            numero_processo=numero_processo,
+            processo_artigos=processo_artigos,
+        )
+
+        if rfq_id:
+            rfqs_criados.append((rfq_id, fornecedores_info[fornecedor_id]))
+            if anexos:
+                guardar_pdf_uploads(
+                    rfq_id,
+                    anexo_tipo,
+                    anexos,
+                )
+
+    if rfqs_criados:
+        st.success(
+            f"✅ Cotação {numero_processo} (Ref: {referencia}) criada para {len(rfqs_criados)} fornecedor(es)!"
+        )
+        st.markdown("**Fornecedores notificados:**")
+        for _, fornecedor in rfqs_criados:
+            st.write(f"• {fornecedor[1]}")
+
+        download_prefix = "download_pdf_" if origem == "manual" else "smart_pdf_"
+        download_label_tpl = "📄 PDF - {nome}" if origem == "manual" else "📄 Download PDF - {nome}"
+
+        for rfq_id, fornecedor in rfqs_criados:
+            pdf_bytes = obter_pdf_da_db(rfq_id, "pedido")
+            if pdf_bytes:
+                st.download_button(
+                    download_label_tpl.format(nome=fornecedor[1]),
+                    data=pdf_bytes,
+                    file_name=f"cotacao_{numero_processo}_{fornecedor[1].replace(' ', '_')}.pdf",
+                    mime="application/pdf",
+                    key=f"{download_prefix}{rfq_id}",
+                )
+
+        st.session_state.pop("duplicated_ref_context", None)
+        st.session_state.pop("duplicated_ref_force", None)
+        st.session_state["show_duplicate_ref_dialog"] = False
+
+        if origem == "manual":
+            st.session_state.artigos = [
+                {
+                    "artigo_num": "",
+                    "descricao": "",
+                    "quantidade": "",
+                    "unidade": "Peças",
+                    "marca": "",
+                }
+            ]
+            st.session_state.pedido_cliente_anexos = []
+            st.session_state["nova_cotacao_referencia"] = ""
+            st.session_state["nova_cotacao_data"] = date.today()
+            st.session_state["cliente_select_nova"] = None
+            st.session_state.pop("upload_pedido_cliente", None)
+            for key in list(st.session_state.keys()):
+                for prefix in ("nova_desc_", "nova_art_num_", "nova_qtd_", "nova_unidade_", "nova_marca_"):
+                    if key.startswith(prefix):
+                        st.session_state.pop(key, None)
+                        break
+            st.rerun()
+
+        return True
+
+    mensagem_erro = (
+        "Erro ao criar cotação." if origem == "smart" else "Não foi possível criar as cotações para os fornecedores selecionados."
+    )
+    st.error(mensagem_erro)
+    return False
+
+
+def mostrar_dialogo_referencia_duplicada(origem: str):
+    """Mostra diálogo de confirmação quando é detetada referência duplicada."""
+
+    contexto = st.session_state.get("duplicated_ref_context")
+    if (
+        not contexto
+        or contexto.get("origem") != origem
+        or not st.session_state.get("show_duplicate_ref_dialog")
+    ):
+        return
+
+    referencia = contexto.get("referencia", "")
+    cliente_nome = (contexto.get("cliente_nome") or "").strip()
+    cliente_info = f" para o cliente {cliente_nome}" if cliente_nome else ""
+
+    @st.dialog("Referência duplicada")
+    def _dialogo():
+        st.warning(
+            f"Já existe uma cotação com a referência '{referencia}'{cliente_info}."
+        )
+        st.write("Deseja criar a cotação mesmo assim?")
+        col_ok, col_cancel = st.columns(2)
+        if col_ok.button("Sim, criar mesmo assim"):
+            st.session_state["duplicated_ref_force"] = origem
+            st.session_state["show_duplicate_ref_dialog"] = False
+            st.rerun()
+        if col_cancel.button("Não, cancelar"):
+            st.session_state.pop("duplicated_ref_context", None)
+            st.session_state.pop("duplicated_ref_force", None)
+            st.session_state["show_duplicate_ref_dialog"] = False
+            st.rerun()
+
+    _dialogo()
 
 
 # ========================== FUNÇÕES DE GESTÃO DE CLIENTES ==========================
@@ -1904,6 +2105,49 @@ class InquiryPDF(FPDF):
         item_w = self.w - 30 - 12 - 25 - 12 - 14
         return [12, 25, 12, 14, item_w]
 
+    def _wrap_text(self, texto: str, largura_max: float) -> list[str]:
+        """Quebra o texto para caber na largura indicada preservando linhas vazias."""
+
+        if largura_max <= 0:
+            return [texto or ""]
+
+        linhas_resultado: list[str] = []
+        for linha_original in (texto or "").split("\n"):
+            linha = linha_original.strip()
+            if not linha:
+                linhas_resultado.append("")
+                continue
+
+            atual = ""
+            for palavra in linha.split(" "):
+                if not palavra:
+                    continue
+                candidato = f"{atual} {palavra}".strip() if atual else palavra
+                if self.get_string_width(candidato) <= largura_max:
+                    atual = candidato
+                    continue
+
+                if atual:
+                    linhas_resultado.append(atual)
+                    atual = ""
+
+                if self.get_string_width(palavra) <= largura_max:
+                    atual = palavra
+                else:
+                    segmento = ""
+                    for char in palavra:
+                        candidato_segmento = f"{segmento}{char}"
+                        if self.get_string_width(candidato_segmento) <= largura_max or not segmento:
+                            segmento = candidato_segmento
+                        else:
+                            linhas_resultado.append(segmento)
+                            segmento = char
+                    atual = segmento
+
+            linhas_resultado.append(atual.strip())
+
+        return linhas_resultado or [""]
+
     def add_title(self):
         self.set_font("Helvetica", "B", 16)
         self.cell(0, 8, "INQUIRY", ln=1)
@@ -1946,7 +2190,7 @@ class InquiryPDF(FPDF):
         # ``descricao`` might be ``None`` if the item was partially filled in
         # the UI, so fall back to an empty string before splitting.
         item_text = item.get("descricao") or ""
-        lines = item_text.split("\n")
+        lines = self._wrap_text(item_text, col_w[4])
         line_count = len(lines)
         row_height = line_count * line_height
         sub_height = line_height
@@ -3749,99 +3993,27 @@ elif menu_option == "📝 Nova Cotação":
                 for mensagem in erros:
                     st.error(mensagem)
             else:
-                fornecedores_map: defaultdict[int, list[int]] = defaultdict(list)
-                fornecedores_info: dict[int, tuple] = {}
+                contexto_criacao = {
+                    "origem": "manual",
+                    "data": data,
+                    "referencia": referencia_input.strip(),
+                    "cliente_id": cliente_sel[0] if cliente_sel else None,
+                    "cliente_nome": cliente_sel[1] if cliente_sel else "",
+                    "artigos": artigos_validos,
+                    "anexos": st.session_state.get("pedido_cliente_anexos", []),
+                    "anexo_tipo": "anexo_cliente",
+                }
+                processar_criacao_cotacoes(contexto_criacao)
 
-                for idx, art in enumerate(artigos_validos):
-                    fornecedores = obter_fornecedores_por_marca(art['marca'])
-                    if not fornecedores:
-                        erros.append(
-                            f"Nenhum fornecedor configurado para a marca '{art['marca']}'"
-                        )
-                        continue
-                    for fornecedor in fornecedores:
-                        fornecedores_map[fornecedor[0]].append(idx)
-                        fornecedores_info[fornecedor[0]] = fornecedor
-
-                if erros:
-                    for mensagem in erros:
-                        st.error(mensagem)
-                elif not fornecedores_map:
-                    st.error("Não foram encontrados fornecedores elegíveis para os artigos selecionados")
-                else:
-                    processo_id, numero_processo, processo_artigos = criar_processo_com_artigos(artigos_validos)
-                    rfqs_criados: list[tuple[int, tuple]] = []
-
-                    for fornecedor_id, indices in fornecedores_map.items():
-                        artigos_fornecedor = []
-                        for idx in indices:
-                            base = {
-                                **artigos_validos[idx],
-                                "processo_artigo_id": processo_artigos[idx]["processo_artigo_id"],
-                                "ordem": processo_artigos[idx]["ordem"],
-                            }
-                            artigos_fornecedor.append(base)
-
-                        rfq_id, numero_processo_ret, _, _ = criar_rfq(
-                            fornecedor_id,
-                            data,
-                            artigos_fornecedor,
-                            referencia_input,
-                            cliente_sel[0] if cliente_sel else None,
-                            processo_id=processo_id,
-                            numero_processo=numero_processo,
-                            processo_artigos=processo_artigos,
-                        )
-
-                        if rfq_id:
-                            rfqs_criados.append((rfq_id, fornecedores_info[fornecedor_id]))
-                            anexos_cliente = st.session_state.get("pedido_cliente_anexos", [])
-                            if anexos_cliente:
-                                guardar_pdf_uploads(
-                                    rfq_id,
-                                    'anexo_cliente',
-                                    anexos_cliente,
-                                )
-
-                    if rfqs_criados:
-                        st.success(
-                            f"✅ Cotação {numero_processo} (Ref: {referencia_input}) criada para {len(rfqs_criados)} fornecedor(es)!"
-                        )
-                        st.markdown("**Fornecedores notificados:**")
-                        for rfq_id, fornecedor in rfqs_criados:
-                            st.write(f"• {fornecedor[1]}")
-
-                        for rfq_id, fornecedor in rfqs_criados:
-                            pdf_bytes = obter_pdf_da_db(rfq_id, "pedido")
-                            if pdf_bytes:
-                                st.download_button(
-                                    f"📄 PDF - {fornecedor[1]}",
-                                    data=pdf_bytes,
-                                    file_name=f"cotacao_{numero_processo}_{fornecedor[1].replace(' ', '_')}.pdf",
-                                    mime="application/pdf",
-                                    key=f"download_pdf_{rfq_id}",
-                                )
-
-                        st.session_state.artigos = [{
-                            "artigo_num": "",
-                            "descricao": "",
-                            "quantidade": "",
-                            "unidade": "Peças",
-                            "marca": "",
-                        }]
-                        st.session_state.pedido_cliente_anexos = []
-                        st.session_state["nova_cotacao_referencia"] = ""
-                        st.session_state["nova_cotacao_data"] = date.today()
-                        st.session_state["cliente_select_nova"] = None
-                        st.session_state.pop('upload_pedido_cliente', None)
-                        for key in list(st.session_state.keys()):
-                            for prefix in ("nova_desc_", "nova_art_num_", "nova_qtd_", "nova_unidade_", "nova_marca_"):
-                                if key.startswith(prefix):
-                                    st.session_state.pop(key, None)
-                                    break
-                        st.rerun()
-                    else:
-                        st.error("Não foi possível criar as cotações para os fornecedores selecionados.")
+    contexto_dup_manual = st.session_state.get("duplicated_ref_context")
+    if contexto_dup_manual and contexto_dup_manual.get("origem") == "manual":
+        if st.session_state.get("duplicated_ref_force") == "manual":
+            contexto_confirmado = st.session_state.pop("duplicated_ref_context", None)
+            st.session_state.pop("duplicated_ref_force", None)
+            if contexto_confirmado:
+                processar_criacao_cotacoes(contexto_confirmado, forcar=True)
+        elif st.session_state.get("show_duplicate_ref_dialog"):
+            mostrar_dialogo_referencia_duplicada("manual")
 
 elif menu_option == "🤖 Smart Quotation":
     st.title("🤖 Smart Quotation")
@@ -4167,82 +4339,18 @@ elif menu_option == "🤖 Smart Quotation":
                                 for mensagem in erros:
                                     st.error(mensagem)
                             else:
-                                fornecedores_map: defaultdict[int, list[int]] = defaultdict(list)
-                                fornecedores_info: dict[int, tuple] = {}
-                                erros_fornecedores: list[str] = []
-
-                                for idx, artigo in enumerate(artigos_final):
-                                    fornecedores = obter_fornecedores_por_marca(artigo["marca"])
-                                    if not fornecedores:
-                                        erros_fornecedores.append(
-                                            f"Artigo {artigos_posicoes[idx]}: configure fornecedores para a marca '{artigo['marca']}'."
-                                        )
-                                        continue
-                                    for fornecedor in fornecedores:
-                                        fornecedores_map[fornecedor[0]].append(idx)
-                                        fornecedores_info[fornecedor[0]] = fornecedor
-
-                                if erros_fornecedores:
-                                    for mensagem in erros_fornecedores:
-                                        st.error(mensagem)
-                                elif not fornecedores_map:
-                                    st.error(
-                                        "Não foram encontrados fornecedores elegíveis para os artigos selecionados"
-                                    )
-                                else:
-                                    processo_id, numero_processo, processo_artigos = criar_processo_com_artigos(artigos_final)
-                                    rfqs_criados: list[tuple[int, tuple]] = []
-
-                                    for fornecedor_id, indices_artigos in fornecedores_map.items():
-                                        artigos_fornecedor: list[dict] = []
-                                        for indice_artigo in indices_artigos:
-                                            processo_info = processo_artigos[indice_artigo]
-                                            artigos_fornecedor.append(
-                                                {
-                                                    **artigos_final[indice_artigo],
-                                                    "processo_artigo_id": processo_info["processo_artigo_id"],
-                                                    "ordem": processo_info["ordem"],
-                                                }
-                                            )
-
-                                        rfq_id, numero_proc_ret, _, _ = criar_rfq(
-                                            fornecedor_id,
-                                            datetime.today(),
-                                            artigos_fornecedor,
-                                            referencia,
-                                            cliente_selecionado[0],
-                                            processo_id=processo_id,
-                                            numero_processo=numero_processo,
-                                            processo_artigos=processo_artigos,
-                                        )
-
-                                        if rfq_id:
-                                            rfqs_criados.append((rfq_id, fornecedores_info[fornecedor_id]))
-                                            if anexos_processados:
-                                                guardar_pdf_uploads(
-                                                    rfq_id,
-                                                    "anexo_cliente",
-                                                    anexos_processados,
-                                                )
-
-
-                            if rfqs_criados:
-                                st.success(
-                                    f"✅ Cotação {numero_processo} (Ref: {referencia}) criada para {len(rfqs_criados)} fornecedor(es)!"
-                                )
-                                for rfq_id, fornecedor in rfqs_criados:
-                                    st.write(f"• {fornecedor[1]}")
-                                    pdf_pedido = obter_pdf_da_db(rfq_id, "pedido")
-                                    if pdf_pedido:
-                                        st.download_button(
-                                            f"📄 Download PDF - {fornecedor[1]}",
-                                            data=pdf_pedido,
-                                            file_name=f"cotacao_{numero_processo}_{fornecedor[1].replace(' ', '_')}.pdf",
-                                            mime="application/pdf",
-                                            key=f"smart_pdf_{rfq_id}",
-                                        )
-                            else:
-                                st.error("Erro ao criar cotação.")
+                                contexto_criacao_smart = {
+                                    "origem": "smart",
+                                    "data": datetime.today(),
+                                    "referencia": referencia,
+                                    "cliente_id": cliente_selecionado[0],
+                                    "cliente_nome": cliente_selecionado[1] if cliente_selecionado else "",
+                                    "artigos": artigos_final,
+                                    "artigos_posicoes": artigos_posicoes,
+                                    "anexos": anexos_processados,
+                                    "anexo_tipo": "anexo_cliente",
+                                }
+                                processar_criacao_cotacoes(contexto_criacao_smart)
 
                 with col_pdf:
                     exibir_pdf(
@@ -4255,6 +4363,16 @@ elif menu_option == "🤖 Smart Quotation":
                     )
             else:
                 st.warning("Ficheiro carregado não pôde ser processado.")
+
+        contexto_dup_smart = st.session_state.get("duplicated_ref_context")
+        if contexto_dup_smart and contexto_dup_smart.get("origem") == "smart":
+            if st.session_state.get("duplicated_ref_force") == "smart":
+                contexto_confirmado = st.session_state.pop("duplicated_ref_context", None)
+                st.session_state.pop("duplicated_ref_force", None)
+                if contexto_confirmado:
+                    processar_criacao_cotacoes(contexto_confirmado, forcar=True)
+            elif st.session_state.get("show_duplicate_ref_dialog"):
+                mostrar_dialogo_referencia_duplicada("smart")
 
     with tab_text:
         pdf_text = st.file_uploader(
