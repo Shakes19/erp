@@ -2300,23 +2300,56 @@ class ClientQuotationPDF(InquiryPDF):
             self.cell(w, 7, h, border="B", align="C")
         self.ln()
 
-    def split_text(self, text, max_length):
-        """Divide texto em linhas respeitando quebras de linha"""
+    def _split_long_word(self, word, max_width):
+        """Divide palavras longas para caberem dentro da largura disponível."""
+
+        pieces = []
+        current = ""
+        for char in word:
+            test = f"{current}{char}"
+            if self.get_string_width(test) <= max_width:
+                current = test
+            else:
+                if current:
+                    pieces.append(current)
+                current = char
+        if current:
+            pieces.append(current)
+        return pieces or [""]
+
+    def split_text(self, text, max_width):
+        """Divide texto em linhas respeitando a largura máxima disponível."""
+
         lines = []
         for part in text.split("\n"):
             words = part.split()
             if not words:
                 lines.append("")
                 continue
-            current_line = words[0]
-            for word in words[1:]:
-                test_line = f"{current_line} {word}"
-                if len(test_line) <= max_length:
-                    current_line = test_line
-                else:
-                    lines.append(current_line)
-                    current_line = word
-            lines.append(current_line)
+
+            current_line = ""
+            for word in words:
+                segments = (
+                    self._split_long_word(word, max_width)
+                    if self.get_string_width(word) > max_width
+                    else [word]
+                )
+                for segment in segments:
+                    if not current_line:
+                        current_line = segment
+                        continue
+                    test_line = f"{current_line} {segment}"
+                    if self.get_string_width(test_line) <= max_width:
+                        current_line = test_line
+                    else:
+                        lines.append(current_line)
+                        current_line = segment
+
+            if current_line:
+                lines.append(current_line)
+            else:
+                lines.append("")
+
         return lines if lines else [""]
 
     def add_item(self, idx, item):
@@ -2331,8 +2364,8 @@ class ClientQuotationPDF(InquiryPDF):
         total = preco_venda * quantidade
 
         desc = item.get("descricao") or ""
-        max_desc_len = int(widths[2] * 0.9)
-        lines = self.split_text(desc, max_desc_len)
+        max_desc_width = max(widths[2] - 1, 1)
+        lines = self.split_text(desc, max_desc_width)
         hs_code = item.get("hs_code")
         origem = item.get("pais_origem")
         if hs_code or origem:
