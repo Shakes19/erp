@@ -3991,8 +3991,14 @@ elif menu_option == "🤖 Smart Quotation":
                         descricao_key = f"smart_artigos_{idx}_descricao"
                         marca_key = f"smart_artigos_{idx}_marca"
                         descricao_atual = st.session_state.get(descricao_key, "")
-                        marca_registada = (st.session_state.get(marca_key) or "").strip()
-                        if not marca_registada:
+
+                        marca_valor_guardado = st.session_state.get(marca_key)
+                        marca_registada = (marca_valor_guardado or "").strip()
+
+                        if marca_registada:
+                            if marca_valor_guardado != marca_registada:
+                                st.session_state[marca_key] = marca_registada
+                        else:
                             marca_detectada = extrair_primeira_palavra(descricao_atual)
                             if marca_detectada:
                                 st.session_state[marca_key] = marca_detectada
@@ -4137,8 +4143,6 @@ elif menu_option == "🤖 Smart Quotation":
                                 descricao_normalizada = garantir_marca_primeira_palavra(
                                     normalizar_quebras_linha(descricao_input), marca_val
                                 )
-
-                                st.session_state[marca_key] = marca_val
 
                                 artigos_final.append(
                                     {
