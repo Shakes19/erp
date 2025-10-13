@@ -2919,14 +2919,25 @@ def responder_cotacao_dialog(cotacao):
         <style>
         /* Occupy the full viewport with the dialog overlay */
         [data-testid="stDialog"] {
+            position: fixed;
+            inset: 0;
             width: 100vw !important;
             height: 100vh !important;
             display: flex;
             align-items: center;
             justify-content: center;
+            margin: 0;
+        }
+        /* Ensure the immediate container stretches across the overlay */
+        [data-testid="stDialog"] > div:first-child {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         /* Expand inner dialog content to occupy full form */
-        [data-testid="stDialog"] > div {
+        [data-testid="stDialog"] > div > div {
             width: min(90vw, 75rem) !important;
             max-width: min(90vw, 75rem) !important;
             padding-top: 20px;
