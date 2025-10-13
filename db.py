@@ -460,11 +460,19 @@ def criar_base_dados_completa():
             processo_artigo_id INTEGER PRIMARY KEY,
             resposta_id INTEGER,
             selecionado_em TEXT DEFAULT CURRENT_TIMESTAMP,
+            enviado_cliente_em TEXT,
             FOREIGN KEY (processo_artigo_id) REFERENCES processo_artigo(id) ON DELETE CASCADE,
             FOREIGN KEY (resposta_id) REFERENCES resposta_fornecedor(id) ON DELETE SET NULL
         )
         """
     )
+
+    c.execute("PRAGMA table_info(processo_artigo_selecao)")
+    selecao_cols = [row[1] for row in c.fetchall()]
+    if "enviado_cliente_em" not in selecao_cols:
+        c.execute(
+            "ALTER TABLE processo_artigo_selecao ADD COLUMN enviado_cliente_em TEXT"
+        )
 
     # Tabela de respostas dos fornecedores
     c.execute(

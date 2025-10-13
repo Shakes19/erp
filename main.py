@@ -13,6 +13,7 @@ import tempfile
 import re
 import copy
 from uuid import uuid4
+from typing import Iterable
 from pypdf import PdfReader
 from PIL import Image
 import pandas as pd
@@ -1103,22 +1104,24 @@ def guardar_respostas(
     custo_embalagem=0.0,
     observacoes="",
 ):
-    """Guardar respostas do fornecedor e enviar email"""
+    """Guardar respostas do fornecedor e devolver informação para envio ao cliente."""
     conn = obter_conexao()
     c = conn.cursor()
 
     try:
-        # Obter fornecedor_id diretamente da RFQ [CORREÇÃO]
-        c.execute("SELECT fornecedor_id FROM rfq WHERE id = ?", (rfq_id,))
+        # Obter fornecedor e processo associados à RFQ
+        c.execute("SELECT fornecedor_id, processo_id FROM rfq WHERE id = ?", (rfq_id,))
         resultado = c.fetchone()
-        
+
         if not resultado:
             st.error("RFQ não encontrada!")
-            return False
-            
-        fornecedor_id = resultado[0]  # Obtém o ID do fornecedor da RFQ
+            return False, None
+
+        fornecedor_id, processo_id = resultado
 
         total_custos = sum(item[1] for item in respostas if item[1] > 0)
+
+        selecoes_por_artigo: dict[int, int] = {}
 
         # Obter margem para cada artigo baseada na marca
         for item in respostas:
@@ -1133,18 +1136,22 @@ def guardar_respostas(
                 quantidade_final,
                 prazo,
             ) = item
-            
-            # Obter marca do artigo
-            c.execute("SELECT marca FROM artigo WHERE id = ?", (artigo_id,))
+
+            # Obter marca e artigo do processo associado
+            c.execute(
+                "SELECT marca, processo_artigo_id FROM artigo WHERE id = ?",
+                (artigo_id,),
+            )
             marca_result = c.fetchone()
             marca = marca_result[0] if marca_result else None
+            processo_artigo_id = marca_result[1] if marca_result and len(marca_result) > 1 else None
 
             proporcao = (custo / total_custos) if total_custos else 0
             custo_total = custo + (custo_envio + custo_embalagem) * proporcao
 
             # Obter margem configurada para a marca
             margem = obter_margem_para_marca(fornecedor_id, marca)
-            preco_venda = custo_total * (1 + margem/100)
+            preco_venda = custo_total * (1 + margem / 100)
 
             c.execute(
                 """
@@ -1170,7 +1177,18 @@ def guardar_respostas(
                     validade_preco,
                 ),
             )
-        
+
+            c.execute(
+                """
+                SELECT id FROM resposta_fornecedor
+                WHERE fornecedor_id = ? AND rfq_id = ? AND artigo_id = ?
+                """,
+                (fornecedor_id, rfq_id, artigo_id),
+            )
+            resposta_row = c.fetchone()
+            if resposta_row and processo_artigo_id:
+                selecoes_por_artigo[processo_artigo_id] = resposta_row[0]
+
         # Guardar custos adicionais
         c.execute(
             "INSERT OR REPLACE INTO resposta_custos (rfq_id, custo_envio, custo_embalagem) VALUES (?, ?, ?)",
@@ -1179,27 +1197,46 @@ def guardar_respostas(
 
         # Atualizar estado da RFQ
         c.execute("UPDATE rfq SET estado = 'respondido' WHERE id = ?", (rfq_id,))
-        
+
         # Obter informações para email
         c.execute(
             """
-            SELECT r.nome_solicitante, r.email_solicitante, r.referencia, p.numero
+            SELECT r.nome_solicitante,
+                   r.email_solicitante,
+                   r.referencia,
+                   p.numero,
+                   COALESCE(c.nome, ''),
+                   COALESCE(c.email, '')
             FROM rfq r
             LEFT JOIN processo p ON r.processo_id = p.id
+            LEFT JOIN cliente c ON r.cliente_id = c.id
             WHERE r.id = ?
             """,
             (rfq_id,),
         )
-        rfq_info = c.fetchone()
-        
+        rfq_info_row = c.fetchone()
+
+        rfq_info = {
+            "nome_solicitante": rfq_info_row[0] if rfq_info_row else "",
+            "email_solicitante": rfq_info_row[1] if rfq_info_row else "",
+            "referencia": rfq_info_row[2] if rfq_info_row else "",
+            "numero_processo": rfq_info_row[3] if rfq_info_row else "",
+            "cliente_nome": rfq_info_row[4] if rfq_info_row else "",
+            "cliente_email": rfq_info_row[5] if rfq_info_row else "",
+        }
+
         conn.commit()
 
-        return True
-        
+        return True, {
+            "processo_id": processo_id,
+            "selecoes": selecoes_por_artigo,
+            "rfq_info": rfq_info,
+        }
+
     except Exception as e:
         conn.rollback()
         st.error(f"Erro ao guardar respostas: {str(e)}")
-        return False
+        return False, None
     finally:
         conn.close()
 
@@ -1407,15 +1444,16 @@ def guardar_selecoes_processo(selecoes: dict[int, int | None]):
         for processo_artigo_id, resposta_id in selecoes.items():
             if resposta_id:
                 c.execute(
-                    """
-                    INSERT INTO processo_artigo_selecao (processo_artigo_id, resposta_id, selecionado_em)
-                    VALUES (?, ?, CURRENT_TIMESTAMP)
-                    ON CONFLICT(processo_artigo_id) DO UPDATE SET
-                        resposta_id = excluded.resposta_id,
-                        selecionado_em = CURRENT_TIMESTAMP
-                    """,
-                    (processo_artigo_id, resposta_id),
-                )
+                """
+                INSERT INTO processo_artigo_selecao (processo_artigo_id, resposta_id, selecionado_em)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(processo_artigo_id) DO UPDATE SET
+                    resposta_id = excluded.resposta_id,
+                    selecionado_em = CURRENT_TIMESTAMP,
+                    enviado_cliente_em = NULL
+                """,
+                (processo_artigo_id, resposta_id),
+            )
             else:
                 c.execute(
                     "DELETE FROM processo_artigo_selecao WHERE processo_artigo_id = ?",
@@ -1426,6 +1464,36 @@ def guardar_selecoes_processo(selecoes: dict[int, int | None]):
     except Exception as e:
         conn.rollback()
         st.error(f"Erro ao guardar seleção: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def marcar_artigos_enviados(processo_artigo_ids: Iterable[int]):
+    """Atualiza a marcação de artigos enviados ao cliente."""
+
+    ids = [pid for pid in set(processo_artigo_ids or []) if pid]
+    if not ids:
+        return True
+
+    conn = obter_conexao()
+    c = conn.cursor()
+
+    try:
+        placeholders = ",".join(["?"] * len(ids))
+        c.execute(
+            f"""
+            UPDATE processo_artigo_selecao
+            SET enviado_cliente_em = CURRENT_TIMESTAMP
+            WHERE processo_artigo_id IN ({placeholders})
+            """,
+            ids,
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        st.error(f"Erro ao marcar artigos enviados: {e}")
         return False
     finally:
         conn.close()
@@ -1555,7 +1623,8 @@ def obter_detalhes_processo(processo_id: int):
 
         c.execute(
             f"""
-            SELECT rfq_id, id, COALESCE(artigo_num, ''), descricao, quantidade, unidade, COALESCE(marca, ''), ordem
+            SELECT rfq_id, id, COALESCE(artigo_num, ''), descricao, quantidade, unidade,
+                   COALESCE(marca, ''), ordem, processo_artigo_id
             FROM artigo
             WHERE rfq_id IN ({placeholders})
             ORDER BY rfq_id, ordem, id
@@ -1573,6 +1642,7 @@ def obter_detalhes_processo(processo_id: int):
                     "unidade": artigo_row[5],
                     "marca": artigo_row[6] or "",
                     "ordem": artigo_row[7],
+                    "processo_artigo_id": artigo_row[8],
                 }
             )
 
@@ -1591,9 +1661,41 @@ def obter_detalhes_processo(processo_id: int):
 
     conn.close()
 
+    processo_artigo_ids = [artigo.get("id") for artigo in artigos_processo if artigo.get("id")]
+    selecoes_envio: dict[int, dict] = {}
+
+    if processo_artigo_ids:
+        placeholders_sel = ",".join(["?"] * len(processo_artigo_ids))
+        c.execute(
+            f"""
+            SELECT processo_artigo_id, resposta_id, enviado_cliente_em
+            FROM processo_artigo_selecao
+            WHERE processo_artigo_id IN ({placeholders_sel})
+            """,
+            processo_artigo_ids,
+        )
+        for proc_id, resposta_id, enviado_em in c.fetchall():
+            selecoes_envio[proc_id] = {
+                "resposta_id": resposta_id,
+                "enviado_cliente_em": enviado_em,
+            }
+
     rfqs = []
     for rfq_row in rfqs_rows:
         rfq_id = rfq_row[0]
+        artigos_rfq = sorted(
+            artigos_por_rfq.get(rfq_id, []),
+            key=lambda x: (x.get("ordem") or 0, x.get("id")),
+        )
+        artigos_clientes = [
+            artigo for artigo in artigos_rfq if artigo.get("processo_artigo_id")
+        ]
+        total_artigos_cliente = len(artigos_clientes)
+        enviados_cliente = sum(
+            1
+            for artigo in artigos_clientes
+            if selecoes_envio.get(artigo.get("processo_artigo_id"), {}).get("enviado_cliente_em")
+        )
         rfqs.append(
             {
                 "id": rfq_id,
@@ -1606,8 +1708,10 @@ def obter_detalhes_processo(processo_id: int):
                 "email_solicitante": rfq_row[7] or "",
                 "cliente": rfq_row[8] or "",
                 "utilizador_id": rfq_row[9],
-                "artigos": sorted(artigos_por_rfq.get(rfq_id, []), key=lambda x: (x.get("ordem") or 0, x.get("id"))),
+                "artigos": artigos_rfq,
                 "total_respostas": respostas_por_rfq.get(rfq_id, 0),
+                "total_artigos_cliente": total_artigos_cliente,
+                "artigos_enviados_cliente": enviados_cliente,
             }
         )
 
@@ -1623,6 +1727,14 @@ def obter_detalhes_processo(processo_id: int):
         "rfqs": rfqs,
         "total_rfqs": len(rfqs),
         "respondidas": respondidas,
+        "cliente_envios": {
+            "total": len(processo_artigo_ids),
+            "enviados": sum(
+                1
+                for info in selecoes_envio.values()
+                if info.get("enviado_cliente_em")
+            ),
+        },
     }
 
 # ========================== FUNÇÕES DE GESTÃO DE MARGENS ==========================
@@ -3100,13 +3212,15 @@ def responder_cotacao_dialog(cotacao):
         respostas_validas = [r for r in respostas if r[1] > 0]
 
         if respostas_validas:
-            if guardar_respostas(
+            sucesso, info_envio = guardar_respostas(
                 cotacao['id'],
                 respostas_validas,
                 custo_envio,
                 custo_embalagem,
                 observacoes,
-            ):
+            )
+
+            if sucesso:
                 anexos_resposta = st.session_state.get(anexos_resposta_key, [])
                 if anexos_resposta:
                     guardar_pdf_uploads(
@@ -3115,7 +3229,43 @@ def responder_cotacao_dialog(cotacao):
                         anexos_resposta,
                     )
                     st.session_state[anexos_resposta_key] = []
-                st.success("✅ Resposta guardada e email enviado com sucesso!")
+
+                selecoes_auto = (info_envio or {}).get("selecoes") or {}
+                selecoes_guardadas = True
+                if selecoes_auto:
+                    selecoes_guardadas = guardar_selecoes_processo(selecoes_auto)
+
+                if not selecoes_guardadas:
+                    st.warning("Resposta guardada, mas não foi possível preparar a seleção para o cliente.")
+                    return
+
+                if gerar_pdf_cliente(cotacao['id']):
+                    rfq_info = (info_envio or {}).get("rfq_info", {})
+                    email_cliente = rfq_info.get("email_solicitante") or rfq_info.get("cliente_email")
+                    nome_cliente = rfq_info.get("nome_solicitante") or rfq_info.get("cliente_nome") or "Cliente"
+                    referencia_cliente = rfq_info.get("referencia") or ""
+                    numero_processo = rfq_info.get("numero_processo") or cotacao.get("processo") or ""
+
+                    if email_cliente:
+                        if enviar_email_orcamento(
+                            email_cliente,
+                            nome_cliente,
+                            referencia_cliente,
+                            numero_processo,
+                            cotacao['id'],
+                            observacoes,
+                        ):
+                            marcar_artigos_enviados(selecoes_auto.keys())
+                            st.success("Resposta guardada e proposta enviada ao cliente com sucesso!")
+                        else:
+                            st.warning("Resposta guardada, mas ocorreu uma falha no envio do e-mail ao cliente.")
+                    else:
+                        st.info(
+                            "Resposta guardada e cotação do cliente gerada, mas nenhum e-mail de cliente está definido."
+                        )
+                else:
+                    st.warning("Resposta guardada, mas não foi possível gerar automaticamente o PDF do cliente.")
+
                 st.rerun()
         else:
             st.error("Por favor, preencha pelo menos um preço")
@@ -3226,6 +3376,7 @@ def criar_cotacao_cliente_dialog(
             numero_processo or "",
             rfq_id,
         ):
+            marcar_artigos_enviados([pid for pid, resp in selecoes.items() if resp])
             st.success("E-mail enviado ao cliente com sucesso!")
         else:
             st.error("Falha ao enviar o e-mail ao cliente.")
@@ -4741,6 +4892,9 @@ elif menu_option == "📩 Responder Cotações":
                                                     cotacao['id'],
                                                     detalhes.get('observacoes', '') if detalhes else '',
                                                 ):
+                                                    marcar_artigos_enviados(
+                                                        [pid for pid, resp in selecoes_novas.items() if resp]
+                                                    )
                                                     st.success("Proposta enviada ao cliente com sucesso!")
                                                 else:
                                                     st.error("Falha ao enviar o e-mail para o cliente.")
@@ -4811,6 +4965,7 @@ elif menu_option == "📩 Responder Cotações":
                                                 cotacao['processo'],
                                                 cotacao['id'],
                                             ):
+                                                marcar_artigos_enviados(selecoes_existentes.keys())
                                                 st.success("✅ E-mail reenviado com sucesso!")
                                             else:
                                                 st.error("Falha no reenvio")
@@ -4825,6 +4980,7 @@ elif menu_option == "📩 Responder Cotações":
                                             cotacao['processo'],
                                             cotacao['id'],
                                         ):
+                                            marcar_artigos_enviados(selecoes_existentes.keys())
                                             st.success("✅ E-mail reenviado com sucesso!")
                                         else:
                                             st.error("Falha no reenvio")
@@ -5019,6 +5175,15 @@ elif menu_option == "📩 Responder Cotações":
                 processo_info = detalhes_processo.get("processo", {})
                 resumo_col, pedido_cliente_col = st.columns(2)
 
+                def _estado_envio_cliente(enviados: int, total: int) -> tuple[str, str]:
+                    if not total:
+                        return "⚪️", "Sem artigos do cliente"
+                    if enviados <= 0:
+                        return "🔴", "Sem envios ao cliente"
+                    if enviados < total:
+                        return "🟡", "Envio parcial ao cliente"
+                    return "🟢", "Todos os artigos enviados ao cliente"
+
                 with resumo_col:
                     st.markdown(f"### {processo_info.get('numero', 'Processo')}")
                     if processo_info.get("descricao"):
@@ -5048,6 +5213,13 @@ elif menu_option == "📩 Responder Cotações":
                             0,
                         )
                         st.metric("Pendentes", pendentes)
+
+                    cliente_envios = detalhes_processo.get("cliente_envios") or {}
+                    emoji_envio, texto_envio = _estado_envio_cliente(
+                        cliente_envios.get("enviados", 0),
+                        cliente_envios.get("total", 0),
+                    )
+                    st.write(f"**Envio ao cliente:** {emoji_envio} {texto_envio}")
 
                 with pedido_cliente_col:
                     st.subheader("Pedido Cliente")
@@ -5085,7 +5257,15 @@ elif menu_option == "📩 Responder Cotações":
                         else:
                             emoji = "🟡"
 
-                        titulo_expander = f"{emoji} {pedido.get('fornecedor', 'Fornecedor')} • Ref: {pedido.get('referencia', '—')}"
+                        emoji_cliente, texto_cliente = _estado_envio_cliente(
+                            pedido.get("artigos_enviados_cliente", 0),
+                            pedido.get("total_artigos_cliente", 0),
+                        )
+
+                        titulo_expander = (
+                            f"{emoji_cliente} {emoji} {pedido.get('fornecedor', 'Fornecedor')}"
+                            f" • Ref: {pedido.get('referencia', '—')}"
+                        )
                         expanded = foco_referencia and foco_referencia == (pedido.get("referencia") or "").lower()
 
                         with st.expander(titulo_expander, expanded=bool(expanded)):
@@ -5124,6 +5304,9 @@ elif menu_option == "📩 Responder Cotações":
                                 )
                                 st.write(
                                     f"**Data:** {_format_iso_date(pedido.get('data')) or '—'}"
+                                )
+                                st.write(
+                                    f"**Envio Cliente:** {emoji_cliente} {texto_cliente}"
                                 )
                             with meta_cols[1]:
                                 st.write(
