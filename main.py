@@ -2912,22 +2912,23 @@ def verificar_pdfs(rfq_id):
     }
 
 
-@st.dialog("Responder Cotação")
+@st.dialog("Responder Cotação", width="large")
 def responder_cotacao_dialog(cotacao):
     st.markdown(
         """
         <style>
         /* Occupy the full viewport with the dialog overlay */
         [data-testid="stDialog"] {
-            width: 100%;
-            height: 100%;
+            width: 100vw !important;
+            height: 100vh !important;
             display: flex;
             align-items: center;
             justify-content: center;
         }
         /* Expand inner dialog content to occupy full form */
         [data-testid="stDialog"] > div {
-            width: 100%;
+            width: min(90vw, 75rem) !important;
+            max-width: min(90vw, 75rem) !important;
             padding-top: 20px;
             min-width: 60rem;
         }
@@ -2935,6 +2936,9 @@ def responder_cotacao_dialog(cotacao):
         [data-testid="stDialog"] form {
             width: 100%;
             height: 100%;
+        }
+        [data-testid="stDialog"] [data-testid="stVerticalBlock"] > div {
+            width: 100%;
         }
         [data-testid="stDialog"] .st-ft {
             min-width: 60rem;
