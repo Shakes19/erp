@@ -397,9 +397,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
                 }
             ]
             st.session_state.pedido_cliente_anexos = []
-            st.session_state["nova_cotacao_referencia"] = ""
-            st.session_state["nova_cotacao_data"] = date.today()
-            st.session_state["cliente_select_nova"] = None
+            st.session_state["reset_nova_cotacao_form"] = True
             st.session_state.pop("upload_pedido_cliente", None)
             for key in list(st.session_state.keys()):
                 for prefix in ("nova_desc_", "nova_art_num_", "nova_qtd_", "nova_unidade_", "nova_marca_"):
@@ -2066,6 +2064,24 @@ class InquiryPDF(FPDF):
     #  Helpers
     # ------------------------------------------------------------------
     @staticmethod
+    def _safe_text(value: str | int | float | None) -> str:
+        """Return ``value`` coerced to a latin-1 safe string.
+
+        ``fpdf`` internamente utiliza Latin-1 para representar texto. Quando
+        recebe caracteres fora desse intervalo (ex.: travessões “–”) lança
+        ``UnicodeEncodeError`` no momento em que tentamos escrever no PDF.
+        Ao codificar e decodificar com ``errors='replace'`` substituímos os
+        caracteres problemáticos por um marcador visual sem interromper a
+        geração do ficheiro.
+        """
+
+        if value is None:
+            text = ""
+        else:
+            text = str(value)
+        return text.encode("latin-1", errors="replace").decode("latin-1")
+
+    @staticmethod
     def _merge_cfg(source, default):
         if not isinstance(default, dict):
             return source if source is not None else default
@@ -2100,6 +2116,42 @@ class InquiryPDF(FPDF):
                 font_cfg.get("font_size", fallback[2]),
             )
         return fallback
+
+    # ------------------------------------------------------------------
+    #  Overrides de escrita para garantir segurança com caracteres
+    #  Unicode fora do intervalo Latin-1.
+    # ------------------------------------------------------------------
+    def cell(
+        self,
+        w=0,
+        h=0,
+        txt="",
+        border=0,
+        ln=0,
+        align="",
+        fill=False,
+        link="",
+    ):
+        return super().cell(
+            w,
+            h,
+            self._safe_text(txt),
+            border,
+            ln,
+            align,
+            fill,
+            link,
+        )
+
+    def multi_cell(self, w, h, txt="", border=0, align="J", fill=False):
+        return super().multi_cell(
+            w,
+            h,
+            self._safe_text(txt),
+            border,
+            align,
+            fill,
+        )
 
     # ------------------------------------------------------------------
     #  Header e Footer
@@ -2285,7 +2337,9 @@ class InquiryPDF(FPDF):
             return [texto or ""]
 
         linhas_resultado: list[str] = []
-        for linha_original in (texto or "").split("\n"):
+        texto_normalizado = self._safe_text(texto)
+
+        for linha_original in texto_normalizado.split("\n"):
             linha = linha_original.strip()
             if not linha:
                 linhas_resultado.append("")
@@ -3842,6 +3896,11 @@ if 'nova_cotacao_data' not in st.session_state:
     st.session_state.nova_cotacao_data = date.today()
 
 if 'cliente_select_nova' not in st.session_state:
+    st.session_state.cliente_select_nova = None
+
+if st.session_state.pop("reset_nova_cotacao_form", False):
+    st.session_state.nova_cotacao_referencia = ""
+    st.session_state.nova_cotacao_data = date.today()
     st.session_state.cliente_select_nova = None
 
 if 'logged_in' not in st.session_state:
@@ -6412,11 +6471,10 @@ elif menu_option == "⚙️ Configurações":
                         st.image(logo_bytes, width=120)
                     with col_btn:
                         remove_logo_clicked = st.form_submit_button(
-                            "✖️",
+                            "✖️ Remover",
                             help="Remover logo",
                             type="secondary",
                             use_container_width=True,
-                            key="remover_logo_btn",
                         )
                     if remove_logo_clicked:
                         logo_bytes = None
