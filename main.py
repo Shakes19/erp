@@ -2462,7 +2462,13 @@ class InquiryPDF(FPDF):
         self.table_header()
         for idx, art in enumerate(artigos, 1):
             self.add_item(idx, art)
-        return self.output(dest="S").encode("latin-1")
+        # ``fpdf`` usa Latin-1 internamente. Alguns caracteres provenientes da
+        # base de dados (ex.: travessões “–”) não existem nesse conjunto e
+        # provocavam ``UnicodeEncodeError`` ao gerar PDFs. Utilizamos
+        # ``errors='replace'`` para garantir que o ficheiro é produzido sem
+        # falhar e os caracteres problemáticos são substituídos por um marcador
+        # visual.
+        return self.output(dest="S").encode("latin-1", errors="replace")
 
 
 class ClientQuotationPDF(InquiryPDF):
@@ -2674,7 +2680,7 @@ class ClientQuotationPDF(InquiryPDF):
             total_geral += total_item
             peso_total += float(item.get("peso") or 0) * int(item["quantidade_final"])
         self.add_total(total_geral, peso_total)
-        return self.output(dest="S").encode("latin-1")
+        return self.output(dest="S").encode("latin-1", errors="replace")
 # ========================== FUNÇÕES DE GESTÃO DE PDFs ==========================
 
 def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
@@ -6386,23 +6392,50 @@ elif menu_option == "⚙️ Configurações":
                 telefone_emp = st.text_input("Telefone", dados[4] if dados else "")
                 email_emp = st.text_input("Email", dados[5] if dados else "")
                 website_emp = st.text_input("Website", dados[6] if dados else "")
-                logo_bytes = dados[7] if dados and len(dados) > 7 else None
+                logo_guardado = dados[7] if dados and len(dados) > 7 else None
+                removal_state_key = "empresa_logo_removed"
+                if removal_state_key not in st.session_state:
+                    st.session_state[removal_state_key] = False
+                if logo_guardado is None and st.session_state[removal_state_key]:
+                    st.session_state[removal_state_key] = False
+
+                logo_bytes = None if st.session_state[removal_state_key] else logo_guardado
                 logo_upload = st.file_uploader("Logo", type=["png", "jpg", "jpeg"], key="logo_empresa")
                 if logo_upload is not None:
                     logo_bytes = logo_upload.getvalue()
+                    st.session_state[removal_state_key] = False
+
+                remove_logo_clicked = False
                 if logo_bytes:
-                    st.image(logo_bytes, width=120)
+                    col_img, col_btn = st.columns([10, 1])
+                    with col_img:
+                        st.image(logo_bytes, width=120)
+                    with col_btn:
+                        remove_logo_clicked = st.form_submit_button(
+                            "✖️",
+                            help="Remover logo",
+                            type="secondary",
+                            use_container_width=True,
+                            key="remover_logo_btn",
+                        )
+                    if remove_logo_clicked:
+                        logo_bytes = None
+                        st.session_state[removal_state_key] = True
+                        st.rerun()
+
                 if st.form_submit_button("💾 Guardar"):
+                    logo_para_guardar = None if st.session_state.get(removal_state_key) else logo_bytes
                     conn = obter_conexao()
                     c = conn.cursor()
                     c.execute("DELETE FROM configuracao_empresa")
                     c.execute(
                         "INSERT INTO configuracao_empresa (nome, morada, nif, iban, telefone, email, website, logo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        (nome_emp, morada_emp, nif_emp, iban_emp, telefone_emp, email_emp, website_emp, logo_bytes),
+                        (nome_emp, morada_emp, nif_emp, iban_emp, telefone_emp, email_emp, website_emp, logo_para_guardar),
                     )
                     conn.commit()
                     conn.close()
                     obter_config_empresa.clear()
+                    st.session_state[removal_state_key] = False
                     st.success("Dados da empresa guardados!")
 
 # Footer

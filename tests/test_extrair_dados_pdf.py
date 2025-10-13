@@ -21,7 +21,7 @@ def criar_pdf_bytes():
     pdf.cell(0, 10, "Quantity")
     pdf.ln()
     pdf.cell(0, 10, "3")
-    return pdf.output(dest="S").encode("latin-1")
+    return pdf.output(dest="S").encode("latin-1", errors="replace")
 
 
 def test_extrair_dados_pdf():
@@ -50,7 +50,7 @@ def criar_pdf_hamburg_bytes():
     pdf.cell(0, 10, "Quantity")
     pdf.ln()
     pdf.cell(0, 10, "7")
-    return pdf.output(dest="S").encode("latin-1")
+    return pdf.output(dest="S").encode("latin-1", errors="replace")
 
 
 def test_extrair_dados_pdf_hamburg():
@@ -78,7 +78,7 @@ def criar_pdf_contact_hamburg_bytes():
     pdf.cell(0, 10, "KTB-code:")
     pdf.ln()
     pdf.cell(0, 10, "MC12345")
-    return pdf.output(dest="S").encode("latin-1")
+    return pdf.output(dest="S").encode("latin-1", errors="replace")
 
 
 def test_extrair_dados_pdf_contact_hamburg():
@@ -110,7 +110,7 @@ def criar_pdf_grossmoorring_bytes():
     pdf.cell(0, 10, "Descricao B")
     pdf.ln()
     pdf.cell(0, 10, "002.00")
-    return pdf.output(dest="S").encode("latin-1")
+    return pdf.output(dest="S").encode("latin-1", errors="replace")
 
 
 def test_extrair_dados_pdf_grossmoorring():
@@ -150,7 +150,7 @@ def criar_pdf_alba_bytes():
     pdf.cell(0, 10, "i.A. Ricardo Nogueira")
     pdf.ln()
     pdf.cell(0, 10, "Sales Department")
-    return pdf.output(dest="S").encode("latin-1")
+    return pdf.output(dest="S").encode("latin-1", errors="replace")
 
 
 def test_extrair_dados_pdf_alba():
@@ -176,7 +176,7 @@ def criar_pdf_piece_inline_bytes():
     pdf.cell(0, 10, "001.00 Widget Alpha Piece1")
     pdf.ln()
     pdf.cell(0, 10, "002.00 Widget Beta Piece2")
-    return pdf.output(dest="S").encode("latin-1")
+    return pdf.output(dest="S").encode("latin-1", errors="replace")
 
 
 def test_extrair_dados_pdf_piece_inline():
@@ -205,7 +205,7 @@ def criar_pdf_client_bytes():
     pdf.cell(0, 10, "002.00 Widget B")
     pdf.ln()
     pdf.cell(0, 10, "extra info 3")
-    return pdf.output(dest="S").encode("latin-1")
+    return pdf.output(dest="S").encode("latin-1", errors="replace")
 
 
 def test_extrair_dados_pdf_client_table():
@@ -245,7 +245,7 @@ def criar_pdf_ktb_bytes():
     pdf.cell(0, 10, "KTB-code:")
     pdf.ln()
     pdf.cell(0, 10, "2167704")
-    return pdf.output(dest="S").encode("latin-1")
+    return pdf.output(dest="S").encode("latin-1", errors="replace")
 
 
 def test_extrair_dados_pdf_ktb():
@@ -269,7 +269,7 @@ def criar_pdf_ktb_inline_bytes():
     pdf.cell(0, 10, "001.00 INLINE Part")
     pdf.ln()
     pdf.cell(0, 10, "KTB-code: 998877, extra text")
-    return pdf.output(dest="S").encode("latin-1")
+    return pdf.output(dest="S").encode("latin-1", errors="replace")
 
 
 def test_extrair_dados_pdf_ktb_inline():
@@ -292,7 +292,7 @@ def criar_pdf_marca_descricao_preservada_bytes():
     pdf.cell(0, 10, "KTB-code:")
     pdf.ln()
     pdf.cell(0, 10, "445566")
-    return pdf.output(dest="S").encode("latin-1")
+    return pdf.output(dest="S").encode("latin-1", errors="replace")
 
 
 def test_extrair_dados_pdf_marca_descricao_preservada():
@@ -324,7 +324,7 @@ def criar_pdf_multi_ktb_bytes():
     pdf.cell(0, 10, "KTB-code:")
     pdf.ln()
     pdf.cell(0, 10, "B67890")
-    return pdf.output(dest="S").encode("latin-1")
+    return pdf.output(dest="S").encode("latin-1", errors="replace")
 
 
 def test_extrair_dados_pdf_multi_ktb():
