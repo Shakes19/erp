@@ -39,17 +39,9 @@ from services.pdf_service import (
     obter_pdf_da_db,
     processar_upload_pdf,
 )
-from services.email_service import send_email
+from services.email_service import get_system_email_config, send_email
 
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
-
-# Configurações de Email (servidor e porta padrão)
-EMAIL_CONFIG = {
-    'smtp_server': 'smtp-mail.outlook.com',
-    'smtp_port': 587
-}
-
-
 
 def _format_iso_date(value):
     """Format ISO 8601 strings or datetime objects to ``dd/mm/YYYY``.
@@ -1826,27 +1818,9 @@ def enviar_email_orcamento(
             st.error("PDF não encontrado para anexar ao e-mail")
             return False
         
-        # Obter configurações de email (servidor/porta)
-        conn = obter_conexao()
-        c = conn.cursor()
-        try:
-            c.execute(
-                "SELECT smtp_server, smtp_port FROM configuracao_email WHERE ativo = TRUE LIMIT 1"
-            )
-        except sqlite3.OperationalError:
-            # Column "ativo" may not existir em bases de dados antigas
-            c.execute(
-                "SELECT smtp_server, smtp_port FROM configuracao_email LIMIT 1"
-            )
-        config = c.fetchone()
-        conn.close()
-
-        if config:
-            smtp_server, smtp_port = config
-        else:
-            print("⚠️ Usando configurações padrão de email")
-            smtp_server = EMAIL_CONFIG['smtp_server']
-            smtp_port = EMAIL_CONFIG['smtp_port']
+        config_email = get_system_email_config()
+        smtp_server = config_email["server"]
+        smtp_port = config_email["port"]
 
         # Credenciais do utilizador atual
         current_user = obter_utilizador_por_id(st.session_state.get("user_id"))
@@ -1940,23 +1914,9 @@ def enviar_email_pedido_fornecedor(rfq_id):
             st.error("PDF do pedido não encontrado para envio ao fornecedor.")
             return False
 
-        # Configuração SMTP
-        conn = obter_conexao()
-        c = conn.cursor()
-        try:
-            c.execute(
-                "SELECT smtp_server, smtp_port FROM configuracao_email WHERE ativo = TRUE LIMIT 1"
-            )
-        except sqlite3.OperationalError:
-            c.execute("SELECT smtp_server, smtp_port FROM configuracao_email LIMIT 1")
-        config = c.fetchone()
-        conn.close()
-
-        if config:
-            smtp_server, smtp_port = config
-        else:
-            smtp_server = EMAIL_CONFIG['smtp_server']
-            smtp_port = EMAIL_CONFIG['smtp_port']
+        config_email = get_system_email_config()
+        smtp_server = config_email["server"]
+        smtp_port = config_email["port"]
 
         current_user = obter_utilizador_por_id(st.session_state.get("user_id"))
         if current_user and current_user[4] and current_user[6]:
@@ -2051,6 +2011,50 @@ def guardar_pdf_upload(rfq_id, tipo_pdf, nome_ficheiro, bytes_):
 class InquiryPDF(FPDF):
     """Gera PDF de pedido de cotação seguindo layout profissional"""
 
+    DEFAULT_HEADER = {
+        "title": "INQUIRY",
+        "font": "Helvetica",
+        "font_style": "B",
+        "font_size": 16,
+        "spacing": 4,
+        "line_height": 5,
+        "metadata_font": {"font": "Helvetica", "font_style": "B", "font_size": 10},
+        "metadata_value_font": {
+            "font": "Helvetica",
+            "font_style": "",
+            "font_size": 10,
+        },
+        "address_font": {"font": "Helvetica", "font_style": "", "font_size": 10},
+        "company_font": {"font": "Helvetica", "font_style": "", "font_size": 9},
+    }
+
+    DEFAULT_BODY = {
+        "font": "Helvetica",
+        "font_style": "",
+        "font_size": 11,
+        "reference_spacing": 4,
+        "intro_spacing": 4,
+        "intro_text": "Please quote us for:",
+        "greeting_named": "Dear Mr./Ms. {nome_contacto},",
+        "greeting_generic": "Dear Sir/Madam,",
+    }
+
+    DEFAULT_TABLE = {
+        "headers": ["Pos.", "Article No.", "Qty", "Unit", "Item"],
+        "widths": [12, 25, 12, 14, 117],
+        "alignments": ["C", "C", "C", "C", "L"],
+        "font": "Helvetica",
+        "font_style": "B",
+        "font_size": 11,
+        "header_height": 8,
+        "header_spacing": 4,
+        "row_font": "Helvetica",
+        "row_font_style": "",
+        "row_font_size": 10,
+        "row_height": 5,
+        "row_spacing": 3,
+    }
+
     def __init__(self, config=None):
         super().__init__(orientation="P", unit="mm", format="A4")
         self.cfg = config or {}
@@ -2059,14 +2063,55 @@ class InquiryPDF(FPDF):
         self.recipient = {}
 
     # ------------------------------------------------------------------
+    #  Helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _merge_cfg(source, default):
+        if not isinstance(default, dict):
+            return source if source is not None else default
+
+        merged = {key: (value.copy() if isinstance(value, dict) else list(value) if isinstance(value, list) else value)
+                  for key, value in default.items()}
+        if isinstance(source, dict):
+            for key, value in source.items():
+                if isinstance(value, dict):
+                    merged[key] = value.copy()
+                elif isinstance(value, list):
+                    merged[key] = list(value)
+                else:
+                    merged[key] = value
+        return merged
+
+    def _header_cfg(self):
+        return self._merge_cfg(self.cfg.get("header"), self.DEFAULT_HEADER)
+
+    def _body_cfg(self):
+        return self._merge_cfg(self.cfg.get("body"), self.DEFAULT_BODY)
+
+    def _table_cfg(self):
+        return self._merge_cfg(self.cfg.get("table"), self.DEFAULT_TABLE)
+
+    @staticmethod
+    def _font_tuple(font_cfg, fallback):
+        if isinstance(font_cfg, dict):
+            return (
+                font_cfg.get("font", fallback[0]),
+                font_cfg.get("font_style", fallback[1]),
+                font_cfg.get("font_size", fallback[2]),
+            )
+        return fallback
+
+    # ------------------------------------------------------------------
     #  Header e Footer
     # ------------------------------------------------------------------
     def header(self):
         """Cabeçalho com duas colunas e grelha de metadados"""
-        header_cfg = self.cfg.get("header", {})
+        header_cfg = self._header_cfg()
         logo_cfg = header_cfg.get("logo", {})
         logo_path = logo_cfg.get("path", self.cfg.get("logo_path", LOGO_PATH))
         logo_bytes = self.cfg.get("logo_bytes")
+
+        line_height = header_cfg.get("line_height", 5)
 
         # Grelha de metadados no lado esquerdo
         meta = self.recipient.get("metadata", {})
@@ -2074,24 +2119,24 @@ class InquiryPDF(FPDF):
         start_y = 15
         for label, value in meta.items():
             self.set_xy(15, start_y)
-            self.set_font("Helvetica", "B", 10)
-            self.cell(25, 5, f"{label}:")
-            self.set_font("Helvetica", "", 10)
+            self.set_font(*self._font_tuple(header_cfg.get("metadata_font"), ("Helvetica", "B", 10)))
+            self.cell(25, line_height, f"{label}:")
+            self.set_font(*self._font_tuple(header_cfg.get("metadata_value_font"), ("Helvetica", "", 10)))
             # ``FPDF.cell`` internally calls ``replace`` on the value passed in,
             # which fails if a non-string (e.g. an int) is provided.  Converting
             # to ``str`` ensures metadata like numeric references or dates are
             # handled without errors when generating PDFs.
-            self.cell(45, 5, str(value), ln=1)
-            start_y += 5
+            self.cell(45, line_height, str(value), ln=1)
+            start_y += line_height
 
         # Bloco do destinatário abaixo dos metadados
-        self.set_xy(15, start_y + 5)
+        self.set_xy(15, start_y + line_height)
         recip = self.recipient.get("address", [])
-        self.set_font("Helvetica", "", 10)
+        self.set_font(*self._font_tuple(header_cfg.get("address_font"), ("Helvetica", "", 10)))
         for line in recip:
             # Garantir que cada linha é string para evitar erros de ``replace``
             # caso algum campo seja numérico.
-            self.cell(80, 5, str(line), ln=1)
+            self.cell(80, line_height, str(line), ln=1)
 
         # Bloco da empresa (logo + contactos) no lado direito
         max_h = 30  # altura máxima para evitar sobreposição com contactos
@@ -2133,6 +2178,7 @@ class InquiryPDF(FPDF):
             ["Ricardo Nogueira", "Rua Exemplo 123", "4455-123 Porto", "Portugal"],
         )
         self.set_xy(self.w - 15 - 70, 45)
+        self.set_font(*self._font_tuple(header_cfg.get("company_font"), ("Helvetica", "", 9)))
         self.multi_cell(70, 4, "\n".join(company_lines), align="R")
 
         # Ajustar posição para início do corpo
@@ -2214,8 +2260,23 @@ class InquiryPDF(FPDF):
     #  Corpo do documento
     # ------------------------------------------------------------------
     def _table_col_widths(self):
-        item_w = self.w - 30 - 12 - 25 - 12 - 14
-        return [12, 25, 12, 14, item_w]
+        table_cfg = self._table_cfg()
+        widths = table_cfg.get("widths") or self.DEFAULT_TABLE["widths"]
+        try:
+            widths = [float(w) for w in widths]
+        except (TypeError, ValueError):
+            widths = list(self.DEFAULT_TABLE["widths"])
+
+        if len(widths) != len(self.DEFAULT_TABLE["headers"]):
+            widths = list(self.DEFAULT_TABLE["widths"])
+
+        available = self.w - self.l_margin - self.r_margin
+        total = sum(widths)
+        if total > available and available > 0:
+            scale = available / total
+            widths = [round(w * scale, 2) for w in widths]
+
+        return widths
 
     def _wrap_text(self, texto: str, largura_max: float) -> list[str]:
         """Quebra o texto para caber na largura indicada preservando linhas vazias."""
@@ -2261,43 +2322,76 @@ class InquiryPDF(FPDF):
         return linhas_resultado or [""]
 
     def add_title(self):
-        self.set_font("Helvetica", "B", 16)
-        self.cell(0, 8, "INQUIRY", ln=1)
-        self.ln(4)
+        header_cfg = self._header_cfg()
+        self.set_font(*self._font_tuple(header_cfg, ("Helvetica", "B", 16)))
+        title = header_cfg.get("title", "INQUIRY")
+        height = header_cfg.get("title_height", 8)
+        self.cell(0, height, title, ln=1)
+        spacing = header_cfg.get("spacing", 4)
+        if spacing:
+            self.ln(spacing)
 
     def add_reference(self, referencia):
-        self.set_font("Helvetica", "B", 11)
+        body_cfg = self._body_cfg()
+        label_font = body_cfg.get(
+            "reference_label_font",
+            {"font": body_cfg.get("font"), "font_style": "B", "font_size": body_cfg.get("font_size", 11)},
+        )
+        value_font = body_cfg.get(
+            "reference_value_font",
+            {"font": body_cfg.get("font"), "font_style": body_cfg.get("font_style", ""), "font_size": body_cfg.get("font_size", 11)},
+        )
+        self.set_font(*self._font_tuple(label_font, ("Helvetica", "B", 11)))
         self.cell(35, 5, "Our reference:")
-        self.set_font("Helvetica", "", 11)
+        self.set_font(*self._font_tuple(value_font, ("Helvetica", "", 11)))
         self.cell(0, 5, referencia, ln=1)
-        self.ln(4)
+        spacing = body_cfg.get("reference_spacing", 4)
+        if spacing:
+            self.ln(spacing)
 
     def add_intro(self, nome_contacto=""):
-        self.set_font("Helvetica", "", 11)
+        body_cfg = self._body_cfg()
+        self.set_font(*self._font_tuple(body_cfg, ("Helvetica", "", 11)))
         if nome_contacto:
-            self.cell(0, 5, f"Dear Mr./Ms. {nome_contacto},", ln=1)
+            saudacao = body_cfg.get("greeting_named", "Dear Mr./Ms. {nome_contacto},").format(
+                nome_contacto=nome_contacto
+            )
         else:
-            self.cell(0, 5, "Dear Sir/Madam,", ln=1)
-        self.ln(4)
-        self.cell(0, 5, "Please quote us for:", ln=1)
-        self.ln(4)
+            saudacao = body_cfg.get("greeting_generic", "Dear Sir/Madam,")
+        self.cell(0, 5, saudacao, ln=1)
+        spacing = body_cfg.get("intro_spacing", 4)
+        if spacing:
+            self.ln(spacing)
+        self.cell(0, 5, body_cfg.get("intro_text", "Please quote us for:"), ln=1)
+        if spacing:
+            self.ln(spacing)
 
     def table_header(self):
+        table_cfg = self._table_cfg()
         col_w = self._table_col_widths()
-        self.set_font("Helvetica", "B", 11)
-        headers = ["Pos.", "Article No.", "Qty", "Unit", "Item"]
-        aligns = ["C", "C", "C", "C", "L"]
+        self.set_font(*self._font_tuple(table_cfg, ("Helvetica", "B", 11)))
+        headers = table_cfg.get("headers", self.DEFAULT_TABLE["headers"])
+        aligns = table_cfg.get("alignments", self.DEFAULT_TABLE["alignments"])
+        header_height = table_cfg.get("header_height", 8)
         for w, h, a in zip(col_w, headers, aligns):
-            self.cell(w, 8, h, align=a)
-        # Move below header row and add a blank line before the first item
+            self.cell(w, header_height, h, align=a, border="B")
+        # Move below header row and add uma linha em branco antes do primeiro item
         self.ln()
-        self.ln(4)
+        spacing = table_cfg.get("header_spacing", 4)
+        if spacing:
+            self.ln(spacing)
 
     def add_item(self, idx, item):
+        table_cfg = self._table_cfg()
         col_w = self._table_col_widths()
-        line_height = 5
+        line_height = table_cfg.get("row_height", 5)
         # Garantir texto dos itens em estilo regular
-        self.set_font("Helvetica", "", 10)
+        row_font = {
+            "font": table_cfg.get("row_font", table_cfg.get("font")),
+            "font_style": table_cfg.get("row_font_style", ""),
+            "font_size": table_cfg.get("row_font_size", 10),
+        }
+        self.set_font(*self._font_tuple(row_font, ("Helvetica", "", 10)))
         # Preparar texto do item
         # ``descricao`` might be ``None`` if the item was partially filled in
         # the UI, so fall back to an empty string before splitting.
@@ -2313,6 +2407,7 @@ class InquiryPDF(FPDF):
 
         x_start = self.get_x()
         y_start = self.get_y()
+        aligns = table_cfg.get("alignments", self.DEFAULT_TABLE["alignments"])
         # ``artigo_num`` can be present with a ``None`` value.  ``FPDF.cell``
         # calls ``replace`` on the provided text, which fails for ``None``.
         # Converting to ``""`` avoids the "NoneType has no attribute 'replace'"
@@ -2325,15 +2420,23 @@ class InquiryPDF(FPDF):
         for i in range(line_count):
             border = "B" if i == line_count - 1 else ""
             self.set_xy(x_start, y_start + i * line_height)
-            self.cell(col_w[0], line_height, str(idx) if i == 0 else "", border=border, align="C")
-            self.cell(col_w[1], line_height, part_no if i == 0 else "", border=border, align="C")
-            self.cell(col_w[2], line_height, quantidade_str if i == 0 else "", border=border, align="C")
-            self.cell(col_w[3], line_height, unidade if i == 0 else "", border=border, align="C")
-            self.cell(col_w[4], line_height, lines[i], border=border)
+            self.cell(col_w[0], line_height, str(idx) if i == 0 else "", border=border, align=aligns[0])
+            self.cell(col_w[1], line_height, part_no if i == 0 else "", border=border, align=aligns[1])
+            self.cell(
+                col_w[2],
+                line_height,
+                quantidade_str if i == 0 else "",
+                border=border,
+                align=aligns[2],
+            )
+            self.cell(col_w[3], line_height, unidade if i == 0 else "", border=border, align=aligns[3])
+            self.cell(col_w[4], line_height, lines[i], border=border, align=aligns[4])
 
         # Espaço extra entre itens
         self.set_y(y_start + row_height)
-        self.ln(3)
+        spacing = table_cfg.get("row_spacing", 3)
+        if spacing:
+            self.ln(spacing)
 
     def gerar(self, fornecedor, data, artigos, referencia="", contacto=""):
         """Gera o PDF e devolve bytes"""

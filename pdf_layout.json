@@ -12,11 +12,18 @@
     "body": {"font": "Arial", "font_size": 12, "note_font_size": 10},
     "table": {
       "headers": ["#", "Art. Nº", "Descrição", "Qtd", "Unidade"],
-      "widths": [10, 25, 110, 20, 25],
+      "widths": [12, 25, 12, 14, 117],
+      "alignments": ["C", "C", "C", "C", "L"],
+      "header_height": 8,
+      "header_spacing": 4,
       "font": "Arial",
       "font_style": "B",
       "font_size": 10,
-      "row_font_size": 9
+      "row_font": "Arial",
+      "row_font_style": "",
+      "row_font_size": 9,
+      "row_height": 5,
+      "row_spacing": 3
     },
     "footer_note": "Por favor, devolva este documento preenchido."
   },
