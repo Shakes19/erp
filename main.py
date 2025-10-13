@@ -3046,18 +3046,26 @@ def exibir_pdf(
 
     b64 = base64.b64encode(data_pdf).decode()
 
-    pdf_html = f"""
-    <object data="data:application/pdf;base64,{b64}" type="application/pdf" width="100%" height="{height}">
-        <iframe src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}" width="100%" height="{height}" style="border:none;"></iframe>
+    pdf_object = f"""
+    <object class="embedded-pdf-object" data="data:application/pdf;base64,{b64}" type="application/pdf" style="width:100%; min-height:{height}px;">
+        <iframe class="embedded-pdf-iframe" src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}" style="width:100%; min-height:{height}px; border:none;"></iframe>
     </object>
     """
 
     if use_expander:
         with st.expander(label, expanded=expanded):
-            st.markdown(pdf_html, unsafe_allow_html=True)
+            st.markdown(
+                f"""
+                <div class="pdf-wrapper-default" style="border:1px solid #d9d9d9; border-radius:6px; background-color:#fff; padding:6px; min-height:{height}px;">
+                    {pdf_object}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
     else:
         if sticky:
             container_id = f"pdf-sticky-{uuid4().hex}"
+            available_height = max(sticky_top + 80, 200)
             st.markdown(
                 f"""
                 <style>
@@ -3070,6 +3078,20 @@ def exibir_pdf(
                     font-weight: 600;
                     margin-bottom: 0.5rem;
                 }}
+                #{container_id} .pdf-wrapper {{
+                    max-height: calc(100vh - {sticky_top + 40}px);
+                    overflow: auto;
+                    border: 1px solid #d9d9d9;
+                    border-radius: 6px;
+                    background-color: #fff;
+                    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+                    padding: 6px;
+                }}
+                #{container_id} .pdf-wrapper .embedded-pdf-object,
+                #{container_id} .pdf-wrapper .embedded-pdf-iframe {{
+                    width: 100%;
+                    height: max({height}px, calc(100vh - {available_height}px));
+                }}
                 </style>
                 """,
                 unsafe_allow_html=True,
@@ -3078,14 +3100,23 @@ def exibir_pdf(
                 f"""
                 <div id="{container_id}">
                     <div class="pdf-title">{label}</div>
-                    {pdf_html}
+                    <div class="pdf-wrapper">
+                        {pdf_object}
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
         else:
             st.markdown(f"**{label}**")
-            st.markdown(pdf_html, unsafe_allow_html=True)
+            st.markdown(
+                f"""
+                <div class="pdf-wrapper-default" style="border:1px solid #d9d9d9; border-radius:6px; background-color:#fff; padding:6px; min-height:{height}px;">
+                    {pdf_object}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 def reset_smart_quotation_state():
@@ -3112,6 +3143,16 @@ def normalizar_quebras_linha(texto: str) -> str:
         return ""
 
     return texto.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def descricao_tem_conteudo(texto: str) -> bool:
+    """Indica se o texto possui conteúdo relevante após remover tags HTML."""
+
+    if not texto:
+        return False
+
+    texto_sem_tags = re.sub(r"<[^>]+>", "", texto)
+    return bool(texto_sem_tags.strip())
 
 
 def extrair_primeira_palavra(texto: str) -> str:
@@ -4424,6 +4465,8 @@ elif menu_option == "🤖 Smart Quotation":
                         descricao_item = normalizar_quebras_linha(
                             (item.get("descricao") or "").strip()
                         )
+                        if not descricao_tem_conteudo(descricao_item):
+                            continue
                         quantidade_item = item.get("quantidade")
                         quantidade_str = ""
                         if quantidade_item is not None:
@@ -4455,15 +4498,32 @@ elif menu_option == "🤖 Smart Quotation":
                         else:
                             quantidade_base_str = str(quantidade_base or "").strip()
 
-                        artigos_extraidos = [
-                            {
-                                "artigo_num": dados.get("artigo_num") or "",
-                                "descricao": descricao_formatada,
-                                "quantidade": quantidade_base_str,
-                                "unidade": "Peças",
-                                "marca": marca_padrao_pdf,
-                            }
-                        ]
+                        descricao_principal = (
+                            descricao_formatada
+                            if descricao_tem_conteudo(descricao_formatada)
+                            else ""
+                        )
+
+                        if descricao_principal:
+                            artigos_extraidos = [
+                                {
+                                    "artigo_num": dados.get("artigo_num") or "",
+                                    "descricao": descricao_principal,
+                                    "quantidade": quantidade_base_str,
+                                    "unidade": "Peças",
+                                    "marca": marca_padrao_pdf,
+                                }
+                            ]
+                        else:
+                            artigos_extraidos = [
+                                {
+                                    "artigo_num": "",
+                                    "descricao": "",
+                                    "quantidade": quantidade_base_str,
+                                    "unidade": "Peças",
+                                    "marca": marca_padrao_pdf,
+                                }
+                            ]
 
                     st.session_state.smart_artigos = artigos_extraidos
                     for idx, artigo in enumerate(artigos_extraidos):
@@ -4638,6 +4698,11 @@ elif menu_option == "🤖 Smart Quotation":
                                     or ""
                                 ).strip()
                                 if not descricao_input:
+                                    continue
+                                if not descricao_tem_conteudo(descricao_input):
+                                    erros.append(
+                                        f"Artigo {idx + 1}: indique uma descrição com conteúdo."
+                                    )
                                     continue
 
                                 marca_key = f"smart_artigos_{idx}_marca"
@@ -6452,37 +6517,18 @@ elif menu_option == "⚙️ Configurações":
                 email_emp = st.text_input("Email", dados[5] if dados else "")
                 website_emp = st.text_input("Website", dados[6] if dados else "")
                 logo_guardado = dados[7] if dados and len(dados) > 7 else None
-                removal_state_key = "empresa_logo_removed"
-                if removal_state_key not in st.session_state:
-                    st.session_state[removal_state_key] = False
-                if logo_guardado is None and st.session_state[removal_state_key]:
-                    st.session_state[removal_state_key] = False
-
-                logo_bytes = None if st.session_state[removal_state_key] else logo_guardado
-                logo_upload = st.file_uploader("Logo", type=["png", "jpg", "jpeg"], key="logo_empresa")
+                logo_bytes = logo_guardado
+                logo_upload = st.file_uploader(
+                    "Logo", type=["png", "jpg", "jpeg"], key="logo_empresa"
+                )
                 if logo_upload is not None:
                     logo_bytes = logo_upload.getvalue()
-                    st.session_state[removal_state_key] = False
 
-                remove_logo_clicked = False
                 if logo_bytes:
-                    col_img, col_btn = st.columns([10, 1])
-                    with col_img:
-                        st.image(logo_bytes, width=120)
-                    with col_btn:
-                        remove_logo_clicked = st.form_submit_button(
-                            "✖️ Remover",
-                            help="Remover logo",
-                            type="secondary",
-                            use_container_width=True,
-                        )
-                    if remove_logo_clicked:
-                        logo_bytes = None
-                        st.session_state[removal_state_key] = True
-                        st.rerun()
+                    st.image(logo_bytes, width=120)
 
                 if st.form_submit_button("💾 Guardar"):
-                    logo_para_guardar = None if st.session_state.get(removal_state_key) else logo_bytes
+                    logo_para_guardar = logo_bytes
                     conn = obter_conexao()
                     c = conn.cursor()
                     c.execute("DELETE FROM configuracao_empresa")
@@ -6493,7 +6539,6 @@ elif menu_option == "⚙️ Configurações":
                     conn.commit()
                     conn.close()
                     obter_config_empresa.clear()
-                    st.session_state[removal_state_key] = False
                     st.success("Dados da empresa guardados!")
 
 # Footer
