@@ -4366,6 +4366,7 @@ elif menu_option == "📝 Nova Cotação":
                 options=clientes_opcoes,
                 format_func=lambda x: x[1] if x else "Selecione um cliente",
                 key="cliente_select_nova",
+                placeholder="Escolha uma opção",
             )
 
         nome_solicitante = cliente_sel[1] if cliente_sel else ""
@@ -4395,7 +4396,7 @@ elif menu_option == "📝 Nova Cotação":
                         value=artigo['artigo_num'],
                         key=f"nova_art_num_{i}",
                     )
-                    marca_opcoes = [""] + [m for m in marcas if m]
+                    marca_opcoes = ["Selecione"] + [m for m in marcas if m]
                     if artigo.get('marca') and artigo['marca'] not in marca_opcoes:
                         marca_opcoes.append(artigo['marca'])
                     artigo['marca'] = st.selectbox(
@@ -5381,7 +5382,7 @@ elif menu_option == "📩 Responder Cotações":
                 termo_pesquisa = st.text_input(
                     "Processo ou referência",
                     key="process_center_term",
-                    placeholder="QT2025-0001 ou REF123",
+                    placeholder="QT2025-0001 ou KTB-DEXXX",
                 )
             with col_button:
                 submitted = st.form_submit_button(
@@ -6347,7 +6348,7 @@ elif menu_option == "⚙️ Configurações":
             st.subheader("Gestão de Clientes")
 
             tab_empresas, tab_comerciais = st.tabs([
-                "Criar Cliente (Empresa)",
+                "Adicionar Empresa",
                 "Adicionar Comercial",
             ])
 
