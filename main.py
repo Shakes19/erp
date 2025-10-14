@@ -978,7 +978,7 @@ def obter_todas_cotacoes(
             conditions.append("rfq.fornecedor_id = ?")
             params.append(fornecedor_id)
 
-        if utilizador_id:
+        if utilizador_id is not None:
             conditions.append("rfq.utilizador_id = ?")
             params.append(utilizador_id)
 
@@ -4020,36 +4020,95 @@ def extrair_dados_pdf(pdf_bytes):
 
 # ========================== FUNÇÕES DE UTILIDADE ==========================
 
-def obter_estatisticas_db():
-    """Obter estatísticas da base de dados"""
+def obter_estatisticas_db(utilizador_id: int | None = None):
+    """Obter estatísticas da base de dados."""
+
     try:
         conn = obter_conexao()
         c = conn.cursor()
-        
-        stats = {}
-        
+
+        stats: dict[str, int] = {}
+
         # Contar registos principais
-        c.execute("SELECT COUNT(*) FROM rfq")
-        stats['rfq'] = c.fetchone()[0]
-        
-        c.execute("SELECT COUNT(*) FROM fornecedor")
-        stats['fornecedor'] = c.fetchone()[0]
-        
-        c.execute("SELECT COUNT(*) FROM artigo")
-        stats['artigo'] = c.fetchone()[0]
-        
-        c.execute("SELECT COUNT(*) FROM rfq WHERE estado = 'pendente'")
-        stats['rfq_pendentes'] = c.fetchone()[0]
-        
-        c.execute("SELECT COUNT(*) FROM rfq WHERE estado = 'respondido'")
-        stats['rfq_respondidas'] = c.fetchone()[0]
-        
-        c.execute("SELECT COUNT(*) FROM pdf_storage WHERE tipo_pdf = 'cliente'")
-        stats['pdfs_cliente'] = c.fetchone()[0]
-        
+        if utilizador_id is None:
+            c.execute("SELECT COUNT(*) FROM rfq")
+        else:
+            c.execute(
+                "SELECT COUNT(*) FROM rfq WHERE utilizador_id = ?",
+                (utilizador_id,),
+            )
+        stats["rfq"] = c.fetchone()[0]
+
+        if utilizador_id is None:
+            c.execute("SELECT COUNT(*) FROM fornecedor")
+            stats["fornecedor"] = c.fetchone()[0]
+        else:
+            c.execute(
+                """
+                SELECT COUNT(DISTINCT fornecedor_id)
+                FROM rfq
+                WHERE utilizador_id = ? AND fornecedor_id IS NOT NULL
+                """,
+                (utilizador_id,),
+            )
+            stats["fornecedor"] = c.fetchone()[0]
+
+        if utilizador_id is None:
+            c.execute("SELECT COUNT(*) FROM artigo")
+            stats["artigo"] = c.fetchone()[0]
+        else:
+            c.execute(
+                """
+                SELECT COUNT(*)
+                FROM artigo a
+                JOIN rfq r ON a.rfq_id = r.id
+                WHERE r.utilizador_id = ?
+                """,
+                (utilizador_id,),
+            )
+            stats["artigo"] = c.fetchone()[0]
+
+        if utilizador_id is None:
+            c.execute("SELECT COUNT(*) FROM rfq WHERE estado = 'pendente'")
+            stats["rfq_pendentes"] = c.fetchone()[0]
+        else:
+            c.execute(
+                "SELECT COUNT(*) FROM rfq WHERE estado = 'pendente' AND utilizador_id = ?",
+                (utilizador_id,),
+            )
+            stats["rfq_pendentes"] = c.fetchone()[0]
+
+        if utilizador_id is None:
+            c.execute("SELECT COUNT(*) FROM rfq WHERE estado = 'respondido'")
+            stats["rfq_respondidas"] = c.fetchone()[0]
+        else:
+            c.execute(
+                "SELECT COUNT(*) FROM rfq WHERE estado = 'respondido' AND utilizador_id = ?",
+                (utilizador_id,),
+            )
+            stats["rfq_respondidas"] = c.fetchone()[0]
+
+        if utilizador_id is None:
+            c.execute("SELECT COUNT(*) FROM pdf_storage WHERE tipo_pdf = 'cliente'")
+        else:
+            c.execute(
+                """
+                SELECT COUNT(*)
+                FROM pdf_storage
+                WHERE tipo_pdf = 'cliente'
+                  AND rfq_id IN (
+                      SELECT CAST(id AS TEXT)
+                      FROM rfq
+                      WHERE utilizador_id = ?
+                  )
+                """,
+                (utilizador_id,),
+            )
+        stats["pdfs_cliente"] = c.fetchone()[0]
+
         conn.close()
         return stats
-        
+
     except Exception as e:
         print(f"Erro ao obter estatísticas: {e}")
         return {}
@@ -4301,7 +4360,7 @@ if menu_option == "🏠 Dashboard":
     # Métricas principais
     col1, col2, col3, col4 = st.columns(4)
     
-    stats = obter_estatisticas_db()
+    stats = obter_estatisticas_db(st.session_state.get("user_id"))
     
     with col1:
         st.metric("Total RFQs", stats.get('rfq', 0))
@@ -4323,7 +4382,9 @@ if menu_option == "🏠 Dashboard":
     
     # Últimas cotações
     st.subheader("📋 Últimas Cotações")
-    cotacoes_recentes = obter_todas_cotacoes()[:5]
+    cotacoes_recentes = obter_todas_cotacoes(
+        utilizador_id=st.session_state.get("user_id")
+    )[:5]
     
     if cotacoes_recentes:
         for cotacao in cotacoes_recentes:
