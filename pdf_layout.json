@@ -1,19 +1,46 @@
 {
   "pedido": {
     "header": {
-      "title": "PEDIDO DE COTAÇÃO",
+      "title": "Inquiry",
       "font": "Arial",
       "font_style": "B",
       "font_size": 16,
-      "logo": {"path": "assets/logo.png", "x": 160, "y": 15, "w": 40},
-      "line_height": 10,
-      "spacing": 5
+      "logo": {
+        "path": "assets/logo.png",
+        "x": 160,
+        "y": 15,
+        "w": 40
+      },
+      "line_height": 5,
+      "spacing": 3
     },
-    "body": {"font": "Arial", "font_size": 12, "note_font_size": 10},
+    "body": {
+      "font": "Arial",
+      "font_size": 12,
+      "note_font_size": 10
+    },
     "table": {
-      "headers": ["#", "Art. Nº", "Descrição", "Qtd", "Unidade"],
-      "widths": [12, 25, 12, 14, 117],
-      "alignments": ["C", "C", "C", "C", "L"],
+      "headers": [
+        "#",
+        "Item No.",
+        "Qty",
+        "Unidade",
+        "Description"
+      ],
+      "widths": [
+        12,
+        25,
+        12,
+        14,
+        117
+      ],
+      "alignments": [
+        "C",
+        "C",
+        "C",
+        "C",
+        "L"
+      ],
       "header_height": 8,
       "header_spacing": 4,
       "font": "Arial",
@@ -33,14 +60,40 @@
       "font": "Arial",
       "font_style": "B",
       "font_size": 16,
-      "logo": {"path": "assets/logo.png", "x": 160, "y": 15, "w": 40},
-      "line_height": 10,
-      "spacing": 5
+      "logo": {
+        "path": "assets/logo.png",
+        "x": 160,
+        "y": 15,
+        "w": 40
+      },
+      "line_height": 5,
+      "spacing": 3
     },
-    "body": {"font": "Arial", "font_size": 12},
+    "body": {
+      "font": "Arial",
+      "font_size": 12
+    },
     "table": {
-      "headers": ["#", "Item No.", "Description", "Qty", "Unit Price", "Total", "Lead Time", "Weight"],
-      "widths": [8, 18, 78, 12, 18, 20, 12, 14],
+      "headers": [
+        "#",
+        "Item No.",
+        "Description",
+        "Qty",
+        "Unit Price",
+        "Total",
+        "ETA",
+        "Weight"
+      ],
+      "widths": [
+        8,
+        18,
+        78,
+        12,
+        18,
+        20,
+        12,
+        14
+      ],
       "font": "Arial",
       "font_style": "B",
       "font_size": 9,
