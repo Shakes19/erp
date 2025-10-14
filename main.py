@@ -3157,7 +3157,8 @@ def exibir_pdf(
     else:
         if sticky:
             container_id = f"pdf-sticky-{uuid4().hex}"
-            available_height = max(sticky_top + 80, 200)
+            sticky_offset = max(sticky_top, 0)
+            scrollable_height_css = f"calc(100vh - {sticky_offset + 40}px)"
             st.markdown(
                 textwrap.dedent(
                     f"""
@@ -3165,7 +3166,7 @@ def exibir_pdf(
                     #{container_id} {{
                         position: -webkit-sticky;
                         position: sticky;
-                        top: {sticky_top}px;
+                        top: {sticky_offset}px;
                         z-index: 2;
                         align-self: flex-start;
                     }}
@@ -3174,7 +3175,11 @@ def exibir_pdf(
                         margin-bottom: 0.5rem;
                     }}
                     #{container_id} .pdf-wrapper {{
-                        max-height: calc(100vh - {sticky_top + 40}px);
+                        display: flex;
+                        flex-direction: column;
+                        height: min({scrollable_height_css}, 100vh);
+                        max-height: {scrollable_height_css};
+                        min-height: min({height}px, {scrollable_height_css});
                         overflow-y: auto;
                         overflow-x: hidden;
                         border: 1px solid #d9d9d9;
@@ -3186,8 +3191,8 @@ def exibir_pdf(
                     #{container_id} .pdf-wrapper .embedded-pdf-object,
                     #{container_id} .pdf-wrapper .embedded-pdf-iframe {{
                         width: 100%;
-                        min-height: {height}px;
-                        height: max({height}px, calc(100vh - {available_height}px));
+                        height: 100%;
+                        min-height: min({height}px, {scrollable_height_css});
                     }}
                     </style>
                     """
