@@ -48,7 +48,7 @@ def save_pdf_config(tipo, config):
 def obter_config_empresa():
     """Fetch company configuration data for PDFs."""
     row = fetch_one(
-        "SELECT nome, morada, nif, iban, telefone, email, website, logo "
+        "SELECT nome, morada, nif, iban, banco, telefone, email, website, logo "
         "FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
     )
     if row:
@@ -57,10 +57,11 @@ def obter_config_empresa():
             "morada": row[1],
             "nif": row[2],
             "iban": row[3],
-            "telefone": row[4],
-            "email": row[5],
-            "website": row[6],
-            "logo": row[7],
+            "banco": row[4],
+            "telefone": row[5],
+            "email": row[6],
+            "website": row[7],
+            "logo": row[8],
         }
     return None
 
