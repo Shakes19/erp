@@ -3104,19 +3104,6 @@ def gerar_pdf_cliente(rfq_id):
     finally:
         conn.close()
 
-def obter_pdf_da_db(rfq_id, tipo_pdf="pedido"):
-    """Obter PDF da base de dados"""
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute("""
-        SELECT pdf_data FROM pdf_storage 
-        WHERE rfq_id = ? AND tipo_pdf = ?
-    """, (str(rfq_id), tipo_pdf))
-    result = c.fetchone()
-    conn.close()
-    return result[0] if result else None
-
-
 def exibir_pdf(
     label,
     data_pdf,
@@ -3312,28 +3299,6 @@ def garantir_marca_primeira_palavra(descricao: str, marca: str) -> str:
         return f"{marca_limpa} {descricao_sem_marca}".strip()
 
     return marca_limpa
-
-
-def verificar_pdfs(rfq_id):
-    """Verifica se os PDFs existem na base de dados"""
-    conn = obter_conexao()
-    c = conn.cursor()
-    
-    # Verificar PDF do pedido
-    c.execute("SELECT COUNT(*) FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf = 'pedido'", (str(rfq_id),))
-    pedido_existe = c.fetchone()[0] > 0
-    
-    # Verificar PDF do cliente
-    c.execute("SELECT COUNT(*) FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf = 'cliente'", (str(rfq_id),))
-    cliente_existe = c.fetchone()[0] > 0
-    
-    conn.close()
-
-    return {
-        'pedido': pedido_existe,
-        'cliente': cliente_existe
-    }
-
 
 @st.dialog("Responder Cotação", width="large")
 def responder_cotacao_dialog(cotacao):
