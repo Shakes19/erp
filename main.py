@@ -12,6 +12,7 @@ import imghdr
 import tempfile
 import re
 import copy
+import textwrap
 from uuid import uuid4
 from typing import Iterable
 from pypdf import PdfReader
@@ -3133,20 +3134,24 @@ def exibir_pdf(
 
     b64 = base64.b64encode(data_pdf).decode()
 
-    pdf_object = f"""
-    <object class="embedded-pdf-object" data="data:application/pdf;base64,{b64}" type="application/pdf" style="width:100%; min-height:{height}px;">
-        <iframe class="embedded-pdf-iframe" src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}" style="width:100%; min-height:{height}px; border:none;"></iframe>
-    </object>
-    """
+    pdf_object = textwrap.dedent(
+        f"""
+        <object class="embedded-pdf-object" data="data:application/pdf;base64,{b64}" type="application/pdf" style="width:100%; min-height:{height}px;">
+            <iframe class="embedded-pdf-iframe" src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}" style="width:100%; min-height:{height}px; border:none;"></iframe>
+        </object>
+        """
+    ).strip()
 
     if use_expander:
         with st.expander(label, expanded=expanded):
             st.markdown(
-                f"""
-                <div class="pdf-wrapper-default" style="border:1px solid #d9d9d9; border-radius:6px; background-color:#fff; padding:6px; min-height:{height}px;">
-                    {pdf_object}
-                </div>
-                """,
+                textwrap.dedent(
+                    f"""
+                    <div class="pdf-wrapper-default" style="border:1px solid #d9d9d9; border-radius:6px; background-color:#fff; padding:6px; min-height:{height}px;">
+                        {pdf_object}
+                    </div>
+                    """
+                ).strip(),
                 unsafe_allow_html=True,
             )
     else:
@@ -3154,54 +3159,61 @@ def exibir_pdf(
             container_id = f"pdf-sticky-{uuid4().hex}"
             available_height = max(sticky_top + 80, 200)
             st.markdown(
-                f"""
-                <style>
-                #{container_id} {{
-                    position: sticky;
-                    top: {sticky_top}px;
-                    z-index: 10;
-                }}
-                #{container_id} .pdf-title {{
-                    font-weight: 600;
-                    margin-bottom: 0.5rem;
-                }}
-                #{container_id} .pdf-wrapper {{
-                    max-height: calc(100vh - {sticky_top + 40}px);
-                    overflow: auto;
-                    border: 1px solid #d9d9d9;
-                    border-radius: 6px;
-                    background-color: #fff;
-                    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-                    padding: 6px;
-                }}
-                #{container_id} .pdf-wrapper .embedded-pdf-object,
-                #{container_id} .pdf-wrapper .embedded-pdf-iframe {{
-                    width: 100%;
-                    height: max({height}px, calc(100vh - {available_height}px));
-                }}
-                </style>
-                """,
+                textwrap.dedent(
+                    f"""
+                    <style>
+                    #{container_id} {{
+                        position: sticky;
+                        top: {sticky_top}px;
+                        z-index: 10;
+                        align-self: flex-start;
+                    }}
+                    #{container_id} .pdf-title {{
+                        font-weight: 600;
+                        margin-bottom: 0.5rem;
+                    }}
+                    #{container_id} .pdf-wrapper {{
+                        max-height: calc(100vh - {sticky_top + 40}px);
+                        overflow: auto;
+                        border: 1px solid #d9d9d9;
+                        border-radius: 6px;
+                        background-color: #fff;
+                        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+                        padding: 6px;
+                    }}
+                    #{container_id} .pdf-wrapper .embedded-pdf-object,
+                    #{container_id} .pdf-wrapper .embedded-pdf-iframe {{
+                        width: 100%;
+                        height: max({height}px, calc(100vh - {available_height}px));
+                    }}
+                    </style>
+                    """
+                ).strip(),
                 unsafe_allow_html=True,
             )
             st.markdown(
-                f"""
-                <div id="{container_id}">
-                    <div class="pdf-title">{label}</div>
-                    <div class="pdf-wrapper">
-                        {pdf_object}
+                textwrap.dedent(
+                    f"""
+                    <div id="{container_id}">
+                        <div class="pdf-title">{label}</div>
+                        <div class="pdf-wrapper">
+                            {pdf_object}
+                        </div>
                     </div>
-                </div>
-                """,
+                    """
+                ).strip(),
                 unsafe_allow_html=True,
             )
         else:
             st.markdown(f"**{label}**")
             st.markdown(
-                f"""
-                <div class="pdf-wrapper-default" style="border:1px solid #d9d9d9; border-radius:6px; background-color:#fff; padding:6px; min-height:{height}px;">
-                    {pdf_object}
-                </div>
-                """,
+                textwrap.dedent(
+                    f"""
+                    <div class="pdf-wrapper-default" style="border:1px solid #d9d9d9; border-radius:6px; background-color:#fff; padding:6px; min-height:{height}px;">
+                        {pdf_object}
+                    </div>
+                    """
+                ).strip(),
                 unsafe_allow_html=True,
             )
 
