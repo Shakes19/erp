@@ -43,3 +43,12 @@ def test_gerar_pdf_cliente(tmp_path, monkeypatch):
     c.execute("SELECT pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf = 'cliente'", (str(rfq_id),))
     assert c.fetchone() is not None
     conn.close()
+
+
+def test_limitar_descricao_artigo_mantem_duas_linhas():
+    import main as main_module
+
+    importlib.reload(main_module)
+
+    texto = "Linha 1\n\n Linha 2 \nLinha 3\nLinha 4"
+    assert main_module.limitar_descricao_artigo(texto) == "Linha 1\nLinha 2"

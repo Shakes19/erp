@@ -39,7 +39,11 @@ from services.pdf_service import (
     obter_pdf_da_db,
     processar_upload_pdf,
 )
-from services.email_service import get_system_email_config, send_email
+from services.email_service import (
+    clear_email_cache,
+    get_system_email_config,
+    send_email,
+)
 
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
 
@@ -61,6 +65,29 @@ def _format_iso_date(value):
             return ""
 
     return dt.strftime("%d/%m/%Y")
+
+
+def limitar_descricao_artigo(texto: str, max_linhas: int = 2) -> str:
+    """Mantém apenas as primeiras ``max_linhas`` não vazias de ``texto``.
+
+    Linhas em branco são ignoradas para evitar resultados vazios e
+    whitespace no início/fim de cada linha é removido. Retorna uma string
+    normalizada com ``\n`` entre as linhas mantidas.
+    """
+
+    if not texto:
+        return ""
+
+    linhas_filtradas: list[str] = []
+    for linha in texto.replace("\r", "\n").split("\n"):
+        limpa = linha.strip()
+        if not limpa:
+            continue
+        linhas_filtradas.append(limpa)
+        if len(linhas_filtradas) >= max_linhas:
+            break
+
+    return "\n".join(linhas_filtradas)
 
 
 LOGO_PATH = "assets/logo.png"
@@ -2924,7 +2951,7 @@ def gerar_pdf_cliente(rfq_id):
         itens_resposta = [
             {
                 'artigo_num': row[0] or '',
-                'descricao': row[1],
+                'descricao': limitar_descricao_artigo(row[1]),
                 'quantidade_final': row[2],
                 'unidade': row[3],
                 'preco_venda': row[4],
@@ -3487,11 +3514,14 @@ def criar_cotacao_cliente_dialog(
 
         selecao_respostas: dict[int, bool] = {}
         for resposta in respostas:
-            descricao = resposta.get("descricao") or resposta.get("descricao_original") or "Artigo"
+            descricao_completa = resposta.get("descricao") or resposta.get("descricao_original") or "Artigo"
+            descricao = limitar_descricao_artigo(descricao_completa)
             preco = resposta.get("preco_venda") or 0
             moeda = resposta.get("moeda") or "EUR"
             validade = resposta.get("validade_preco") or ""
-            legenda = f"{descricao[:80]}"
+            legenda = " / ".join(descricao.splitlines()) or "Artigo"
+            if len(legenda) > 120:
+                legenda = legenda[:117] + "..."
             legenda += f" • Qtd: {resposta.get('quantidade_final') or resposta.get('quantidade_original')}"
             legenda += f" • P.V.: {preco:.2f} {moeda}"
             if validade:
@@ -6335,8 +6365,10 @@ elif menu_option == "⚙️ Configurações":
                     conn.commit()
                     conn.close()
 
+                    clear_email_cache()
+
                     st.success("Configuração de email guardada!")
-    
+
             st.info("Nota: Para Gmail, usa uma 'App Password' em vez da palavra-passe normal")
         
         with tab_backup:
