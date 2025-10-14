@@ -3580,6 +3580,19 @@ def criar_cotacao_cliente_dialog(
     if not respostas:
         respostas = obter_respostas_cotacao(rfq_id)
 
+    pdf_session_key = f"cliente_pdf_state_{rfq_id}"
+    existing_pdf_state = st.session_state.get(pdf_session_key)
+    if existing_pdf_state:
+        st.info("Cotação do cliente já foi gerada anteriormente. Pode descarregar novamente abaixo.")
+        st.download_button(
+            "⬇️ Descarregar PDF Cliente",
+            data=existing_pdf_state["bytes"],
+            file_name=existing_pdf_state["file_name"],
+            mime="application/pdf",
+            key=f"download_cliente_{rfq_id}",
+        )
+        st.markdown("---")
+
     if not respostas:
         st.info("Ainda não existem respostas registadas para esta cotação.")
         return
@@ -3723,10 +3736,15 @@ def criar_cotacao_cliente_dialog(
     pdf_bytes = obter_pdf_da_db(rfq_id, "cliente")
     if pdf_bytes:
         nome_base = numero_processo or f"cotacao_{rfq_id}"
+        ficheiro_pdf = f"cliente_{nome_base}.pdf"
+        st.session_state[pdf_session_key] = {
+            "bytes": pdf_bytes,
+            "file_name": ficheiro_pdf,
+        }
         st.download_button(
             "⬇️ Descarregar PDF Cliente",
             data=pdf_bytes,
-            file_name=f"cliente_{nome_base}.pdf",
+            file_name=ficheiro_pdf,
             mime="application/pdf",
             key=f"download_cliente_{rfq_id}"
         )
