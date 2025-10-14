@@ -3163,9 +3163,10 @@ def exibir_pdf(
                     f"""
                     <style>
                     #{container_id} {{
+                        position: -webkit-sticky;
                         position: sticky;
                         top: {sticky_top}px;
-                        z-index: 10;
+                        z-index: 2;
                         align-self: flex-start;
                     }}
                     #{container_id} .pdf-title {{
@@ -3174,7 +3175,8 @@ def exibir_pdf(
                     }}
                     #{container_id} .pdf-wrapper {{
                         max-height: calc(100vh - {sticky_top + 40}px);
-                        overflow: auto;
+                        overflow-y: auto;
+                        overflow-x: hidden;
                         border: 1px solid #d9d9d9;
                         border-radius: 6px;
                         background-color: #fff;
@@ -3184,6 +3186,7 @@ def exibir_pdf(
                     #{container_id} .pdf-wrapper .embedded-pdf-object,
                     #{container_id} .pdf-wrapper .embedded-pdf-iframe {{
                         width: 100%;
+                        min-height: {height}px;
                         height: max({height}px, calc(100vh - {available_height}px));
                     }}
                     </style>
