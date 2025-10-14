@@ -56,6 +56,7 @@ def test_paginacao_responder_cotacoes(tmp_path, monkeypatch):
     dummy.form = lambda *a, **k: DummyCtx()
     dummy.form_submit_button = lambda *a, **k: False
     dummy.cache_data = lambda *a, **k: (lambda f: f)
+    dummy.cache_resource = lambda *a, **k: (lambda f: f)
     class DummySessionState(dict):
         __getattr__ = dict.get
         __setattr__ = dict.__setitem__
