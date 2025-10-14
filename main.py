@@ -4109,6 +4109,7 @@ if 'logged_in' not in st.session_state:
     st.session_state.user_id = None
     st.session_state.username = None
     st.session_state.user_email = None
+    st.session_state.user_nome = None
 
 
 def login_screen():
@@ -4142,6 +4143,7 @@ def login_screen():
             st.session_state.user_id = user[0]
             st.session_state.username = user[1]
             st.session_state.user_email = user[4]
+            st.session_state.user_nome = user[3] or user[1]
             st.rerun()
         else:
             st.error("Credenciais inválidas")
@@ -4263,6 +4265,7 @@ with st.sidebar:
         st.session_state.user_id = None
         st.session_state.username = None
         st.session_state.user_email = None
+        st.session_state.user_nome = None
         st.rerun()
 
     st.markdown("---")
@@ -4285,6 +4288,16 @@ if previous_menu_option != menu_option and menu_option == "🤖 Smart Quotation"
 st.session_state.last_menu_option = menu_option
 
 if menu_option == "🏠 Dashboard":
+    nome_utilizador = (
+        (st.session_state.get("user_nome") or st.session_state.get("username") or "")
+        .strip()
+    )
+    if nome_utilizador:
+        st.markdown(f"## Bem Vindo, {nome_utilizador}!")
+    else:
+        st.markdown("## Bem Vindo!")
+    st.markdown("")
+
     # Métricas principais
     col1, col2, col3, col4 = st.columns(4)
     
@@ -4586,406 +4599,388 @@ elif menu_option == "📝 Nova Cotação":
 elif menu_option == "🤖 Smart Quotation":
     st.title("🤖 Smart Quotation")
 
-    tab_cot, tab_text = st.tabs(["Preencher Cotação", "Text Extraction"])
+    unidades_padrao = ["Peças", "Metros", "KG", "Litros", "Caixas", "Paletes"]
+    upload_pdf = st.file_uploader(
+        "📎 Pedido do cliente (PDF ou email)",
+        type=["pdf", "eml", "msg"],
+        accept_multiple_files=False,
+        key="smart_pdf",
+    )
+    if upload_pdf:
+        anexos_processados = processar_upload_pdf(upload_pdf)
+        if anexos_processados:
+            nome_pdf, pdf_bytes = anexos_processados[0]
+            dados = extrair_dados_pdf(pdf_bytes)
+            clientes = listar_clientes()
+            cliente_options: list[tuple | None] = [None] + clientes
 
-    with tab_cot:
-        unidades_padrao = ["Peças", "Metros", "KG", "Litros", "Caixas", "Paletes"]
-        upload_pdf = st.file_uploader(
-            "📎 Pedido do cliente (PDF ou email)",
-            type=["pdf", "eml", "msg"],
-            accept_multiple_files=False,
-            key="smart_pdf",
-        )
-        if upload_pdf:
-            anexos_processados = processar_upload_pdf(upload_pdf)
-            if anexos_processados:
-                nome_pdf, pdf_bytes = anexos_processados[0]
-                dados = extrair_dados_pdf(pdf_bytes)
-                clientes = listar_clientes()
-                cliente_options: list[tuple | None] = [None] + clientes
+            pdf_uid = f"{nome_pdf}:{len(pdf_bytes)}"
+            descricao_formatada = normalizar_quebras_linha(
+                dados.get("descricao") or ""
+            )
 
-                pdf_uid = f"{nome_pdf}:{len(pdf_bytes)}"
-                descricao_formatada = normalizar_quebras_linha(
-                    dados.get("descricao") or ""
+            if st.session_state.get("smart_pdf_uid") != pdf_uid:
+                reset_smart_quotation_state()
+                st.session_state.smart_pdf_uid = pdf_uid
+                st.session_state.smart_referencia = dados.get("referencia") or ""
+                st.session_state.smart_unidade = "Peças"
+                st.session_state.smart_marca = dados.get("marca") or ""
+
+                itens_extraidos = dados.get("itens") or []
+                artigos_extraidos: list[dict[str, str]] = []
+                marca_padrao_pdf = (dados.get("marca") or "").strip()
+
+                for item in itens_extraidos:
+                    ktb_code_item = (item.get("ktb_code") or "").strip()
+                    descricao_item = normalizar_quebras_linha(
+                        (item.get("descricao") or "").strip()
+                    )
+                    if not descricao_tem_conteudo(descricao_item):
+                        continue
+                    quantidade_item = item.get("quantidade")
+                    quantidade_str = ""
+                    if quantidade_item is not None:
+                        if isinstance(quantidade_item, (int, float)):
+                            quantidade_str = str(quantidade_item)
+                        else:
+                            quantidade_str = str(quantidade_item).strip()
+
+                    unidade_item = (item.get("unidade") or "Peças").strip() or "Peças"
+                    marca_item = (item.get("marca") or marca_padrao_pdf).strip()
+                    if not marca_item and descricao_item:
+                        marca_item = descricao_item.split()[0]
+
+                    artigos_extraidos.append(
+                        {
+                            "artigo_num": ktb_code_item
+                            or (dados.get("artigo_num") or ""),
+                            "descricao": descricao_item,
+                            "quantidade": quantidade_str,
+                            "unidade": unidade_item,
+                            "marca": marca_item,
+                        }
+                    )
+
+                if not artigos_extraidos:
+                    quantidade_base = dados.get("quantidade")
+                    if isinstance(quantidade_base, (int, float)):
+                        quantidade_base_str = str(quantidade_base)
+                    else:
+                        quantidade_base_str = str(quantidade_base or "").strip()
+
+                    descricao_principal = (
+                        descricao_formatada
+                        if descricao_tem_conteudo(descricao_formatada)
+                        else ""
+                    )
+
+                    if descricao_principal:
+                        artigos_extraidos = [
+                            {
+                                "artigo_num": dados.get("artigo_num") or "",
+                                "descricao": descricao_principal,
+                                "quantidade": quantidade_base_str,
+                                "unidade": "Peças",
+                                "marca": marca_padrao_pdf,
+                            }
+                        ]
+                    else:
+                        artigos_extraidos = [
+                            {
+                                "artigo_num": "",
+                                "descricao": "",
+                                "quantidade": quantidade_base_str,
+                                "unidade": "Peças",
+                                "marca": marca_padrao_pdf,
+                            }
+                        ]
+
+                st.session_state.smart_artigos = artigos_extraidos
+                for idx, artigo in enumerate(artigos_extraidos):
+                    st.session_state[f"smart_artigos_{idx}_artigo_num"] = artigo.get(
+                        "artigo_num", "",
+                    )
+                    descricao_guardada = artigo.get("descricao", "")
+                    st.session_state[f"smart_artigos_{idx}_descricao"] = descricao_guardada
+                    st.session_state[f"smart_artigos_{idx}_quantidade"] = artigo.get(
+                        "quantidade", "",
+                    )
+                    st.session_state[f"smart_artigos_{idx}_unidade"] = artigo.get(
+                        "unidade", "Peças"
+                    ) or "Peças"
+                    marca_extraida = extrair_primeira_palavra(descricao_guardada)
+                    if not marca_extraida:
+                        marca_extraida = artigo.get("marca", "") or ""
+                    st.session_state[f"smart_artigos_{idx}_marca"] = marca_extraida
+
+
+                cliente_extraido = (dados.get("cliente") or "").strip().lower()
+                default_idx = 0
+                if cliente_extraido:
+                    for idx, cli in enumerate(cliente_options):
+                        if cli and cli[1].strip().lower() == cliente_extraido:
+                            default_idx = idx
+                            break
+                st.session_state.smart_cliente_index = default_idx
+            else:
+                artigos_existentes = st.session_state.get("smart_artigos", [])
+                for idx in range(len(artigos_existentes)):
+                    desc_key = f"smart_artigos_{idx}_descricao"
+                    if desc_key in st.session_state:
+                        st.session_state[desc_key] = normalizar_quebras_linha(
+                            st.session_state.get(desc_key, "")
+                        )
+
+            def _format_cliente(idx: int) -> str:
+                cli = cliente_options[idx]
+                if not cli:
+                    return "Selecione um cliente"
+                nome_cli = cli[1]
+                empresa_cli = cli[4] if len(cli) > 4 else ""
+                if empresa_cli:
+                    return f"{nome_cli} ({empresa_cli})"
+                return nome_cli
+
+            col_form, col_pdf = st.columns(2)
+
+            with col_form:
+                st.text_input(
+                    "Referência Cliente",
+                    key="smart_referencia",
+                )
+                cliente_idx = st.selectbox(
+                    "Cliente (Gestão de Clientes)",
+                    options=list(range(len(cliente_options))),
+                    format_func=_format_cliente,
+                    key="smart_cliente_index",
+                )
+                artigos_guardados = st.session_state.get("smart_artigos", [])
+                total_artigos = len(artigos_guardados)
+                if total_artigos:
+                    st.markdown("---")
+                for idx, _ in enumerate(artigos_guardados):
+                    st.markdown(f"**Artigo {idx + 1}**")
+                    descricao_key = f"smart_artigos_{idx}_descricao"
+                    marca_key = f"smart_artigos_{idx}_marca"
+                    descricao_atual = st.session_state.get(descricao_key, "")
+
+                    marca_valor_guardado = st.session_state.get(marca_key)
+                    marca_registada = (marca_valor_guardado or "").strip()
+
+                    if marca_registada:
+                        if marca_valor_guardado != marca_registada:
+                            st.session_state[marca_key] = marca_registada
+                    else:
+                        marca_detectada = extrair_primeira_palavra(descricao_atual)
+                        if marca_detectada:
+                            st.session_state[marca_key] = marca_detectada
+                            marca_registada = marca_detectada
+
+                    col_art, col_qtd, col_uni, col_marca = st.columns([1.4, 1, 1, 1.6])
+                    with col_art:
+                        st.text_input(
+                            "Nº Artigo",
+                            key=f"smart_artigos_{idx}_artigo_num",
+                        )
+                    with col_qtd:
+                        st.text_input(
+                            "Quantidade",
+                            key=f"smart_artigos_{idx}_quantidade",
+                        )
+                    with col_uni:
+                        unidade_key = f"smart_artigos_{idx}_unidade"
+                        unidade_atual = st.session_state.get(unidade_key, "Peças")
+                        opcoes_unidade = [*unidades_padrao]
+                        if unidade_atual not in opcoes_unidade:
+                            opcoes_unidade.append(unidade_atual)
+                        st.selectbox(
+                            "Unidade",
+                            options=opcoes_unidade,
+                            index=opcoes_unidade.index(unidade_atual)
+                            if unidade_atual in opcoes_unidade
+                            else 0,
+                            key=unidade_key,
+                        )
+                    with col_marca:
+                        st.text_input(
+                            "Marca",
+                            key=marca_key,
+                            help=(
+                                "A marca é sugerida automaticamente com base na descrição,"
+                                " mas pode ser editada."
+                            ),
+                        )
+
+                    st.text_area(
+                        "Descrição",
+                        key=f"smart_artigos_{idx}_descricao",
+                        height=140,
+                        help="As quebras de linha serão mantidas na geração da cotação.",
+                    )
+
+                    if idx < total_artigos - 1:
+                        st.markdown("---")
+
+                artigos_atualizados: list[dict[str, str]] = []
+                for idx in range(len(artigos_guardados)):
+                    artigos_atualizados.append(
+                        {
+                            "artigo_num": st.session_state.get(
+                                f"smart_artigos_{idx}_artigo_num", "",
+                            ),
+                            "descricao": st.session_state.get(
+                                f"smart_artigos_{idx}_descricao", "",
+                            ),
+                            "quantidade": st.session_state.get(
+                                f"smart_artigos_{idx}_quantidade", "",
+                            ),
+                            "unidade": st.session_state.get(
+                                f"smart_artigos_{idx}_unidade", "Peças"
+                            ),
+                            "marca": st.session_state.get(
+                                f"smart_artigos_{idx}_marca", "",
+                            ),
+                        }
+                    )
+                st.session_state.smart_artigos = artigos_atualizados
+
+                cliente_selecionado = (
+                    cliente_options[cliente_idx]
+                    if 0 <= cliente_idx < len(cliente_options)
+                    else None
                 )
 
-                if st.session_state.get("smart_pdf_uid") != pdf_uid:
-                    reset_smart_quotation_state()
-                    st.session_state.smart_pdf_uid = pdf_uid
-                    st.session_state.smart_referencia = dados.get("referencia") or ""
-                    st.session_state.smart_unidade = "Peças"
-                    st.session_state.smart_marca = dados.get("marca") or ""
+                if st.button("Submeter", type="primary", key="smart_submit"):
+                    if not cliente_selecionado:
+                        st.error("Selecione um cliente existente na gestão de clientes.")
+                    else:
+                        referencia = (st.session_state.get("smart_referencia") or "").strip()
+                        artigos_info = st.session_state.get("smart_artigos") or []
+                        artigos_final: list[dict] = []
+                        artigos_posicoes: list[int] = []
+                        erros: list[str] = []
 
-                    itens_extraidos = dados.get("itens") or []
-                    artigos_extraidos: list[dict[str, str]] = []
-                    marca_padrao_pdf = (dados.get("marca") or "").strip()
+                        for idx, _ in enumerate(artigos_info):
+                            artigo_num_val = (
+                                st.session_state.get(
+                                    f"smart_artigos_{idx}_artigo_num", "",
+                                )
+                                or ""
+                            ).strip()
+                            descricao_input = (
+                                st.session_state.get(
+                                    f"smart_artigos_{idx}_descricao", "",
+                                )
+                                or ""
+                            ).strip()
+                            if not descricao_input:
+                                continue
+                            if not descricao_tem_conteudo(descricao_input):
+                                erros.append(
+                                    f"Artigo {idx + 1}: indique uma descrição com conteúdo."
+                                )
+                                continue
 
-                    for item in itens_extraidos:
-                        ktb_code_item = (item.get("ktb_code") or "").strip()
-                        descricao_item = normalizar_quebras_linha(
-                            (item.get("descricao") or "").strip()
-                        )
-                        if not descricao_tem_conteudo(descricao_item):
-                            continue
-                        quantidade_item = item.get("quantidade")
-                        quantidade_str = ""
-                        if quantidade_item is not None:
-                            if isinstance(quantidade_item, (int, float)):
-                                quantidade_str = str(quantidade_item)
-                            else:
-                                quantidade_str = str(quantidade_item).strip()
+                            marca_key = f"smart_artigos_{idx}_marca"
+                            marca_val = (st.session_state.get(marca_key) or "").strip()
 
-                        unidade_item = (item.get("unidade") or "Peças").strip() or "Peças"
-                        marca_item = (item.get("marca") or marca_padrao_pdf).strip()
-                        if not marca_item and descricao_item:
-                            marca_item = descricao_item.split()[0]
+                            if not marca_val:
+                                erros.append(
+                                    f"Artigo {idx + 1}: indique a marca do artigo."
+                                )
+                                continue
 
-                        artigos_extraidos.append(
-                            {
-                                "artigo_num": ktb_code_item
-                                or (dados.get("artigo_num") or ""),
-                                "descricao": descricao_item,
-                                "quantidade": quantidade_str,
-                                "unidade": unidade_item,
-                                "marca": marca_item,
-                            }
-                        )
-
-                    if not artigos_extraidos:
-                        quantidade_base = dados.get("quantidade")
-                        if isinstance(quantidade_base, (int, float)):
-                            quantidade_base_str = str(quantidade_base)
-                        else:
-                            quantidade_base_str = str(quantidade_base or "").strip()
-
-                        descricao_principal = (
-                            descricao_formatada
-                            if descricao_tem_conteudo(descricao_formatada)
-                            else ""
-                        )
-
-                        if descricao_principal:
-                            artigos_extraidos = [
-                                {
-                                    "artigo_num": dados.get("artigo_num") or "",
-                                    "descricao": descricao_principal,
-                                    "quantidade": quantidade_base_str,
-                                    "unidade": "Peças",
-                                    "marca": marca_padrao_pdf,
-                                }
-                            ]
-                        else:
-                            artigos_extraidos = [
-                                {
-                                    "artigo_num": "",
-                                    "descricao": "",
-                                    "quantidade": quantidade_base_str,
-                                    "unidade": "Peças",
-                                    "marca": marca_padrao_pdf,
-                                }
-                            ]
-
-                    st.session_state.smart_artigos = artigos_extraidos
-                    for idx, artigo in enumerate(artigos_extraidos):
-                        st.session_state[f"smart_artigos_{idx}_artigo_num"] = artigo.get(
-                            "artigo_num", "",
-                        )
-                        descricao_guardada = artigo.get("descricao", "")
-                        st.session_state[f"smart_artigos_{idx}_descricao"] = descricao_guardada
-                        st.session_state[f"smart_artigos_{idx}_quantidade"] = artigo.get(
-                            "quantidade", "",
-                        )
-                        st.session_state[f"smart_artigos_{idx}_unidade"] = artigo.get(
-                            "unidade", "Peças"
-                        ) or "Peças"
-                        marca_extraida = extrair_primeira_palavra(descricao_guardada)
-                        if not marca_extraida:
-                            marca_extraida = artigo.get("marca", "") or ""
-                        st.session_state[f"smart_artigos_{idx}_marca"] = marca_extraida
-
-
-                    cliente_extraido = (dados.get("cliente") or "").strip().lower()
-                    default_idx = 0
-                    if cliente_extraido:
-                        for idx, cli in enumerate(cliente_options):
-                            if cli and cli[1].strip().lower() == cliente_extraido:
-                                default_idx = idx
-                                break
-                    st.session_state.smart_cliente_index = default_idx
-                else:
-                    artigos_existentes = st.session_state.get("smart_artigos", [])
-                    for idx in range(len(artigos_existentes)):
-                        desc_key = f"smart_artigos_{idx}_descricao"
-                        if desc_key in st.session_state:
-                            st.session_state[desc_key] = normalizar_quebras_linha(
-                                st.session_state.get(desc_key, "")
-                            )
-
-                def _format_cliente(idx: int) -> str:
-                    cli = cliente_options[idx]
-                    if not cli:
-                        return "Selecione um cliente"
-                    nome_cli = cli[1]
-                    empresa_cli = cli[4] if len(cli) > 4 else ""
-                    if empresa_cli:
-                        return f"{nome_cli} ({empresa_cli})"
-                    return nome_cli
-
-                col_form, col_pdf = st.columns(2)
-
-                with col_form:
-                    st.text_input(
-                        "Referência Cliente",
-                        key="smart_referencia",
-                    )
-                    cliente_idx = st.selectbox(
-                        "Cliente (Gestão de Clientes)",
-                        options=list(range(len(cliente_options))),
-                        format_func=_format_cliente,
-                        key="smart_cliente_index",
-                    )
-                    artigos_guardados = st.session_state.get("smart_artigos", [])
-                    total_artigos = len(artigos_guardados)
-                    if total_artigos:
-                        st.markdown("---")
-                    for idx, _ in enumerate(artigos_guardados):
-                        st.markdown(f"**Artigo {idx + 1}**")
-                        descricao_key = f"smart_artigos_{idx}_descricao"
-                        marca_key = f"smart_artigos_{idx}_marca"
-                        descricao_atual = st.session_state.get(descricao_key, "")
-
-                        marca_valor_guardado = st.session_state.get(marca_key)
-                        marca_registada = (marca_valor_guardado or "").strip()
-
-                        if marca_registada:
-                            if marca_valor_guardado != marca_registada:
-                                st.session_state[marca_key] = marca_registada
-                        else:
-                            marca_detectada = extrair_primeira_palavra(descricao_atual)
-                            if marca_detectada:
-                                st.session_state[marca_key] = marca_detectada
-                                marca_registada = marca_detectada
-
-                        col_art, col_qtd, col_uni, col_marca = st.columns([1.4, 1, 1, 1.6])
-                        with col_art:
-                            st.text_input(
-                                "Nº Artigo",
-                                key=f"smart_artigos_{idx}_artigo_num",
-                            )
-                        with col_qtd:
-                            st.text_input(
-                                "Quantidade",
-                                key=f"smart_artigos_{idx}_quantidade",
-                            )
-                        with col_uni:
-                            unidade_key = f"smart_artigos_{idx}_unidade"
-                            unidade_atual = st.session_state.get(unidade_key, "Peças")
-                            opcoes_unidade = [*unidades_padrao]
-                            if unidade_atual not in opcoes_unidade:
-                                opcoes_unidade.append(unidade_atual)
-                            st.selectbox(
-                                "Unidade",
-                                options=opcoes_unidade,
-                                index=opcoes_unidade.index(unidade_atual)
-                                if unidade_atual in opcoes_unidade
-                                else 0,
-                                key=unidade_key,
-                            )
-                        with col_marca:
-                            st.text_input(
-                                "Marca",
-                                key=marca_key,
-                                help=(
-                                    "A marca é sugerida automaticamente com base na descrição,"
-                                    " mas pode ser editada."
-                                ),
-                            )
-
-                        st.text_area(
-                            "Descrição",
-                            key=f"smart_artigos_{idx}_descricao",
-                            height=140,
-                            help="As quebras de linha serão mantidas na geração da cotação.",
-                        )
-
-                        if idx < total_artigos - 1:
-                            st.markdown("---")
-
-                    artigos_atualizados: list[dict[str, str]] = []
-                    for idx in range(len(artigos_guardados)):
-                        artigos_atualizados.append(
-                            {
-                                "artigo_num": st.session_state.get(
-                                    f"smart_artigos_{idx}_artigo_num", ""
-                                ),
-                                "descricao": st.session_state.get(
-                                    f"smart_artigos_{idx}_descricao", ""
-                                ),
-                                "quantidade": st.session_state.get(
-                                    f"smart_artigos_{idx}_quantidade", ""
-                                ),
-                                "unidade": st.session_state.get(
+                            unidade_val = (
+                                st.session_state.get(
                                     f"smart_artigos_{idx}_unidade", "Peças"
-                                ),
-                                "marca": st.session_state.get(
-                                    f"smart_artigos_{idx}_marca", ""
-                                ),
-                            }
-                        )
-                    st.session_state.smart_artigos = artigos_atualizados
-
-                    cliente_selecionado = (
-                        cliente_options[cliente_idx]
-                        if 0 <= cliente_idx < len(cliente_options)
-                        else None
-                    )
-
-                    if st.button("Submeter", type="primary", key="smart_submit"):
-                        if not cliente_selecionado:
-                            st.error("Selecione um cliente existente na gestão de clientes.")
-                        else:
-                            referencia = (st.session_state.get("smart_referencia") or "").strip()
-                            artigos_info = st.session_state.get("smart_artigos") or []
-                            artigos_final: list[dict] = []
-                            artigos_posicoes: list[int] = []
-                            erros: list[str] = []
-
-                            for idx, _ in enumerate(artigos_info):
-                                artigo_num_val = (
-                                    st.session_state.get(
-                                        f"smart_artigos_{idx}_artigo_num", ""
-                                    )
-                                    or ""
-                                ).strip()
-                                descricao_input = (
-                                    st.session_state.get(
-                                        f"smart_artigos_{idx}_descricao", ""
-                                    )
-                                    or ""
-                                ).strip()
-                                if not descricao_input:
-                                    continue
-                                if not descricao_tem_conteudo(descricao_input):
-                                    erros.append(
-                                        f"Artigo {idx + 1}: indique uma descrição com conteúdo."
-                                    )
-                                    continue
-
-                                marca_key = f"smart_artigos_{idx}_marca"
-                                marca_val = (st.session_state.get(marca_key) or "").strip()
-
-                                if not marca_val:
-                                    erros.append(
-                                        f"Artigo {idx + 1}: indique a marca do artigo."
-                                    )
-                                    continue
-
-                                unidade_val = (
-                                    st.session_state.get(
-                                        f"smart_artigos_{idx}_unidade", "Peças"
-                                    )
-                                    or "Peças"
                                 )
-                                unidade_val = str(unidade_val).strip() or "Peças"
+                                or "Peças"
+                            )
+                            unidade_val = str(unidade_val).strip() or "Peças"
 
-                                quantidade_raw = (
-                                    st.session_state.get(
-                                        f"smart_artigos_{idx}_quantidade", ""
-                                    )
-                                    or ""
+                            quantidade_raw = (
+                                st.session_state.get(
+                                    f"smart_artigos_{idx}_quantidade", "",
                                 )
-                                quantidade_str = str(quantidade_raw).strip()
+                                or ""
+                            )
+                            quantidade_str = str(quantidade_raw).strip()
 
-                                quantidade_valor: int | float | str
-                                if not quantidade_str:
-                                    quantidade_valor = 1
-                                else:
+                            quantidade_valor: int | float | str
+                            if not quantidade_str:
+                                quantidade_valor = 1
+                            else:
+                                try:
+                                    quantidade_valor = int(quantidade_str)
+                                except ValueError:
                                     try:
-                                        quantidade_valor = int(quantidade_str)
+                                        quantidade_valor = float(
+                                            quantidade_str.replace(",", ".")
+                                        )
                                     except ValueError:
-                                        try:
-                                            quantidade_valor = float(
-                                                quantidade_str.replace(",", ".")
-                                            )
-                                        except ValueError:
-                                            quantidade_valor = quantidade_str
+                                        quantidade_valor = quantidade_str
 
-                                descricao_normalizada = garantir_marca_primeira_palavra(
-                                    normalizar_quebras_linha(descricao_input), marca_val
-                                )
+                            descricao_normalizada = garantir_marca_primeira_palavra(
+                                normalizar_quebras_linha(descricao_input), marca_val
+                            )
 
-                                artigos_final.append(
-                                    {
-                                        "artigo_num": artigo_num_val,
-                                        "descricao": descricao_normalizada,
-                                        "quantidade": quantidade_valor,
-                                        "unidade": unidade_val,
-                                        "marca": marca_val,
-                                    }
-                                )
-                                artigos_posicoes.append(idx + 1)
+                            artigos_final.append(
+                                {
+                                    "artigo_num": artigo_num_val,
+                                    "descricao": descricao_normalizada,
+                                    "quantidade": quantidade_valor,
+                                    "unidade": unidade_val,
+                                    "marca": marca_val,
+                                }
+                            )
+                            artigos_posicoes.append(idx + 1)
 
-                            if not artigos_final:
-                                if erros:
-                                    for mensagem in erros:
-                                        st.error(mensagem)
-                                else:
-                                    st.error(
-                                        "Indique pelo menos um artigo com descrição para gerar a cotação."
-                                    )
-                            elif erros:
+                        if not artigos_final:
+                            if erros:
                                 for mensagem in erros:
                                     st.error(mensagem)
                             else:
-                                contexto_criacao_smart = {
-                                    "origem": "smart",
-                                    "data": datetime.today(),
-                                    "referencia": referencia,
-                                    "cliente_id": cliente_selecionado[0],
-                                    "cliente_nome": cliente_selecionado[1] if cliente_selecionado else "",
-                                    "artigos": artigos_final,
-                                    "artigos_posicoes": artigos_posicoes,
-                                    "anexos": anexos_processados,
-                                    "anexo_tipo": "anexo_cliente",
-                                }
-                                processar_criacao_cotacoes(contexto_criacao_smart)
+                                st.error(
+                                    "Indique pelo menos um artigo com descrição para gerar a cotação."
+                                )
+                        elif erros:
+                            for mensagem in erros:
+                                st.error(mensagem)
+                        else:
+                            contexto_criacao_smart = {
+                                "origem": "smart",
+                                "data": datetime.today(),
+                                "referencia": referencia,
+                                "cliente_id": cliente_selecionado[0],
+                                "cliente_nome": cliente_selecionado[1] if cliente_selecionado else "",
+                                "artigos": artigos_final,
+                                "artigos_posicoes": artigos_posicoes,
+                                "anexos": anexos_processados,
+                                "anexo_tipo": "anexo_cliente",
+                            }
+                            processar_criacao_cotacoes(contexto_criacao_smart)
 
-                with col_pdf:
-                    exibir_pdf(
-                        f"👁️ PDF carregado - {nome_pdf}",
-                        pdf_bytes,
-                        expanded=True,
-                        use_expander=False,
-                        sticky=True,
-                        sticky_top=110,
-                    )
-            else:
-                st.warning("Ficheiro carregado não pôde ser processado.")
+            with col_pdf:
+                exibir_pdf(
+                    f"👁️ PDF carregado - {nome_pdf}",
+                    pdf_bytes,
+                    expanded=True,
+                    use_expander=False,
+                    sticky=True,
+                    sticky_top=110,
+                )
+        else:
+            st.warning("Ficheiro carregado não pôde ser processado.")
 
-        contexto_dup_smart = st.session_state.get("duplicated_ref_context")
-        if contexto_dup_smart and contexto_dup_smart.get("origem") == "smart":
-            if st.session_state.get("duplicated_ref_force") == "smart":
-                contexto_confirmado = st.session_state.pop("duplicated_ref_context", None)
-                st.session_state.pop("duplicated_ref_force", None)
-                if contexto_confirmado:
-                    processar_criacao_cotacoes(contexto_confirmado, forcar=True)
-            elif st.session_state.get("show_duplicate_ref_dialog"):
-                mostrar_dialogo_referencia_duplicada("smart")
-
-    with tab_text:
-        pdf_text = st.file_uploader(
-            "📎 PDF ou email",
-            type=["pdf", "eml", "msg"],
-            accept_multiple_files=True,
-            key="extract_pdf",
-        )
-        if pdf_text:
-            anexos_texto = processar_upload_pdf(pdf_text)
-            if anexos_texto:
-                _, pdf_bytes = anexos_texto[0]
-                texto = extrair_texto_pdf(pdf_bytes)
-                st.text_area("Texto extraído", value=texto, height=400)
-
+    contexto_dup_smart = st.session_state.get("duplicated_ref_context")
+    if contexto_dup_smart and contexto_dup_smart.get("origem") == "smart":
+        if st.session_state.get("duplicated_ref_force") == "smart":
+            contexto_confirmado = st.session_state.pop("duplicated_ref_context", None)
+            st.session_state.pop("duplicated_ref_force", None)
+            if contexto_confirmado:
+                processar_criacao_cotacoes(contexto_confirmado, forcar=True)
+        elif st.session_state.get("show_duplicate_ref_dialog"):
+            mostrar_dialogo_referencia_duplicada("smart")
 elif menu_option == "📩 Process Center":
     st.title("📩 Process Center")
 
