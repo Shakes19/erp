@@ -1886,7 +1886,7 @@ def enviar_email_orcamento(
         corpo = f"""
         Dear {nome_cliente},
 
-        Please find attached our offer No {rfq_id}
+        Please find attached our offer No {numero_cotacao}
         """
         if observacoes:
             corpo += f"{observacoes}\n\n"
@@ -1965,7 +1965,7 @@ def enviar_email_pedido_fornecedor(rfq_id):
             return False
 
         # Construir email
-        corpo = f"""Request for Quotation – {referencia}
+        corpo = f"""Request for Quotation – {numero_cotacao}
 
 Dear {fornecedor_nome} Team,
 
