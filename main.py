@@ -238,18 +238,25 @@ def obter_fornecedores_por_marca(marca):
     if not marca_limpa:
         return []
 
-    marca_normalizada = marca_limpa.lower()
+    marca_normalizada = marca_limpa.casefold()
 
-    return fetch_all(
+    rows = fetch_all(
         """
-        SELECT f.id, f.nome, f.email
+        SELECT f.id, f.nome, f.email, TRIM(fm.marca)
         FROM fornecedor f
         JOIN fornecedor_marca fm ON f.id = fm.fornecedor_id
-        WHERE LOWER(TRIM(fm.marca)) = ?
+        WHERE fm.marca IS NOT NULL AND TRIM(fm.marca) != ''
         ORDER BY f.nome
-        """,
-        (marca_normalizada,),
+        """
     )
+
+    fornecedores: list[tuple] = []
+    for fornecedor_id, nome, email, marca_db in rows:
+        marca_bd_limpa = (marca_db or "").strip()
+        if marca_bd_limpa.casefold() == marca_normalizada:
+            fornecedores.append((fornecedor_id, nome, email))
+
+    return fornecedores
 
 
 def referencia_cliente_existe(referencia: str, cliente_id: int | None = None) -> bool:
@@ -3407,12 +3414,12 @@ def responder_cotacao_dialog(cotacao):
         col1, col2 = st.columns(2)
 
         with col1:
-            enviar = st.form_submit_button("✅ Enviar Resposta e Email", type="primary")
+            submeter = st.form_submit_button("💾 Submeter Preço", type="primary")
 
         with col2:
             cancelar = st.form_submit_button("❌ Cancelar")
 
-    if enviar:
+    if submeter:
         respostas_validas = [r for r in respostas if r[1] > 0]
 
         if respostas_validas:
@@ -3443,33 +3450,7 @@ def responder_cotacao_dialog(cotacao):
                     st.warning("Resposta guardada, mas não foi possível preparar a seleção para o cliente.")
                     return
 
-                if gerar_pdf_cliente(cotacao['id']):
-                    rfq_info = (info_envio or {}).get("rfq_info", {})
-                    email_cliente = rfq_info.get("email_solicitante") or rfq_info.get("cliente_email")
-                    nome_cliente = rfq_info.get("nome_solicitante") or rfq_info.get("cliente_nome") or "Cliente"
-                    referencia_cliente = rfq_info.get("referencia") or ""
-                    numero_processo = rfq_info.get("numero_processo") or cotacao.get("processo") or ""
-
-                    if email_cliente:
-                        if enviar_email_orcamento(
-                            email_cliente,
-                            nome_cliente,
-                            referencia_cliente,
-                            numero_processo,
-                            cotacao['id'],
-                            observacoes,
-                        ):
-                            marcar_artigos_enviados(selecoes_auto.keys())
-                            st.success("Resposta guardada e proposta enviada ao cliente com sucesso!")
-                        else:
-                            st.warning("Resposta guardada, mas ocorreu uma falha no envio do e-mail ao cliente.")
-                    else:
-                        st.info(
-                            "Resposta guardada e cotação do cliente gerada, mas nenhum e-mail de cliente está definido."
-                        )
-                else:
-                    st.warning("Resposta guardada, mas não foi possível gerar automaticamente o PDF do cliente.")
-
+                st.success("Resposta guardada com sucesso.")
                 st.rerun()
         else:
             st.error("Por favor, preencha pelo menos um preço")
@@ -3485,12 +3466,20 @@ def criar_cotacao_cliente_dialog(
     referencia_cliente,
     nome_cliente,
     email_cliente,
+    resposta_destacada: int | None = None,
 ):
     respostas = obter_respostas_cotacao(rfq_id)
 
     if not respostas:
         st.info("Ainda não existem respostas registadas para esta cotação.")
         return
+
+    resposta_em_destaque = None
+    if resposta_destacada is not None:
+        for resposta in respostas:
+            if resposta.get("id") == resposta_destacada:
+                resposta_em_destaque = resposta_destacada
+                break
 
     with st.form(f"cliente_form_{rfq_id}"):
         st.markdown(
@@ -3514,6 +3503,8 @@ def criar_cotacao_cliente_dialog(
                     legenda += f" • Validade: {validade_fmt}"
 
             incluir_default = bool((preco and preco > 0) or ((resposta.get("custo") or 0) > 0))
+            if resposta_em_destaque is not None:
+                incluir_default = resposta['id'] == resposta_em_destaque
             selecao_respostas[resposta['id']] = st.checkbox(
                 legenda,
                 value=incluir_default,
@@ -5461,40 +5452,78 @@ elif menu_option == "📩 Responder Cotações":
                         st.markdown("---")
                         st.markdown("### Cotação Cliente")
 
-                        indices_resposta = list(range(len(pedidos_com_resposta)))
+                        opcoes_resposta: list[dict] = []
+                        for pedido in pedidos_com_resposta:
+                            respostas_pedido = obter_respostas_cotacao(pedido.get("id"))
+                            for resposta in respostas_pedido:
+                                opcoes_resposta.append(
+                                    {
+                                        "pedido": pedido,
+                                        "resposta": resposta,
+                                    }
+                                )
 
-                        def _format_pedido(idx: int) -> str:
-                            item = pedidos_com_resposta[idx]
-                            fornecedor = item.get("fornecedor") or "Fornecedor"
-                            referencia = item.get("referencia") or "—"
-                            total = item.get("total_respostas", 0) or 0
-                            return (
-                                f"{fornecedor} • Ref: {referencia}"
-                                f" • {total} resposta(s)"
+                        if opcoes_resposta:
+                            indices_resposta = list(range(len(opcoes_resposta)))
+
+                            def _format_pedido(idx: int) -> str:
+                                item = opcoes_resposta[idx]
+                                pedido_item = item.get("pedido", {})
+                                resposta_item = item.get("resposta", {})
+
+                                fornecedor = pedido_item.get("fornecedor") or "Fornecedor"
+                                referencia = pedido_item.get("referencia") or "—"
+                                descricao = (resposta_item.get("descricao") or "Artigo").strip()
+                                descricao = descricao.replace("\n", " ")
+                                descricao_curta = descricao[:70]
+                                quantidade = (
+                                    resposta_item.get("quantidade_final")
+                                    or resposta_item.get("quantidade_original")
+                                    or "—"
+                                )
+                                preco_venda = resposta_item.get("preco_venda") or 0
+                                moeda = resposta_item.get("moeda") or "EUR"
+
+                                resumo_preco = (
+                                    f" • P.V.: {preco_venda:.2f} {moeda}"
+                                    if preco_venda
+                                    else ""
+                                )
+                                return (
+                                    f"{fornecedor} • Ref: {referencia}"
+                                    f" • Artigo: {descricao_curta}"
+                                    f" • Qtd: {quantidade}{resumo_preco}"
+                                )
+
+                            selecao_cliente = st.selectbox(
+                                "Selecionar pedido respondido por artigo",
+                                options=indices_resposta,
+                                format_func=_format_pedido,
+                                key=f"pc_cliente_select_{processo_escolhido.get('id')}",
                             )
 
-                        selecao_cliente = st.selectbox(
-                            "Selecionar pedido respondido por artigo",
-                            options=indices_resposta,
-                            format_func=_format_pedido,
-                            key=f"pc_cliente_select_{processo_escolhido.get('id')}",
-                        )
-
-                        col_criar, _ = st.columns([1, 5])
-                        with col_criar:
-                            if st.button(
-                                "💰 Criar Cotação Cliente",
-                                key=f"pc_cliente_{processo_escolhido.get('id')}",
-                            ):
-                                pedido_sel = pedidos_com_resposta[selecao_cliente]
-                                criar_cotacao_cliente_dialog(
-                                    pedido_sel.get("id"),
-                                    processo_info.get("numero"),
-                                    pedido_sel.get("referencia"),
-                                    pedido_sel.get("nome_solicitante")
-                                    or pedido_sel.get("cliente"),
-                                    pedido_sel.get("email_solicitante"),
-                                )
+                            col_criar, _ = st.columns([1, 5])
+                            with col_criar:
+                                if st.button(
+                                    "💰 Criar Cotação Cliente",
+                                    key=f"pc_cliente_{processo_escolhido.get('id')}",
+                                ):
+                                    opcao_sel = opcoes_resposta[selecao_cliente]
+                                    pedido_sel = opcao_sel.get("pedido", {})
+                                    resposta_sel = opcao_sel.get("resposta")
+                                    criar_cotacao_cliente_dialog(
+                                        pedido_sel.get("id"),
+                                        processo_info.get("numero"),
+                                        pedido_sel.get("referencia"),
+                                        pedido_sel.get("nome_solicitante")
+                                        or pedido_sel.get("cliente"),
+                                        pedido_sel.get("email_solicitante"),
+                                        resposta_destacada=(resposta_sel or {}).get("id"),
+                                    )
+                        else:
+                            st.info(
+                                "Ainda não existem respostas detalhadas para gerar a cotação do cliente."
+                            )
                     else:
                         st.info(
                             "Ainda não existem respostas de fornecedores para gerar a cotação do cliente."
