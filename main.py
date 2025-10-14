@@ -3592,10 +3592,12 @@ def criar_cotacao_cliente_dialog(
                 """
                 <style>
                 .cliente-cotacao-form div[data-testid="stCheckbox"] > label {
+                    display: inline-flex;
                     align-items: flex-start;
                     gap: 0.5rem;
                     padding: 0.35rem 0.55rem;
                     border-radius: 6px;
+                    max-width: min(100%, 48rem);
                 }
                 .cliente-cotacao-form div[data-testid="stCheckbox"] > label span {
                     font-size: 0.9rem;
@@ -3676,7 +3678,7 @@ def criar_cotacao_cliente_dialog(
         _, col_botao = st.columns([3, 1])
         with col_botao:
             submitted = st.form_submit_button(
-                "📧 Criar Cotação e Enviar E-mail",
+                "Criar e Enviar",
                 type="primary",
             )
 
@@ -4744,6 +4746,8 @@ elif menu_option == "🤖 Smart Quotation":
                     )
                     artigos_guardados = st.session_state.get("smart_artigos", [])
                     total_artigos = len(artigos_guardados)
+                    if total_artigos:
+                        st.markdown("---")
                     for idx, _ in enumerate(artigos_guardados):
                         st.markdown(f"**Artigo {idx + 1}**")
                         descricao_key = f"smart_artigos_{idx}_descricao"
