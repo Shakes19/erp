@@ -73,6 +73,20 @@ def get_smtp_connection(server: str, port: int, user: str, password: str):
     return conn
 
 
+def clear_email_cache() -> None:
+    """Limpa as caches das configurações e ligações SMTP."""
+
+    try:
+        get_system_email_config.clear()
+    except AttributeError:
+        pass
+
+    try:
+        get_smtp_connection.clear()
+    except AttributeError:
+        pass
+
+
 def send_email(
     destino: str,
     assunto: str,

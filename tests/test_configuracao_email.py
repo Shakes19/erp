@@ -38,3 +38,9 @@ def test_coluna_ativo_existe():
     cols = [row[1] for row in c.fetchall()]
     conn.close()
     assert "ativo" in cols
+
+
+def test_clear_email_cache_sem_erro():
+    import services.email_service as email_service
+
+    email_service.clear_email_cache()
