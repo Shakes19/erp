@@ -4929,8 +4929,9 @@ elif menu_option == "📩 Responder Cotações":
                                 key=f"pdf_pend_{cotacao['id']}"
                             )
 
-                        if st.button("💬 Responder", key=f"resp_{cotacao['id']}"):
-                            responder_cotacao_dialog(cotacao)
+                        st.caption(
+                            "Responder à cotação disponível apenas no Process Center."
+                        )
 
                         col_arc, col_del = st.columns(2)
 
@@ -5032,10 +5033,8 @@ elif menu_option == "📩 Responder Cotações":
                             st.success(f"**Total Geral: EUR {total_geral:.2f}**")
 
                         artigos_processo, fornecedores_estado = ([], [])
-                        selecoes_existentes: dict[int, int | None] = {}
                         if cotacao.get('processo_id'):
                             artigos_processo, fornecedores_estado = obter_respostas_por_processo(cotacao['processo_id'])
-                            selecoes_existentes = obter_selecoes_processo(cotacao['processo_id'])
 
                         if fornecedores_estado:
                             st.markdown("---")
@@ -5044,96 +5043,11 @@ elif menu_option == "📩 Responder Cotações":
                                 emoji = "🟢" if (fornecedor_estado.get("estado") or "").lower() == "respondido" else "🟡"
                                 st.write(f"{emoji} {fornecedor_estado['nome']}")
 
-                        selecoes_novas: dict[int, int | None] = {}
                         if artigos_processo:
                             st.markdown("---")
-                            st.markdown("**Selecionar proposta por artigo:**")
-                            for idx_artigo, artigo_proc in enumerate(artigos_processo):
-                                st.markdown(
-                                    f"**{(artigo_proc['artigo_num'] + ' - ') if artigo_proc['artigo_num'] else ''}{artigo_proc['descricao']}**"
-                                )
-                                if artigo_proc['respostas']:
-                                    opcoes = [(None, "— Sem seleção —")]
-                                    for resposta in artigo_proc['respostas']:
-                                        preco = resposta.get('preco_venda') or 0
-                                        moeda = resposta.get('moeda') or 'EUR'
-                                        fornecedor_nome = resposta.get('fornecedor_nome') or 'Fornecedor'
-                                        etiqueta = f"{fornecedor_nome} • {preco:.2f} {moeda}"
-                                        if resposta.get('prazo'):
-                                            etiqueta += f" • {resposta['prazo']} dias"
-                                        opcoes.append((resposta['resposta_id'], etiqueta))
-
-                                    indice_default = 0
-                                    selecao_existente = selecoes_existentes.get(artigo_proc['processo_artigo_id'])
-                                    for idx_opt, opt in enumerate(opcoes):
-                                        if opt[0] == selecao_existente:
-                                            indice_default = idx_opt
-                                            break
-
-                                    escolha = st.selectbox(
-                                        "Fornecedor",
-                                        options=opcoes,
-                                        index=indice_default,
-                                        key=(
-                                            f"selec_{cotacao['id']}_{cotacao['processo_id']}"
-                                            f"_{artigo_proc['processo_artigo_id']}_{idx_artigo}"
-                                        ),
-                                        format_func=lambda opt: opt[1] if isinstance(opt, tuple) else opt,
-                                    )
-                                    selecoes_novas[artigo_proc['processo_artigo_id']] = escolha[0]
-                                else:
-                                    st.info("Ainda não existem respostas para este artigo.")
-                                    selecoes_novas[artigo_proc['processo_artigo_id']] = None
-
-                            col_sel1, col_sel2 = st.columns(2)
-
-                            with col_sel1:
-                                st.markdown(
-                                    "<div style='display:flex; justify-content:center;'>",
-                                    unsafe_allow_html=True,
-                                )
-                                if st.button(
-                                    "💾 Guardar Seleção",
-                                    key=f"guardar_sel_{cotacao['processo_id']}_{cotacao['id']}_{idx_cotacao}",
-                                ):
-                                    if guardar_selecoes_processo(selecoes_novas):
-                                        st.success("Seleção guardada com sucesso!")
-                                        st.rerun()
-                                st.markdown("</div>", unsafe_allow_html=True)
-
-                            with col_sel2:
-                                st.markdown(
-                                    "<div style='display:flex; justify-content:center;'>",
-                                    unsafe_allow_html=True,
-                                )
-                                if st.button(
-                                    "📤 Enviar para Cliente",
-                                    key=f"enviar_cliente_{cotacao['processo_id']}_{cotacao['id']}_{idx_cotacao}",
-                                ):
-                                    if all(valor is None for valor in selecoes_novas.values()):
-                                        st.error("Selecione pelo menos um artigo antes de enviar ao cliente.")
-                                    elif not cotacao['email_solicitante']:
-                                        st.error("Nenhum email de cliente definido para este processo.")
-                                    else:
-                                        if guardar_selecoes_processo(selecoes_novas):
-                                            if gerar_pdf_cliente(cotacao['id']):
-                                                if enviar_email_orcamento(
-                                                    cotacao['email_solicitante'],
-                                                    cotacao['nome_solicitante'] or "Cliente",
-                                                    cotacao['referencia'],
-                                                    cotacao['processo'],
-                                                    cotacao['id'],
-                                                    detalhes.get('observacoes', '') if detalhes else '',
-                                                ):
-                                                    marcar_artigos_enviados(
-                                                        [pid for pid, resp in selecoes_novas.items() if resp]
-                                                    )
-                                                    st.success("Proposta enviada ao cliente com sucesso!")
-                                                else:
-                                                    st.error("Falha ao enviar o e-mail para o cliente.")
-                                            else:
-                                                st.error("Não foi possível gerar o PDF do cliente.")
-                                st.markdown("</div>", unsafe_allow_html=True)
+                            st.info(
+                                "Seleção de propostas e envio ao cliente disponíveis apenas no Process Center."
+                            )
 
                     with col2:
                         # Anexos
@@ -5168,7 +5082,7 @@ elif menu_option == "📩 Responder Cotações":
                         pdf_interno = obter_pdf_da_db(cotacao['id'], "pedido")
                         pdf_cliente = obter_pdf_da_db(cotacao['id'], "cliente")
 
-                        col_pdf_int, col_reenv = st.columns(2)
+                        col_pdf_int, col_info = st.columns(2)
 
                         with col_pdf_int:
                             if pdf_interno:
@@ -5180,45 +5094,10 @@ elif menu_option == "📩 Responder Cotações":
                                     key=f"pdf_int_{cotacao['id']}",
                                 )
 
-                        with col_reenv:
-                            if st.button("📧 Reenviar", key=f"reenviar_{cotacao['id']}"):
-                                if cotacao['email_solicitante']:
-                                    # Verificar se o PDF existe antes de tentar enviar
-                                    pdf_status = verificar_pdfs(cotacao['id'])
-
-                                    if not pdf_status['cliente']:
-                                        st.warning("PDF do cliente não encontrado. Gerando novo PDF...")
-                                        if gerar_pdf_cliente(cotacao['id']):  # Tenta gerar novamente
-                                            st.success("PDF gerado com sucesso!")
-                                            # Após gerar com sucesso, tenta enviar
-                                            if enviar_email_orcamento(
-                                                cotacao['email_solicitante'],
-                                                cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else "Cliente",
-                                                cotacao['referencia'],
-                                                cotacao['processo'],
-                                                cotacao['id'],
-                                            ):
-                                                marcar_artigos_enviados(selecoes_existentes.keys())
-                                                st.success("✅ E-mail reenviado com sucesso!")
-                                            else:
-                                                st.error("Falha no reenvio")
-                                        else:
-                                            st.error("Falha ao gerar PDF. Não foi possível enviar o e-mail.")
-                                    else:
-                                        # PDF já existe, tenta enviar diretamente
-                                        if enviar_email_orcamento(
-                                            cotacao['email_solicitante'],
-                                            cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else "Cliente",
-                                            cotacao['referencia'],
-                                            cotacao['processo'],
-                                            cotacao['id'],
-                                        ):
-                                            marcar_artigos_enviados(selecoes_existentes.keys())
-                                            st.success("✅ E-mail reenviado com sucesso!")
-                                        else:
-                                            st.error("Falha no reenvio")
-                                else:
-                                    st.warning("Nenhum e-mail do solicitante registrado")
+                        with col_info:
+                            st.caption(
+                                "Envio de respostas ao cliente disponível apenas no Process Center."
+                            )
 
                         col_pdf_cli, col_del = st.columns(2)
 
@@ -5496,7 +5375,7 @@ elif menu_option == "📩 Responder Cotações":
                         )
 
                         titulo_expander = (
-                            f"{emoji_cliente} {emoji} {pedido.get('fornecedor', 'Fornecedor')}"
+                            f"{emoji} {pedido.get('fornecedor', 'Fornecedor')}"
                             f" • Ref: {pedido.get('referencia', '—')}"
                         )
                         expanded = foco_referencia and foco_referencia == (pedido.get("referencia") or "").lower()
@@ -5595,7 +5474,7 @@ elif menu_option == "📩 Responder Cotações":
                             )
 
                         selecao_cliente = st.selectbox(
-                            "Selecionar pedido respondido",
+                            "Selecionar pedido respondido por artigo",
                             options=indices_resposta,
                             format_func=_format_pedido,
                             key=f"pc_cliente_select_{processo_escolhido.get('id')}",
