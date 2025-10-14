@@ -566,6 +566,16 @@ def criar_base_dados_completa():
         c.execute(
             "ALTER TABLE configuracao_email ADD COLUMN ativo BOOLEAN DEFAULT TRUE"
         )
+        email_cols.append("ativo")
+    if "use_tls" not in email_cols:
+        c.execute(
+            "ALTER TABLE configuracao_email ADD COLUMN use_tls BOOLEAN DEFAULT TRUE"
+        )
+        email_cols.append("use_tls")
+    if "use_ssl" not in email_cols:
+        c.execute(
+            "ALTER TABLE configuracao_email ADD COLUMN use_ssl BOOLEAN DEFAULT FALSE"
+        )
 
     # Tabela de configuração da empresa
     c.execute(

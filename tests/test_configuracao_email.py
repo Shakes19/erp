@@ -31,16 +31,28 @@ def teardown_module(module):
         os.remove("test_config_email.db")
 
 
-def test_coluna_ativo_existe():
+def test_colunas_email_extras_existem():
     conn = db.get_connection()
     c = conn.cursor()
     c.execute("PRAGMA table_info(configuracao_email)")
     cols = [row[1] for row in c.fetchall()]
     conn.close()
-    assert "ativo" in cols
+    for expected in {"ativo", "use_tls", "use_ssl"}:
+        assert expected in cols
 
 
 def test_clear_email_cache_sem_erro():
     import services.email_service as email_service
 
     email_service.clear_email_cache()
+
+
+def test_get_system_email_config_devolve_flags_tls_ssl():
+    import services.email_service as email_service
+
+    email_service.clear_email_cache()
+    config = email_service.get_system_email_config()
+    assert "server" in config
+    assert "port" in config
+    assert "use_tls" in config
+    assert "use_ssl" in config
