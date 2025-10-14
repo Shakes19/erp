@@ -1886,7 +1886,7 @@ def enviar_email_orcamento(
         corpo = f"""
         Dear {nome_cliente},
 
-        Please find attached our offer No {numero_cotacao}
+        Please find attached our offer No {rfq_id}
         """
         if observacoes:
             corpo += f"{observacoes}\n\n"
@@ -1980,6 +1980,7 @@ Kindly provide us with the following details:
 
 We look forward to receiving your quotation.
 Thank you in advance for your prompt response.
+
 {nome_utilizador}
 """
         send_email(
