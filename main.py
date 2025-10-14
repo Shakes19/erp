@@ -1273,9 +1273,11 @@ def obter_respostas_cotacao(rfq_id):
         """
         SELECT rf.*, a.descricao AS descricao_original,
                a.quantidade AS quantidade_original,
-               a.processo_artigo_id
+               a.processo_artigo_id,
+               fornecedor.nome AS fornecedor_nome
         FROM resposta_fornecedor rf
         JOIN artigo a ON rf.artigo_id = a.id
+        LEFT JOIN fornecedor ON fornecedor.id = rf.fornecedor_id
         WHERE rf.rfq_id = ?
         ORDER BY a.ordem, rf.artigo_id
         """,
@@ -1304,6 +1306,7 @@ def obter_respostas_cotacao(rfq_id):
             "descricao_original": row[17],
             "quantidade_original": row[18],
             "processo_artigo_id": row[19],
+            "fornecedor_nome": row[20] if len(row) > 20 else "",
         })
 
     conn.close()
@@ -2766,7 +2769,14 @@ class ClientQuotationPDF(InquiryPDF):
         for idx, item in enumerate(itens_resposta, 1):
             total_item = self.add_item(idx, item)
             total_geral += total_item
-            peso_total += float(item.get("peso") or 0) * int(item["quantidade_final"])
+            quantidade_utilizada = item.get("quantidade_final")
+            if quantidade_utilizada is None:
+                quantidade_utilizada = item.get("quantidade")
+            try:
+                quantidade_num = float(quantidade_utilizada)
+            except (TypeError, ValueError):
+                quantidade_num = 0.0
+            peso_total += float(item.get("peso") or 0) * quantidade_num
         self.add_total(total_geral, peso_total)
         return self.output(dest="S").encode("latin-1", errors="replace")
 # ========================== FUNÇÕES DE GESTÃO DE PDFs ==========================
@@ -2953,6 +2963,7 @@ def gerar_pdf_cliente(rfq_id):
                 'artigo_num': row[0] or '',
                 'descricao': limitar_descricao_artigo(row[1]),
                 'quantidade_final': row[2],
+                'quantidade': row[2],
                 'unidade': row[3],
                 'preco_venda': row[4],
                 'prazo_entrega': row[5],
@@ -3512,25 +3523,70 @@ def criar_cotacao_cliente_dialog(
         st.markdown(
             "Selecione os artigos a incluir na cotação do cliente. Os artigos não selecionados serão ignorados.")
 
+        if "_cliente_cotacao_css" not in st.session_state:
+            st.markdown(
+                """
+                <style>
+                .cliente-cotacao-form div[data-testid="stCheckbox"] > label {
+                    align-items: flex-start;
+                    gap: 0.5rem;
+                    padding: 0.35rem 0.55rem;
+                    border-radius: 6px;
+                }
+                .cliente-cotacao-form div[data-testid="stCheckbox"] > label span {
+                    font-size: 0.9rem;
+                    line-height: 1.25;
+                    white-space: normal;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.session_state["_cliente_cotacao_css"] = True
+
+        st.markdown('<div class="cliente-cotacao-form">', unsafe_allow_html=True)
+
         selecao_respostas: dict[int, bool] = {}
         for resposta in respostas:
             descricao_completa = resposta.get("descricao") or resposta.get("descricao_original") or "Artigo"
             descricao = limitar_descricao_artigo(descricao_completa)
+            descricao_curta = " / ".join(descricao.splitlines()[:2]) or "Artigo"
+            if len(descricao_curta) > 80:
+                descricao_curta = descricao_curta[:77].rstrip() + "..."
             preco = resposta.get("preco_venda") or 0
             moeda = resposta.get("moeda") or "EUR"
             validade = resposta.get("validade_preco") or ""
-            legenda = " / ".join(descricao.splitlines()) or "Artigo"
-            if len(legenda) > 120:
-                legenda = legenda[:117] + "..."
-            legenda += f" • Qtd: {resposta.get('quantidade_final') or resposta.get('quantidade_original')}"
-            legenda += f" • P.V.: {preco:.2f} {moeda}"
+            fornecedor_nome = (resposta.get("fornecedor_nome") or "").strip()
+            quantidade = resposta.get("quantidade_final") or resposta.get("quantidade_original") or "-"
+
+            resumo_partes = []
+            if fornecedor_nome:
+                resumo_partes.append(f"[{fornecedor_nome}]")
+            if descricao_curta:
+                resumo_partes.append(descricao_curta)
+            resumo_partes.append(f"Qtd: {quantidade}")
+            resumo_partes.append(f"P.V.: {preco:.2f} {moeda}")
+
+            validade_fmt = ""
             if validade:
                 try:
                     validade_fmt = _format_iso_date(validade)
                 except Exception:
-                    validade_fmt = validade
+                    validade_fmt = str(validade)
                 if validade_fmt:
-                    legenda += f" • Validade: {validade_fmt}"
+                    resumo_partes.append(f"Validade: {validade_fmt}")
+
+            legenda = " · ".join([parte for parte in resumo_partes if parte])
+
+            help_linhas = [descricao_completa.strip()]
+            if fornecedor_nome:
+                help_linhas.append(f"Fornecedor: {fornecedor_nome}")
+            prazo = resposta.get("prazo_entrega")
+            if prazo:
+                help_linhas.append(f"Prazo de entrega: {prazo} dia(s)")
+            if validade_fmt:
+                help_linhas.append(f"Validade: {validade_fmt}")
+            help_text = "\n".join([linha for linha in help_linhas if linha]) or None
 
             incluir_default = bool((preco and preco > 0) or ((resposta.get("custo") or 0) > 0))
             if resposta_em_destaque is not None:
@@ -3538,8 +3594,11 @@ def criar_cotacao_cliente_dialog(
             selecao_respostas[resposta['id']] = st.checkbox(
                 legenda,
                 value=incluir_default,
-                key=f"cliente_sel_{rfq_id}_{resposta['id']}"
+                key=f"cliente_sel_{rfq_id}_{resposta['id']}",
+                help=help_text,
             )
+
+        st.markdown('</div>', unsafe_allow_html=True)
 
         enviar_email = False
         if email_cliente:
@@ -3558,14 +3617,20 @@ def criar_cotacao_cliente_dialog(
         st.error("Selecione pelo menos um artigo para gerar a cotação do cliente.")
         return
 
-    selecoes = {}
+    selecoes: dict[int, int | None] = {}
+    artigos_marcados: dict[int, bool] = {}
     for resposta in respostas:
         proc_art_id = resposta.get("processo_artigo_id")
         if not proc_art_id:
             continue
-        if selecao_respostas.get(resposta['id']):
+        selecionado = bool(selecao_respostas.get(resposta['id']))
+        artigos_marcados.setdefault(proc_art_id, False)
+        if selecionado:
             selecoes[proc_art_id] = resposta['id']
-        else:
+            artigos_marcados[proc_art_id] = True
+
+    for proc_art_id, selecionado in artigos_marcados.items():
+        if not selecionado:
             selecoes[proc_art_id] = None
 
     if not selecoes:
@@ -6322,25 +6387,127 @@ elif menu_option == "⚙️ Configurações":
             conn = obter_conexao()
             c = conn.cursor()
             try:
-                c.execute("SELECT * FROM configuracao_email WHERE ativo = TRUE")
+                c.execute(
+                    "SELECT smtp_server, smtp_port, use_tls, use_ssl FROM configuracao_email WHERE ativo = TRUE ORDER BY id DESC LIMIT 1"
+                )
             except sqlite3.OperationalError:
-                c.execute("SELECT * FROM configuracao_email")
-            config_atual = c.fetchone()
+                try:
+                    c.execute(
+                        "SELECT smtp_server, smtp_port, use_tls, use_ssl FROM configuracao_email ORDER BY id DESC LIMIT 1"
+                    )
+                except sqlite3.OperationalError:
+                    c.execute(
+                        "SELECT smtp_server, smtp_port FROM configuracao_email ORDER BY id DESC LIMIT 1"
+                    )
+            row = c.fetchone()
             conn.close()
-            
+
+            config_atual = {
+                "smtp_server": row[0] if row else "",
+                "smtp_port": row[1] if row and len(row) > 1 else None,
+                "use_tls": row[2] if row and len(row) > 2 else None,
+                "use_ssl": row[3] if row and len(row) > 3 else None,
+            }
+
+            provider_defaults = {
+                "Outlook": {"server": "smtp.office365.com", "port": 587, "use_tls": True, "use_ssl": False},
+                "Gmail": {"server": "smtp.gmail.com", "port": 587, "use_tls": True, "use_ssl": False},
+                "Personalizado": {},
+            }
+
+            server_lower = (config_atual.get("smtp_server") or "").lower()
+            provider_guess = "Personalizado"
+            if "gmail" in server_lower:
+                provider_guess = "Gmail"
+            elif any(key in server_lower for key in ("outlook", "office365", "office")):
+                provider_guess = "Outlook"
+
+            provider_key = "config_email_provider"
+            server_key = "config_email_smtp_server"
+            port_key = "config_email_smtp_port"
+            tls_key = "config_email_use_tls"
+            ssl_key = "config_email_use_ssl"
+
+            if provider_key not in st.session_state:
+                st.session_state[provider_key] = provider_guess
+
+            if server_key not in st.session_state:
+                st.session_state[server_key] = config_atual.get("smtp_server") or provider_defaults[provider_guess].get("server", "")
+
+            if port_key not in st.session_state:
+                st.session_state[port_key] = config_atual.get("smtp_port") or provider_defaults[provider_guess].get("port", 587)
+
+            if tls_key not in st.session_state:
+                valor_tls = config_atual.get("use_tls")
+                if valor_tls is None:
+                    valor_tls = provider_defaults[provider_guess].get("use_tls", True)
+                st.session_state[tls_key] = bool(valor_tls)
+
+            if ssl_key not in st.session_state:
+                valor_ssl = config_atual.get("use_ssl")
+                if valor_ssl is None:
+                    valor_ssl = provider_defaults[provider_guess].get("use_ssl", False)
+                st.session_state[ssl_key] = bool(valor_ssl)
+
+            def _atualizar_por_provider() -> None:
+                selecao = st.session_state.get(provider_key, "Personalizado")
+                defaults = provider_defaults.get(selecao, {})
+                if defaults.get("server"):
+                    st.session_state[server_key] = defaults["server"]
+                if defaults.get("port"):
+                    st.session_state[port_key] = defaults["port"]
+                if "use_tls" in defaults:
+                    st.session_state[tls_key] = defaults["use_tls"]
+                if "use_ssl" in defaults:
+                    st.session_state[ssl_key] = defaults["use_ssl"]
+
             with st.form("config_email_form"):
+                provider = st.selectbox(
+                    "Fornecedor SMTP",
+                    list(provider_defaults.keys()),
+                    key=provider_key,
+                    on_change=_atualizar_por_provider,
+                    help="Selecione um fornecedor comum ou mantenha 'Personalizado' para definir valores próprios.",
+                )
+
                 smtp_server = st.text_input(
                     "Servidor SMTP",
-                    value=config_atual[1] if config_atual else "smtp.gmail.com"
+                    key=server_key,
                 )
                 smtp_port = st.number_input(
                     "Porta SMTP",
-                    value=config_atual[2] if config_atual else 587
+                    min_value=1,
+                    step=1,
+                    key=port_key,
                 )
-    
+
+                col_tls, col_ssl = st.columns(2)
+                with col_tls:
+                    use_tls_val = st.checkbox(
+                        "Usar STARTTLS",
+                        value=st.session_state[tls_key],
+                        key=tls_key,
+                    )
+                with col_ssl:
+                    use_ssl_val = st.checkbox(
+                        "Usar SSL (porta 465)",
+                        value=st.session_state[ssl_key],
+                        key=ssl_key,
+                    )
+
+                if use_ssl_val and use_tls_val:
+                    st.warning("SSL e STARTTLS não devem estar ativos em simultâneo. Será utilizada a opção SSL.")
+
                 if st.form_submit_button("💾 Guardar Configuração"):
                     conn = obter_conexao()
                     c = conn.cursor()
+
+                    smtp_server_val = (st.session_state.get(server_key) or "").strip()
+                    smtp_port_val = int(st.session_state.get(port_key) or 0)
+                    if smtp_port_val <= 0:
+                        smtp_port_val = 587
+                    use_tls_flag = bool(st.session_state.get(tls_key)) and not bool(st.session_state.get(ssl_key))
+                    use_ssl_flag = bool(st.session_state.get(ssl_key))
 
                     try:
                         # Desativar configurações anteriores
@@ -6349,17 +6516,17 @@ elif menu_option == "⚙️ Configurações":
                         # Inserir nova configuração
                         c.execute(
                             """
-                            INSERT INTO configuracao_email (smtp_server, smtp_port, ativo)
-                            VALUES (?, ?, TRUE)
+                            INSERT INTO configuracao_email (smtp_server, smtp_port, use_tls, use_ssl, ativo)
+                            VALUES (?, ?, ?, ?, TRUE)
                             """,
-                            (smtp_server, smtp_port),
+                            (smtp_server_val, smtp_port_val, use_tls_flag, use_ssl_flag),
                         )
                     except sqlite3.OperationalError:
-                        # Coluna "ativo" ausente - manter apenas uma configuração
+                        # Colunas ausentes - manter apenas uma configuração básica
                         c.execute("DELETE FROM configuracao_email")
                         c.execute(
                             "INSERT INTO configuracao_email (smtp_server, smtp_port) VALUES (?, ?)",
-                            (smtp_server, smtp_port),
+                            (smtp_server_val, smtp_port_val),
                         )
 
                     conn.commit()
@@ -6369,7 +6536,9 @@ elif menu_option == "⚙️ Configurações":
 
                     st.success("Configuração de email guardada!")
 
-            st.info("Nota: Para Gmail, usa uma 'App Password' em vez da palavra-passe normal")
+            st.info(
+                "Notas: Para Gmail é necessário usar uma 'App Password'. Para Outlook/Office365 o servidor recomendado é smtp.office365.com."
+            )
         
         with tab_backup:
             st.subheader("Backup e Restauro")
