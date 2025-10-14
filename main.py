@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 from fpdf import FPDF
 import base64
 import json
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from io import BytesIO
 import os
 import shutil
@@ -2219,13 +2219,23 @@ class InquiryPDF(FPDF):
             start_y += line_height
 
         # Bloco do destinatário abaixo dos metadados
-        self.set_xy(15, start_y + line_height)
+        address_line_height = header_cfg.get("address_line_height", line_height)
+        self.set_xy(15, start_y + address_line_height)
         recip = self.recipient.get("address", [])
-        self.set_font(*self._font_tuple(header_cfg.get("address_font"), ("Helvetica", "", 10)))
+        recipient_lines: list[str] = []
         for line in recip:
+            if line is None:
+                continue
+            for sub_line in str(line).splitlines():
+                clean = sub_line.strip()
+                if clean:
+                    recipient_lines.append(clean)
+        self.set_font(*self._font_tuple(header_cfg.get("address_font"), ("Helvetica", "", 10)))
+        for line in recipient_lines:
             # Garantir que cada linha é string para evitar erros de ``replace``
             # caso algum campo seja numérico.
-            self.cell(80, line_height, str(line), ln=1)
+            self.cell(80, address_line_height, str(line), ln=1)
+            start_y += address_line_height
 
         # Bloco da empresa (logo + contactos) no lado direito
         max_h = 30  # altura máxima para evitar sobreposição com contactos
@@ -2748,13 +2758,17 @@ class ClientQuotationPDF(InquiryPDF):
     def gerar(self, rfq_info, solicitante_info, itens_resposta, user_info=None):
         addr_lines = []
         if solicitante_info.get("empresa_nome"):
-            addr_lines.append(solicitante_info["empresa_nome"])
+            addr_lines.append(str(solicitante_info["empresa_nome"]).strip())
         if solicitante_info.get("empresa_morada"):
-            addr_lines.append(solicitante_info["empresa_morada"])
+            addr_lines.extend(
+                linha.strip()
+                for linha in str(solicitante_info["empresa_morada"]).splitlines()
+                if linha.strip()
+            )
         if solicitante_info.get("nome"):
-            addr_lines.append(solicitante_info["nome"])
+            addr_lines.append(str(solicitante_info["nome"]).strip())
         if solicitante_info.get("email"):
-            addr_lines.append(solicitante_info["email"])
+            addr_lines.append(str(solicitante_info["email"]).strip())
         metadata = {"Date": rfq_info["data"]}
         self.recipient = {
             "address": addr_lines,
@@ -3504,7 +3518,7 @@ def criar_cotacao_cliente_dialog(
     referencia_cliente,
     nome_cliente,
     email_cliente,
-    resposta_destacada: int | None = None,
+    respostas_destacadas: Iterable[int] | None = None,
 ):
     respostas = obter_respostas_cotacao(rfq_id)
 
@@ -3512,12 +3526,11 @@ def criar_cotacao_cliente_dialog(
         st.info("Ainda não existem respostas registadas para esta cotação.")
         return
 
-    resposta_em_destaque = None
-    if resposta_destacada is not None:
-        for resposta in respostas:
-            if resposta.get("id") == resposta_destacada:
-                resposta_em_destaque = resposta_destacada
-                break
+    respostas_destacadas_ids = {
+        int(resposta_id)
+        for resposta_id in (respostas_destacadas or [])
+        if resposta_id is not None
+    }
 
     with st.form(f"cliente_form_{rfq_id}"):
         st.markdown(
@@ -3589,8 +3602,8 @@ def criar_cotacao_cliente_dialog(
             help_text = "\n".join([linha for linha in help_linhas if linha]) or None
 
             incluir_default = bool((preco and preco > 0) or ((resposta.get("custo") or 0) > 0))
-            if resposta_em_destaque is not None:
-                incluir_default = resposta['id'] == resposta_em_destaque
+            if respostas_destacadas_ids:
+                incluir_default = resposta['id'] in respostas_destacadas_ids
             selecao_respostas[resposta['id']] = st.checkbox(
                 legenda,
                 value=incluir_default,
@@ -5547,55 +5560,135 @@ elif menu_option == "📩 Responder Cotações":
                         st.markdown("---")
                         st.markdown("### Cotação Cliente")
 
-                        opcoes_resposta: list[dict] = []
+                        respostas_por_artigo: OrderedDict[str, dict] = OrderedDict()
+                        resposta_para_pedido: dict[int, dict] = {}
                         for pedido in pedidos_com_resposta:
                             respostas_pedido = obter_respostas_cotacao(pedido.get("id"))
+                            artigos_pedido = pedido.get("artigos") or []
                             for resposta in respostas_pedido:
-                                opcoes_resposta.append(
-                                    {
-                                        "pedido": pedido,
-                                        "resposta": resposta,
+                                resposta_id = resposta.get("id")
+                                if resposta_id is not None:
+                                    resposta_para_pedido[resposta_id] = pedido
+                                proc_art_id = resposta.get("processo_artigo_id") or resposta.get("artigo_id")
+                                chave_artigo = str(proc_art_id or f"artigo_{resposta_id}")
+                                artigo_relacionado = None
+                                if proc_art_id:
+                                    for artigo in artigos_pedido:
+                                        if artigo.get("processo_artigo_id") == proc_art_id or artigo.get("id") == proc_art_id:
+                                            artigo_relacionado = artigo
+                                            break
+                                if not artigo_relacionado:
+                                    artigo_relacionado = {
+                                        "artigo_num": resposta.get("artigo_id"),
+                                        "descricao": resposta.get("descricao_original")
+                                        or resposta.get("descricao"),
+                                        "quantidade": resposta.get("quantidade_original")
+                                        or resposta.get("quantidade_final"),
+                                        "unidade": "",
                                     }
+                                grupo = respostas_por_artigo.setdefault(
+                                    chave_artigo,
+                                    {
+                                        "processo_artigo_id": proc_art_id,
+                                        "artigo_num": artigo_relacionado.get("artigo_num"),
+                                        "descricao": artigo_relacionado.get("descricao")
+                                        or resposta.get("descricao_original")
+                                        or resposta.get("descricao"),
+                                        "quantidade": artigo_relacionado.get("quantidade"),
+                                        "unidade": artigo_relacionado.get("unidade"),
+                                        "opcoes": [],
+                                    },
+                                )
+                                grupo["opcoes"].append({"pedido": pedido, "resposta": resposta})
+
+                        if respostas_por_artigo:
+                            respostas_destacadas: list[int] = []
+                            primeiro_pedido: dict | None = None
+
+                            for idx, (chave_artigo, dados_artigo) in enumerate(respostas_por_artigo.items(), start=1):
+                                opcoes_artigo = dados_artigo.get("opcoes", [])
+                                if not opcoes_artigo:
+                                    continue
+
+                                resposta_ids = [
+                                    opcao.get("resposta", {}).get("id")
+                                    for opcao in opcoes_artigo
+                                    if opcao.get("resposta", {}).get("id") is not None
+                                ]
+                                if not resposta_ids:
+                                    continue
+
+                                descricao_artigo = limitar_descricao_artigo(
+                                    dados_artigo.get("descricao") or "",
+                                    max_linhas=1,
+                                ) or "Artigo"
+                                numero_artigo = dados_artigo.get("artigo_num") or ""
+                                quantidade_artigo = dados_artigo.get("quantidade")
+                                unidade_artigo = dados_artigo.get("unidade") or ""
+
+                                detalhes = []
+                                if numero_artigo:
+                                    detalhes.append(f"Artigo {numero_artigo}")
+                                if descricao_artigo:
+                                    detalhes.append(descricao_artigo)
+                                if quantidade_artigo not in (None, ""):
+                                    unidade_txt = f" {unidade_artigo}" if unidade_artigo else ""
+                                    detalhes.append(f"Qtd: {quantidade_artigo}{unidade_txt}")
+
+                                titulo_artigo = " • ".join(detalhes) or f"Artigo #{idx}"
+
+                                def _format_resposta(resposta_id: int, opcoes=opcoes_artigo) -> str:
+                                    for opcao in opcoes:
+                                        resposta_item = opcao.get("resposta", {})
+                                        if resposta_item.get("id") != resposta_id:
+                                            continue
+                                        pedido_item = opcao.get("pedido") or {}
+                                        fornecedor = (
+                                            pedido_item.get("fornecedor")
+                                            or resposta_item.get("fornecedor_nome")
+                                            or "Fornecedor"
+                                        )
+                                        referencia = pedido_item.get("referencia") or "—"
+                                        quantidade = (
+                                            resposta_item.get("quantidade_final")
+                                            or resposta_item.get("quantidade_original")
+                                            or "—"
+                                        )
+                                        preco_venda = resposta_item.get("preco_venda") or 0
+                                        moeda = resposta_item.get("moeda") or "EUR"
+                                        resumo_preco = (
+                                            f" • P.V.: {preco_venda:.2f} {moeda}" if preco_venda else ""
+                                        )
+                                        prazo = resposta_item.get("prazo_entrega")
+                                        resumo_prazo = (
+                                            f" • Prazo: {prazo}d"
+                                            if prazo not in (None, "")
+                                            else ""
+                                        )
+                                        return (
+                                            f"{fornecedor} • Ref: {referencia}"
+                                            f" • Qtd: {quantidade}{resumo_preco}{resumo_prazo}"
+                                        )
+                                    return "Resposta"
+
+                                select_key = (
+                                    f"pc_cliente_select_{processo_escolhido.get('id')}_{chave_artigo}"
+                                )
+                                selecao_resposta = st.selectbox(
+                                    f"Resposta para {titulo_artigo}",
+                                    options=resposta_ids,
+                                    format_func=_format_resposta,
+                                    key=select_key,
                                 )
 
-                        if opcoes_resposta:
-                            indices_resposta = list(range(len(opcoes_resposta)))
+                                if selecao_resposta is not None:
+                                    respostas_destacadas.append(selecao_resposta)
+                                    if primeiro_pedido is None:
+                                        primeiro_pedido = resposta_para_pedido.get(
+                                            selecao_resposta,
+                                        )
 
-                            def _format_pedido(idx: int) -> str:
-                                item = opcoes_resposta[idx]
-                                pedido_item = item.get("pedido", {})
-                                resposta_item = item.get("resposta", {})
-
-                                fornecedor = pedido_item.get("fornecedor") or "Fornecedor"
-                                referencia = pedido_item.get("referencia") or "—"
-                                descricao = (resposta_item.get("descricao") or "Artigo").strip()
-                                descricao = descricao.replace("\n", " ")
-                                descricao_curta = descricao[:70]
-                                quantidade = (
-                                    resposta_item.get("quantidade_final")
-                                    or resposta_item.get("quantidade_original")
-                                    or "—"
-                                )
-                                preco_venda = resposta_item.get("preco_venda") or 0
-                                moeda = resposta_item.get("moeda") or "EUR"
-
-                                resumo_preco = (
-                                    f" • P.V.: {preco_venda:.2f} {moeda}"
-                                    if preco_venda
-                                    else ""
-                                )
-                                return (
-                                    f"{fornecedor} • Ref: {referencia}"
-                                    f" • Artigo: {descricao_curta}"
-                                    f" • Qtd: {quantidade}{resumo_preco}"
-                                )
-
-                            selecao_cliente = st.selectbox(
-                                "Selecionar pedido respondido por artigo",
-                                options=indices_resposta,
-                                format_func=_format_pedido,
-                                key=f"pc_cliente_select_{processo_escolhido.get('id')}",
-                            )
+                            respostas_destacadas = list(dict.fromkeys(respostas_destacadas))
 
                             col_criar, _ = st.columns([1, 5])
                             with col_criar:
@@ -5603,9 +5696,7 @@ elif menu_option == "📩 Responder Cotações":
                                     "💰 Criar Cotação Cliente",
                                     key=f"pc_cliente_{processo_escolhido.get('id')}",
                                 ):
-                                    opcao_sel = opcoes_resposta[selecao_cliente]
-                                    pedido_sel = opcao_sel.get("pedido", {})
-                                    resposta_sel = opcao_sel.get("resposta")
+                                    pedido_sel = primeiro_pedido or (pedidos_com_resposta[0] if pedidos_com_resposta else {})
                                     criar_cotacao_cliente_dialog(
                                         pedido_sel.get("id"),
                                         processo_info.get("numero"),
@@ -5613,7 +5704,7 @@ elif menu_option == "📩 Responder Cotações":
                                         pedido_sel.get("nome_solicitante")
                                         or pedido_sel.get("cliente"),
                                         pedido_sel.get("email_solicitante"),
-                                        resposta_destacada=(resposta_sel or {}).get("id"),
+                                        respostas_destacadas=respostas_destacadas,
                                     )
                         else:
                             st.info(
@@ -6449,8 +6540,9 @@ elif menu_option == "⚙️ Configurações":
                     valor_ssl = provider_defaults[provider_guess].get("use_ssl", False)
                 st.session_state[ssl_key] = bool(valor_ssl)
 
-            def _atualizar_por_provider() -> None:
-                selecao = st.session_state.get(provider_key, "Personalizado")
+            provider_prev_key = f"{provider_key}_prev"
+
+            def _aplicar_por_provider(selecao: str) -> None:
                 defaults = provider_defaults.get(selecao, {})
                 if defaults.get("server"):
                     st.session_state[server_key] = defaults["server"]
@@ -6461,12 +6553,19 @@ elif menu_option == "⚙️ Configurações":
                 if "use_ssl" in defaults:
                     st.session_state[ssl_key] = defaults["use_ssl"]
 
+            selecao_atual = st.session_state.get(provider_key, provider_guess)
+            ultima_selecao = st.session_state.get(provider_prev_key)
+            if ultima_selecao is None:
+                st.session_state[provider_prev_key] = selecao_atual
+            elif selecao_atual != ultima_selecao:
+                _aplicar_por_provider(selecao_atual)
+                st.session_state[provider_prev_key] = selecao_atual
+
             with st.form("config_email_form"):
                 provider = st.selectbox(
                     "Fornecedor SMTP",
                     list(provider_defaults.keys()),
                     key=provider_key,
-                    on_change=_atualizar_por_provider,
                     help="Selecione um fornecedor comum ou mantenha 'Personalizado' para definir valores próprios.",
                 )
 
