@@ -1313,6 +1313,32 @@ def obter_respostas_cotacao(rfq_id):
     return respostas
 
 
+def obter_respostas_processo(processo_id):
+    """Obter respostas registadas em todas as RFQs de um processo."""
+
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id FROM rfq WHERE processo_id = ?",
+        (processo_id,),
+    )
+    rfq_ids = [row[0] for row in c.fetchall()]
+    conn.close()
+
+    respostas: dict[int, dict] = {}
+    for rfq_id in rfq_ids:
+        for resposta in obter_respostas_cotacao(rfq_id):
+            respostas.setdefault(resposta["id"], resposta)
+
+    return sorted(
+        respostas.values(),
+        key=lambda item: (
+            item.get("processo_artigo_id") or 10**6,
+            item.get("artigo_id") or 0,
+            item["id"],
+        ),
+    )
+
 def obter_respostas_por_processo(processo_id):
     """Agrega respostas de todos os fornecedores para um processo."""
 
@@ -1924,21 +1950,25 @@ def enviar_email_orcamento(
 def enviar_email_pedido_fornecedor(rfq_id):
     """Envia por email o PDF de pedido ao fornecedor associado à RFQ."""
     try:
-        # Buscar fornecedor (nome+email) e referência
+        # Buscar fornecedor (nome+email), referência e número de processo
         conn = obter_conexao()
         c = conn.cursor()
-        c.execute("""
-            SELECT f.nome, f.email, r.referencia
+        c.execute(
+            """
+            SELECT f.nome, f.email, r.referencia, COALESCE(p.numero, '')
             FROM rfq r
             JOIN fornecedor f ON r.fornecedor_id = f.id
+            LEFT JOIN processo p ON r.processo_id = p.id
             WHERE r.id = ?
-        """, (rfq_id,))
+            """,
+            (rfq_id,),
+        )
         row = c.fetchone()
         conn.close()
         if not row:
             st.warning("Fornecedor não encontrado para a RFQ.")
             return False
-        fornecedor_nome, fornecedor_email, referencia = row[0], row[1], row[2]
+        fornecedor_nome, fornecedor_email, referencia, numero_processo = row
         if not fornecedor_email:
             st.info("Fornecedor sem email definido — não foi enviado o pedido.")
             return False
@@ -1965,11 +1995,14 @@ def enviar_email_pedido_fornecedor(rfq_id):
             return False
 
         # Construir email
-        corpo = f"""Request for Quotation – {numero_cotacao}
+        referencia_interna = numero_processo or referencia
+        referencia_texto = referencia if referencia else '—'
+        processo_texto = numero_processo if numero_processo else '—'
+        corpo = f"""Request for Quotation – {referencia_interna}
 
 Dear {fornecedor_nome} Team,
 
-Please find attached our Request for Quotation (RFQ) for reference {referencia}.
+Please find attached our Request for Quotation (RFQ) for internal process {processo_texto} (Reference: {referencia_texto}).
 
 Kindly provide us with the following details:
 - Unit price
@@ -1983,12 +2016,16 @@ Thank you in advance for your prompt response.
 
 {nome_utilizador}
 """
+        assunto = f"Request for Quotation – {referencia_interna}"
+        pdf_nome = referencia_interna.replace('/', '-') if referencia_interna else referencia_texto
+        pdf_filename = f"pedido_{pdf_nome}.pdf" if pdf_nome else "pedido.pdf"
+
         send_email(
             fornecedor_email,
-            f"Request for Quotation – {referencia}",
+            assunto,
             corpo,
             pdf_bytes=pdf_bytes,
-            pdf_filename=f"pedido_{referencia}.pdf",
+            pdf_filename=pdf_filename,
             smtp_server=smtp_server,
             smtp_port=smtp_port,
             email_user=email_user,
@@ -3520,19 +3557,22 @@ def criar_cotacao_cliente_dialog(
     nome_cliente,
     email_cliente,
     respostas_destacadas: Iterable[int] | None = None,
+    processo_id: int | None = None,
 ):
-    respostas = obter_respostas_cotacao(rfq_id)
-
-    if not respostas:
-        st.info("Ainda não existem respostas registadas para esta cotação.")
-        return
-
     respostas_destacadas_ids = {
         int(resposta_id)
         for resposta_id in (respostas_destacadas or [])
         if resposta_id is not None
     }
 
+
+    respostas = obter_respostas_processo(processo_id) if processo_id else []
+    if not respostas:
+        respostas = obter_respostas_cotacao(rfq_id)
+
+    if not respostas:
+        st.info("Ainda não existem respostas registadas para esta cotação.")
+        return
     with st.form(f"cliente_form_{rfq_id}"):
         st.markdown(
             "Selecione os artigos a incluir na cotação do cliente. Os artigos não selecionados serão ignorados.")
@@ -5706,6 +5746,7 @@ elif menu_option == "📩 Responder Cotações":
                                         or pedido_sel.get("cliente"),
                                         pedido_sel.get("email_solicitante"),
                                         respostas_destacadas=respostas_destacadas,
+                                        processo_id=processo_escolhido.get("id"),
                                     )
                         else:
                             st.info(
