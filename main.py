@@ -3664,14 +3664,21 @@ def criar_cotacao_cliente_dialog(
 
         st.markdown('</div>', unsafe_allow_html=True)
 
-        enviar_email = False
+        enviar_email = bool(email_cliente)
         if email_cliente:
-            enviar_email = st.checkbox(
-                f"Enviar PDF automaticamente para {email_cliente}",
-                value=False,
-                key=f"cliente_email_{rfq_id}"
+            st.info(
+                f"O PDF será enviado automaticamente para {email_cliente} após a criação."
             )
-        submitted = st.form_submit_button("💰 Criar Cotação", type="primary")
+        else:
+            st.warning(
+                "Nenhum endereço de e-mail disponível para este cliente. A cotação será criada sem envio."
+            )
+        _, col_botao = st.columns([3, 1])
+        with col_botao:
+            submitted = st.form_submit_button(
+                "📧 Criar Cotação e Enviar E-mail",
+                type="primary",
+            )
 
     if not submitted:
         return
@@ -4213,7 +4220,7 @@ with st.sidebar:
         "🏠 Dashboard",
         "📝 Nova Cotação",
         "🤖 Smart Quotation",
-        "📩 Responder Cotações",
+        "📩 Process Center",
         "📊 Relatórios",
         "📄 PDFs",
         "📦 Artigos",
@@ -4736,6 +4743,7 @@ elif menu_option == "🤖 Smart Quotation":
                         key="smart_cliente_index",
                     )
                     artigos_guardados = st.session_state.get("smart_artigos", [])
+                    total_artigos = len(artigos_guardados)
                     for idx, _ in enumerate(artigos_guardados):
                         st.markdown(f"**Artigo {idx + 1}**")
                         descricao_key = f"smart_artigos_{idx}_descricao"
@@ -4795,6 +4803,9 @@ elif menu_option == "🤖 Smart Quotation":
                             height=140,
                             help="As quebras de linha serão mantidas na geração da cotação.",
                         )
+
+                        if idx < total_artigos - 1:
+                            st.markdown("---")
 
                     artigos_atualizados: list[dict[str, str]] = []
                     for idx in range(len(artigos_guardados)):
@@ -4971,8 +4982,8 @@ elif menu_option == "🤖 Smart Quotation":
                 texto = extrair_texto_pdf(pdf_bytes)
                 st.text_area("Texto extraído", value=texto, height=400)
 
-elif menu_option == "📩 Responder Cotações":
-    st.title("📩 Responder Cotações")
+elif menu_option == "📩 Process Center":
+    st.title("📩 Process Center")
 
     PAGE_SIZE = 10
     if "cotacoes_pend_page" not in st.session_state:
