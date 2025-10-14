@@ -5059,7 +5059,7 @@ elif menu_option == "📩 Process Center":
 
     with tab_pendentes:
         # Filtros
-        col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+        col1, col2, col3, col4 = st.columns([3, 2, 2, 1], vertical_alignment="bottom")
         with col1:
             filtro_ref_pend = st.text_input("🔍 Pesquisar por referência", placeholder="Referência...", key="filtro_pend")
         with col2:
@@ -5189,7 +5189,7 @@ elif menu_option == "📩 Process Center":
 
     with tab_respondidas:
         # Filtros
-        col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+        col1, col2, col3, col4 = st.columns([3, 2, 2, 1], vertical_alignment="bottom")
         with col1:
             filtro_ref_resp = st.text_input("🔍 Pesquisar por referência", placeholder="Referência...", key="filtro_resp")
         with col2:
@@ -5361,7 +5361,7 @@ elif menu_option == "📩 Process Center":
 
     with tab_arquivados:
         # Filtros
-        col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+        col1, col2, col3, col4 = st.columns([3, 2, 2, 1], vertical_alignment="bottom")
         with col1:
             filtro_ref_arq = st.text_input("🔍 Pesquisar por referência", placeholder="Referência...", key="filtro_arq")
         with col2:
@@ -5448,7 +5448,7 @@ elif menu_option == "📩 Process Center":
 
     with tab_process_center:
         with st.form("process_center_form"):
-            col_input, col_button = st.columns([6, 1])
+            col_input, col_button = st.columns([6, 1], vertical_alignment="bottom")
             with col_input:
                 termo_pesquisa = st.text_input(
                     "Processo ou referência",
