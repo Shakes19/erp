@@ -586,6 +586,7 @@ def criar_base_dados_completa():
             morada TEXT,
             nif TEXT,
             iban TEXT,
+            banco TEXT,
             telefone TEXT,
             email TEXT,
             website TEXT,
@@ -598,6 +599,7 @@ def criar_base_dados_completa():
     c.execute("PRAGMA table_info(configuracao_empresa)")
     cols = [row[1] for row in c.fetchall()]
     for col, col_type in [
+        ("banco", "TEXT"),
         ("telefone", "TEXT"),
         ("email", "TEXT"),
         ("website", "TEXT"),

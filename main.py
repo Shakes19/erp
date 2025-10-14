@@ -2331,31 +2331,17 @@ class InquiryPDF(FPDF):
         bank_cols = self.cfg.get(
             "bank_details",
             [
-                {"Bank": "Bank", "SWIFT/BIC": "ABCDEF", "IBAN / Account No.": "PT50 0000 0000 0000"},
+                {"Bank": "Bank", "IBAN": "PT50 0000 0000 0000 0000 0000 0"},
             ],
         )
-        legal_info = self.cfg.get(
-            "legal_info",
-            ["VAT ID: PT123", "EORI: PT123", "Registry: 123", "Managing Directors: N/A"],
-        )
+        legal_info = self.cfg.get("legal_info", ["VAT ID: PT123"])
         start_y = self.get_y()
         col_w = (self.w - 30) / (len(bank_cols) + 1)
         max_y = start_y
         for i, col in enumerate(bank_cols):
             x = 15 + i * col_w
             self.set_xy(x, start_y)
-            iban = col.get("IBAN / Account No.")
-            nif = col.get("NIF")
-            if iban and nif:
-                # IBAN and NIF on the same line
-                self.set_font("Helvetica", "B", 9)
-                self.cell(col_w, 4, "IBAN / Account No.", ln=1)
-                self.set_font("Helvetica", "", 9)
-                self.multi_cell(col_w, 4, f"{iban}   NIF: {nif}")
-                remaining_items = {k: v for k, v in col.items() if k not in ("IBAN / Account No.", "NIF")}
-            else:
-                remaining_items = col
-            for k, v in remaining_items.items():
+            for k, v in col.items():
                 self.set_font("Helvetica", "B", 9)
                 self.cell(col_w, 4, k, ln=1)
                 self.set_font("Helvetica", "", 9)
@@ -2868,12 +2854,14 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
                 linhas.append(email_user)
             config["company_lines"] = [l for l in linhas if l]
             bank = {}
+            if empresa.get("banco"):
+                bank["Bank"] = empresa["banco"]
             if empresa.get("iban"):
-                bank["IBAN / Account No."] = empresa["iban"]
-            if empresa.get("nif"):
-                bank["NIF"] = empresa["nif"]
+                bank["IBAN"] = empresa["iban"]
             if bank:
                 config["bank_details"] = [bank]
+            if empresa.get("nif"):
+                config["legal_info"] = [f"VAT ID: {empresa['nif']}"]
             if empresa.get("logo"):
                 config["logo_bytes"] = empresa["logo"]
 
@@ -3045,12 +3033,14 @@ def gerar_pdf_cliente(rfq_id):
                 linhas.append(rfq_data["user_email"])
             config["company_lines"] = [l for l in linhas if l]
             bank = {}
+            if empresa.get("banco"):
+                bank["Bank"] = empresa["banco"]
             if empresa.get("iban"):
-                bank["IBAN / Account No."] = empresa["iban"]
-            if empresa.get("nif"):
-                bank["NIF"] = empresa["nif"]
+                bank["IBAN"] = empresa["iban"]
             if bank:
                 config["bank_details"] = [bank]
+            if empresa.get("nif"):
+                config["legal_info"] = [f"VAT ID: {empresa['nif']}"]
             if empresa.get("logo"):
                 config["logo_bytes"] = empresa["logo"]
 
@@ -6754,7 +6744,7 @@ elif menu_option == "⚙️ Configurações":
             conn = obter_conexao()
             c = conn.cursor()
             c.execute(
-                "SELECT nome, morada, nif, iban, telefone, email, website, logo FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
+                "SELECT nome, morada, nif, iban, banco, telefone, email, website, logo FROM configuracao_empresa ORDER BY id DESC LIMIT 1"
             )
             dados = c.fetchone()
             conn.close()
@@ -6763,10 +6753,11 @@ elif menu_option == "⚙️ Configurações":
                 morada_emp = st.text_area("Morada", dados[1] if dados else "")
                 nif_emp = st.text_input("NIF", dados[2] if dados else "")
                 iban_emp = st.text_input("IBAN", dados[3] if dados else "")
-                telefone_emp = st.text_input("Telefone", dados[4] if dados else "")
-                email_emp = st.text_input("Email", dados[5] if dados else "")
-                website_emp = st.text_input("Website", dados[6] if dados else "")
-                logo_guardado = dados[7] if dados and len(dados) > 7 else None
+                banco_emp = st.text_input("Banco", dados[4] if dados else "")
+                telefone_emp = st.text_input("Telefone", dados[5] if dados else "")
+                email_emp = st.text_input("Email", dados[6] if dados else "")
+                website_emp = st.text_input("Website", dados[7] if dados else "")
+                logo_guardado = dados[8] if dados and len(dados) > 8 else None
                 logo_bytes = logo_guardado
                 logo_upload = st.file_uploader(
                     "Logo", type=["png", "jpg", "jpeg"], key="logo_empresa"
@@ -6783,8 +6774,18 @@ elif menu_option == "⚙️ Configurações":
                     c = conn.cursor()
                     c.execute("DELETE FROM configuracao_empresa")
                     c.execute(
-                        "INSERT INTO configuracao_empresa (nome, morada, nif, iban, telefone, email, website, logo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        (nome_emp, morada_emp, nif_emp, iban_emp, telefone_emp, email_emp, website_emp, logo_para_guardar),
+                        "INSERT INTO configuracao_empresa (nome, morada, nif, iban, banco, telefone, email, website, logo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            nome_emp,
+                            morada_emp,
+                            nif_emp,
+                            iban_emp,
+                            banco_emp,
+                            telefone_emp,
+                            email_emp,
+                            website_emp,
+                            logo_para_guardar,
+                        ),
                     )
                     conn.commit()
                     conn.close()
