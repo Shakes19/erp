@@ -3117,7 +3117,7 @@ def exibir_pdf(
             st.markdown(
                 textwrap.dedent(
                     f"""
-                    <div class="pdf-wrapper-default" style="border:1px solid #d9d9d9; border-radius:6px; background-color:#fff; padding:6px; min-height:{height}px;">
+                    <div class="pdf-wrapper-default" style="min-height:{height}px;">
                         {pdf_object}
                     </div>
                     """
@@ -3152,11 +3152,6 @@ def exibir_pdf(
                         min-height: min({height}px, {scrollable_height_css});
                         overflow-y: auto;
                         overflow-x: hidden;
-                        border: 1px solid #d9d9d9;
-                        border-radius: 6px;
-                        background-color: #fff;
-                        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-                        padding: 6px;
                     }}
                     #{container_id} .pdf-wrapper .embedded-pdf-object,
                     #{container_id} .pdf-wrapper .embedded-pdf-iframe {{
@@ -3187,7 +3182,7 @@ def exibir_pdf(
             st.markdown(
                 textwrap.dedent(
                     f"""
-                    <div class="pdf-wrapper-default" style="border:1px solid #d9d9d9; border-radius:6px; background-color:#fff; padding:6px; min-height:{height}px;">
+                    <div class="pdf-wrapper-default" style="min-height:{height}px;">
                         {pdf_object}
                     </div>
                     """
