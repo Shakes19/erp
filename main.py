@@ -3306,13 +3306,15 @@ def responder_cotacao_dialog(cotacao):
         [data-testid="stDialog"] > div > div {
             width: min(90vw, 75rem) !important;
             max-width: min(90vw, 75rem) !important;
+            max-height: 90vh;
             padding-top: 20px;
             min-width: 60rem;
+            overflow-y: auto;
         }
         /* Ensure form stretches to fill available space */
         [data-testid="stDialog"] form {
             width: 100%;
-            height: 100%;
+            min-height: 0;
         }
         [data-testid="stDialog"] [data-testid="stVerticalBlock"] > div {
             width: 100%;
