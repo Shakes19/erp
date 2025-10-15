@@ -103,100 +103,6 @@ st.set_page_config(
     layout="wide",
 )
 
-PDF_VIEWER_CSS = """
-<style>
-.pdf-wrapper-default {
-    display: flex;
-    flex-direction: column;
-    min-height: var(--pdf-min-height, 600px);
-}
-
-.pdf-wrapper-default .embedded-pdf-container {
-    flex: 1 1 auto;
-    display: flex;
-    min-height: var(--pdf-min-height, 600px);
-    height: var(--pdf-height, var(--pdf-min-height, 600px));
-}
-
-.pdf-wrapper-default .embedded-pdf-object,
-.pdf-wrapper-default .embedded-pdf-iframe {
-    width: 100%;
-    height: var(--pdf-height, var(--pdf-min-height, 600px));
-    min-height: var(--pdf-min-height, 600px);
-}
-
-.pdf-wrapper-default .embedded-pdf-object {
-    display: block;
-}
-
-.pdf-wrapper-default .embedded-pdf-iframe {
-    border: none;
-}
-
-.pdf-sticky-container {
-    position: -webkit-sticky;
-    position: sticky;
-    top: var(--pdf-sticky-top, 0px);
-    z-index: 2;
-    align-self: stretch;
-    width: 100%;
-}
-
-.pdf-sticky-container .pdf-title {
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-}
-
-.pdf-sticky-container .pdf-wrapper {
-    display: flex;
-    flex-direction: column;
-    height: var(--pdf-scroll-height, auto);
-    max-height: var(--pdf-scroll-height, auto);
-    min-height: var(--pdf-min-height, 600px);
-    overflow-y: auto;
-    overflow-x: hidden;
-}
-
-.pdf-sticky-container .embedded-pdf-container {
-    flex: 1 1 auto;
-    display: flex;
-    min-height: var(--pdf-min-height, 600px);
-    height: var(--pdf-height, var(--pdf-min-height, 600px));
-}
-
-.pdf-sticky-container .embedded-pdf-object,
-.pdf-sticky-container .embedded-pdf-iframe {
-    width: 100%;
-    height: var(--pdf-height, var(--pdf-min-height, 600px));
-    min-height: var(--pdf-min-height, 600px);
-}
-
-.pdf-sticky-container .embedded-pdf-object {
-    display: block;
-}
-
-.pdf-sticky-container .embedded-pdf-iframe {
-    border: none;
-}
-</style>
-"""
-
-
-@st.cache_resource(show_spinner=False)
-def ensure_sistema_inicializado() -> bool:
-    """Garantir que a base de dados está pronta antes de usar a aplicação."""
-
-    criar_base_dados_completa()
-    return True
-
-
-def ensure_pdf_viewer_styles() -> None:
-    """Injeta o CSS necessário para o viewer de PDF apenas uma vez."""
-
-    if not st.session_state.get("_pdf_viewer_css_loaded"):
-        st.markdown(PDF_VIEWER_CSS, unsafe_allow_html=True)
-        st.session_state["_pdf_viewer_css_loaded"] = True
-
 # ========================== GESTÃO DA BASE DE DADOS ==========================
 
 
@@ -236,9 +142,6 @@ def inserir_fornecedor(nome, email="", telefone="", morada="", nif=""):
             )
             conn.commit()
             listar_fornecedores.clear()
-            listar_todas_marcas.clear()
-            obter_fornecedores_por_marca.clear()
-            invalidate_cached_stats()
             return c.lastrowid
     finally:
         conn.close()
@@ -259,9 +162,6 @@ def atualizar_fornecedor(fornecedor_id, nome, email="", telefone="", morada="", 
         )
         conn.commit()
         listar_fornecedores.clear()
-        listar_todas_marcas.clear()
-        obter_fornecedores_por_marca.clear()
-        invalidate_cached_stats()
         return True
     except Exception:
         return False
@@ -276,9 +176,6 @@ def eliminar_fornecedor_db(fornecedor_id):
     c.execute("DELETE FROM fornecedor WHERE id = ?", (fornecedor_id,))
     conn.commit()
     listar_fornecedores.clear()
-    listar_todas_marcas.clear()
-    obter_fornecedores_por_marca.clear()
-    invalidate_cached_stats()
     removidos = c.rowcount
     conn.close()
     return removidos > 0
@@ -323,8 +220,6 @@ def adicionar_marca_fornecedor(fornecedor_id, marca):
             (fornecedor_id, marca_limpa),
         )
         conn.commit()
-        listar_todas_marcas.clear()
-        obter_fornecedores_por_marca.clear()
         return True
     except Exception:
         return False
@@ -349,16 +244,11 @@ def remover_marca_fornecedor(fornecedor_id, marca):
     conn.commit()
     rows_affected = c.rowcount
     conn.close()
-    if rows_affected:
-        listar_todas_marcas.clear()
-        obter_fornecedores_por_marca.clear()
     return rows_affected > 0
 
 
-@st.cache_data(show_spinner=False, ttl=120)
 def listar_todas_marcas():
-    """Obter todas as marcas disponíveis."""
-
+    """Obter todas as marcas disponíveis"""
     rows = fetch_all(
         """
         SELECT DISTINCT TRIM(marca)
@@ -370,28 +260,32 @@ def listar_todas_marcas():
     return [row[0] for row in rows if row[0]]
 
 
-@st.cache_data(show_spinner=False, ttl=120)
 def obter_fornecedores_por_marca(marca):
-    """Retorna fornecedores (id, nome, email) associados à marca fornecida."""
+    """Retorna lista de fornecedores (id, nome, email) associados à marca."""
 
     marca_limpa = (marca or "").strip()
     if not marca_limpa:
         return []
 
+    marca_normalizada = marca_limpa.casefold()
+
     rows = fetch_all(
         """
-        SELECT f.id, f.nome, f.email
+        SELECT f.id, f.nome, f.email, TRIM(fm.marca)
         FROM fornecedor f
         JOIN fornecedor_marca fm ON f.id = fm.fornecedor_id
-        WHERE fm.marca IS NOT NULL
-          AND TRIM(fm.marca) != ''
-          AND PYCASEFOLD(TRIM(fm.marca)) = PYCASEFOLD(?)
+        WHERE fm.marca IS NOT NULL AND TRIM(fm.marca) != ''
         ORDER BY f.nome
-        """,
-        (marca_limpa,),
+        """
     )
 
-    return [(row[0], row[1], row[2]) for row in rows]
+    fornecedores: list[tuple] = []
+    for fornecedor_id, nome, email, marca_db in rows:
+        marca_bd_limpa = (marca_db or "").strip()
+        if marca_bd_limpa.casefold() == marca_normalizada:
+            fornecedores.append((fornecedor_id, nome, email))
+
+    return fornecedores
 
 
 def referencia_cliente_existe(referencia: str, cliente_id: int | None = None) -> bool:
@@ -1024,7 +918,6 @@ def criar_rfq(
         # Enviar pedido por email ao fornecedor
         enviar_email_pedido_fornecedor(rfq_id)
 
-        invalidate_cached_stats()
         return rfq_id, numero_processo, processo_id, processo_artigos
     except Exception as e:
         conn.rollback()
@@ -1203,7 +1096,6 @@ def eliminar_cotacao(rfq_id):
         c.execute("DELETE FROM pdf_storage WHERE rfq_id = ?", (str(rfq_id),))
         c.execute("DELETE FROM rfq WHERE id = ?", (rfq_id,))
         conn.commit()
-        invalidate_cached_stats()
         return True
     except Exception as e:
         conn.rollback()
@@ -1221,7 +1113,6 @@ def arquivar_cotacao(rfq_id):
     try:
         c.execute("UPDATE rfq SET estado = 'arquivada' WHERE id = ?", (rfq_id,))
         conn.commit()
-        invalidate_cached_stats()
         return True
     except Exception as e:
         conn.rollback()
@@ -1361,7 +1252,6 @@ def guardar_respostas(
         }
 
         conn.commit()
-        invalidate_cached_stats()
 
         return True, {
             "processo_id": processo_id,
@@ -2176,11 +2066,10 @@ def guardar_pdf_uploads(rfq_id, tipo_pdf_base, ficheiros):
                 VALUES (?, ?, ?, ?, ?)
                 """,
                 (str(rfq_id), tipo_pdf, bytes_, len(bytes_), nome_ficheiro),
-        )
+            )
 
         conn.commit()
         conn.close()
-        invalidate_cached_stats()
         return True
     except Exception as e:
         st.error(f"Erro a guardar PDF: {e}")
@@ -3003,8 +2892,6 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
         conn.commit()
         conn.close()
 
-        invalidate_cached_stats()
-
         return pdf_bytes
     except Exception as e:
         st.error(f"Erro ao gerar PDF: {str(e)}")
@@ -3190,9 +3077,8 @@ def gerar_pdf_cliente(rfq_id):
                       tamanho_bytes = excluded.tamanho_bytes""",
             (str(rfq_id), "cliente", pdf_bytes, len(pdf_bytes)),
         )
-
+        
         conn.commit()
-        invalidate_cached_stats()
         return True
 
     except Exception as e:
@@ -3205,7 +3091,7 @@ def exibir_pdf(
     label,
     data_pdf,
     *,
-    height: int = 900,
+    height: int = 600,
     expanded: bool = False,
     use_expander: bool = True,
     sticky: bool = False,
@@ -3216,78 +3102,93 @@ def exibir_pdf(
         st.warning("PDF não disponível")
         return
 
-    ensure_pdf_viewer_styles()
-
     b64 = base64.b64encode(data_pdf).decode()
 
     pdf_object = textwrap.dedent(
         f"""
-        <div class="embedded-pdf-container">
-            <object class="embedded-pdf-object" data="data:application/pdf;base64,{b64}" type="application/pdf">
-                <iframe class="embedded-pdf-iframe" src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}#zoom=page-width"></iframe>
-            </object>
-        </div>
+        <object class="embedded-pdf-object" data="data:application/pdf;base64,{b64}" type="application/pdf" style="width:100%; min-height:{height}px;">
+            <iframe class="embedded-pdf-iframe" src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}" style="width:100%; min-height:{height}px; border:none;"></iframe>
+        </object>
         """
     ).strip()
-
-    safe_height = max(height, 0)
-    wrapper_style = (
-        f"--pdf-min-height:{safe_height}px; "
-        f"--pdf-height:{safe_height}px;"
-    )
 
     if use_expander:
         with st.expander(label, expanded=expanded):
             st.markdown(
                 textwrap.dedent(
                     f"""
-                    <div class="pdf-wrapper-default" style="{wrapper_style}">
+                    <div class="pdf-wrapper-default" style="min-height:{height}px;">
                         {pdf_object}
                     </div>
                     """
                 ).strip(),
                 unsafe_allow_html=True,
             )
-        return
-
-    if sticky:
-        container_id = f"pdf-sticky-{uuid4().hex}"
-        sticky_offset = max(sticky_top, 0)
-        preferred_height_css = f"calc(100vh - {sticky_offset + 40}px)"
-        scrollable_height_css = f"clamp({safe_height}px, {preferred_height_css}, 100vh)"
-        container_style = (
-            f"--pdf-min-height:{safe_height}px; "
-            f"--pdf-height:{safe_height}px; "
-            f"--pdf-sticky-top:{sticky_offset}px; "
-            f"--pdf-scroll-height:{scrollable_height_css};"
-        )
-        st.markdown(
-            textwrap.dedent(
-                f"""
-                <div id="{container_id}" class="pdf-sticky-container" style="{container_style}">
-                    <div class="pdf-title">{label}</div>
-                    <div class="pdf-wrapper">
+    else:
+        if sticky:
+            container_id = f"pdf-sticky-{uuid4().hex}"
+            sticky_offset = max(sticky_top, 0)
+            scrollable_height_css = f"calc(100vh - {sticky_offset + 40}px)"
+            st.markdown(
+                textwrap.dedent(
+                    f"""
+                    <style>
+                    #{container_id} {{
+                        position: -webkit-sticky;
+                        position: sticky;
+                        top: {sticky_offset}px;
+                        z-index: 2;
+                        align-self: flex-start;
+                    }}
+                    #{container_id} .pdf-title {{
+                        font-weight: 600;
+                        margin-bottom: 0.5rem;
+                    }}
+                    #{container_id} .pdf-wrapper {{
+                        display: flex;
+                        flex-direction: column;
+                        height: min({scrollable_height_css}, 100vh);
+                        max-height: {scrollable_height_css};
+                        min-height: min({height}px, {scrollable_height_css});
+                        overflow-y: auto;
+                        overflow-x: hidden;
+                    }}
+                    #{container_id} .pdf-wrapper .embedded-pdf-object,
+                    #{container_id} .pdf-wrapper .embedded-pdf-iframe {{
+                        width: 100%;
+                        height: 100%;
+                        min-height: min({height}px, {scrollable_height_css});
+                    }}
+                    </style>
+                    """
+                ).strip(),
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                textwrap.dedent(
+                    f"""
+                    <div id="{container_id}">
+                        <div class="pdf-title">{label}</div>
+                        <div class="pdf-wrapper">
+                            {pdf_object}
+                        </div>
+                    </div>
+                    """
+                ).strip(),
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(f"**{label}**")
+            st.markdown(
+                textwrap.dedent(
+                    f"""
+                    <div class="pdf-wrapper-default" style="min-height:{height}px;">
                         {pdf_object}
                     </div>
-                </div>
-                """
-            ).strip(),
-            unsafe_allow_html=True,
-        )
-        return
-
-    st.markdown(f"**{label}**")
-    st.markdown(
-        textwrap.dedent(
-            f"""
-            <div class="pdf-wrapper-default" style="{wrapper_style}">
-                {pdf_object}
-            </div>
-            """
-        ).strip(),
-        unsafe_allow_html=True,
-    )
-
+                    """
+                ).strip(),
+                unsafe_allow_html=True,
+            )
 
 
 def reset_smart_quotation_state():
@@ -4080,86 +3981,121 @@ def extrair_dados_pdf(pdf_bytes):
 
 # ========================== FUNÇÕES DE UTILIDADE ==========================
 
-@st.cache_data(show_spinner=False, ttl=30)
-def obter_estatisticas_db(utilizador_id: int | None = None) -> dict[str, int]:
+def obter_estatisticas_db(utilizador_id: int | None = None):
     """Obter estatísticas da base de dados."""
 
-    conn: sqlite3.Connection | None = None
     try:
         conn = obter_conexao()
         c = conn.cursor()
-        c.execute(
-            """
-            WITH selected_rfq AS (
-                SELECT id, estado, fornecedor_id
-                FROM rfq
-                WHERE (? IS NULL OR utilizador_id = ?)
-            ),
-            selected_artigo AS (
-                SELECT a.id
-                FROM artigo a
-                JOIN selected_rfq r ON a.rfq_id = r.id
-            ),
-            selected_pdf AS (
-                SELECT p.id
-                FROM pdf_storage p
-                JOIN selected_rfq r ON r.id = CAST(p.rfq_id AS INTEGER)
-                WHERE p.tipo_pdf = 'cliente'
-            )
-            SELECT
-                COUNT(*) AS rfq_total,
-                COALESCE(SUM(CASE WHEN estado = 'pendente' THEN 1 ELSE 0 END), 0) AS rfq_pendentes,
-                COALESCE(SUM(CASE WHEN estado = 'respondido' THEN 1 ELSE 0 END), 0) AS rfq_respondidas,
-                COUNT(DISTINCT CASE WHEN fornecedor_id IS NOT NULL THEN fornecedor_id END) AS fornecedores_filtrados,
-                (SELECT COUNT(*) FROM fornecedor) AS fornecedores_total,
-                (SELECT COUNT(*) FROM artigo) AS artigos_total,
-                (SELECT COUNT(*) FROM pdf_storage WHERE tipo_pdf = 'cliente') AS pdfs_total,
-                (SELECT COUNT(*) FROM selected_artigo) AS artigos_filtrados,
-                (SELECT COUNT(*) FROM selected_pdf) AS pdfs_filtrados
-            FROM selected_rfq
-            """,
-            (utilizador_id, utilizador_id),
-        )
-        row = c.fetchone() or (0,) * 9
-        stats = {
-            "rfq": row[0] or 0,
-            "rfq_pendentes": row[1] or 0,
-            "rfq_respondidas": row[2] or 0,
-        }
+
+        stats: dict[str, int] = {}
+
+        # Contar registos principais
         if utilizador_id is None:
-            stats["fornecedor"] = row[4] or 0
-            stats["artigo"] = row[5] or 0
-            stats["pdfs_cliente"] = row[6] or 0
+            c.execute("SELECT COUNT(*) FROM rfq")
         else:
-            stats["fornecedor"] = row[3] or 0
-            stats["artigo"] = row[7] or 0
-            stats["pdfs_cliente"] = row[8] or 0
+            c.execute(
+                "SELECT COUNT(*) FROM rfq WHERE utilizador_id = ?",
+                (utilizador_id,),
+            )
+        stats["rfq"] = c.fetchone()[0]
+
+        if utilizador_id is None:
+            c.execute("SELECT COUNT(*) FROM fornecedor")
+            stats["fornecedor"] = c.fetchone()[0]
+        else:
+            c.execute(
+                """
+                SELECT COUNT(DISTINCT fornecedor_id)
+                FROM rfq
+                WHERE utilizador_id = ? AND fornecedor_id IS NOT NULL
+                """,
+                (utilizador_id,),
+            )
+            stats["fornecedor"] = c.fetchone()[0]
+
+        if utilizador_id is None:
+            c.execute("SELECT COUNT(*) FROM artigo")
+            stats["artigo"] = c.fetchone()[0]
+        else:
+            c.execute(
+                """
+                SELECT COUNT(*)
+                FROM artigo a
+                JOIN rfq r ON a.rfq_id = r.id
+                WHERE r.utilizador_id = ?
+                """,
+                (utilizador_id,),
+            )
+            stats["artigo"] = c.fetchone()[0]
+
+        if utilizador_id is None:
+            c.execute("SELECT COUNT(*) FROM rfq WHERE estado = 'pendente'")
+            stats["rfq_pendentes"] = c.fetchone()[0]
+        else:
+            c.execute(
+                "SELECT COUNT(*) FROM rfq WHERE estado = 'pendente' AND utilizador_id = ?",
+                (utilizador_id,),
+            )
+            stats["rfq_pendentes"] = c.fetchone()[0]
+
+        if utilizador_id is None:
+            c.execute("SELECT COUNT(*) FROM rfq WHERE estado = 'respondido'")
+            stats["rfq_respondidas"] = c.fetchone()[0]
+        else:
+            c.execute(
+                "SELECT COUNT(*) FROM rfq WHERE estado = 'respondido' AND utilizador_id = ?",
+                (utilizador_id,),
+            )
+            stats["rfq_respondidas"] = c.fetchone()[0]
+
+        if utilizador_id is None:
+            c.execute("SELECT COUNT(*) FROM pdf_storage WHERE tipo_pdf = 'cliente'")
+        else:
+            c.execute(
+                """
+                SELECT COUNT(*)
+                FROM pdf_storage
+                WHERE tipo_pdf = 'cliente'
+                  AND rfq_id IN (
+                      SELECT CAST(id AS TEXT)
+                      FROM rfq
+                      WHERE utilizador_id = ?
+                  )
+                """,
+                (utilizador_id,),
+            )
+        stats["pdfs_cliente"] = c.fetchone()[0]
+
+        conn.close()
         return stats
+
     except Exception as e:
         print(f"Erro ao obter estatísticas: {e}")
         return {}
-    finally:
-        if conn is not None:
-            conn.close()
-
-
-def invalidate_cached_stats() -> None:
-    """Limpa a cache de estatísticas para refletir alterações recentes."""
-
-    try:
-        obter_estatisticas_db.clear()
-    except AttributeError:
-        pass
-
 
 # ========================== INICIALIZAÇÃO DO SISTEMA ==========================
 
-ensure_sistema_inicializado()
-ensure_pdf_viewer_styles()
+def inicializar_sistema():
+    """Inicializar todo o sistema"""
+    print("Inicializando sistema myERP...")
+    
+    if criar_base_dados_completa():
+        print("✓ Base de dados inicializada")
+    else:
+        print("✗ Erro ao inicializar base de dados")
+    
+    stats = obter_estatisticas_db()
+    print(f"✓ Sistema inicializado com {stats.get('rfq', 0)} RFQs e {stats.get('fornecedor', 0)} fornecedores")
+    
+    return True
 
 # ========================== INTERFACE STREAMLIT ==========================
 
 # Inicializar session state
+if 'sistema_inicializado' not in st.session_state:
+    st.session_state.sistema_inicializado = inicializar_sistema()
+
 if 'artigos' not in st.session_state:
     st.session_state.artigos = [{
         "artigo_num": "",
