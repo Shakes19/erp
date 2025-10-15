@@ -3106,9 +3106,11 @@ def exibir_pdf(
 
     pdf_object = textwrap.dedent(
         f"""
-        <object class="embedded-pdf-object" data="data:application/pdf;base64,{b64}" type="application/pdf" style="width:100%; min-height:{height}px;">
-            <iframe class="embedded-pdf-iframe" src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}" style="width:100%; min-height:{height}px; border:none;"></iframe>
-        </object>
+        <div class="embedded-pdf-container">
+            <object class="embedded-pdf-object" data="data:application/pdf;base64,{b64}" type="application/pdf">
+                <iframe class="embedded-pdf-iframe" src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}"></iframe>
+            </object>
+        </div>
         """
     ).strip()
 
@@ -3120,6 +3122,21 @@ def exibir_pdf(
                     <div class="pdf-wrapper-default" style="min-height:{height}px;">
                         {pdf_object}
                     </div>
+                    <style>
+                    .pdf-wrapper-default .embedded-pdf-container {{
+                        min-height: {height}px;
+                        display: flex;
+                    }}
+                    .pdf-wrapper-default .embedded-pdf-object,
+                    .pdf-wrapper-default .embedded-pdf-iframe {{
+                        width: 100%;
+                        height: 100%;
+                        min-height: {height}px;
+                    }}
+                    .pdf-wrapper-default .embedded-pdf-iframe {{
+                        border: none;
+                    }}
+                    </style>
                     """
                 ).strip(),
                 unsafe_allow_html=True,
@@ -3128,7 +3145,8 @@ def exibir_pdf(
         if sticky:
             container_id = f"pdf-sticky-{uuid4().hex}"
             sticky_offset = max(sticky_top, 0)
-            scrollable_height_css = f"calc(100vh - {sticky_offset + 40}px)"
+            preferred_height_css = f"calc(100vh - {sticky_offset + 40}px)"
+            scrollable_height_css = f"clamp({height}px, {preferred_height_css}, 100vh)"
             st.markdown(
                 textwrap.dedent(
                     f"""
@@ -3147,17 +3165,27 @@ def exibir_pdf(
                     #{container_id} .pdf-wrapper {{
                         display: flex;
                         flex-direction: column;
-                        height: min({scrollable_height_css}, 100vh);
+                        height: {scrollable_height_css};
                         max-height: {scrollable_height_css};
-                        min-height: min({height}px, {scrollable_height_css});
+                        min-height: {height}px;
                         overflow-y: auto;
                         overflow-x: hidden;
+                    }}
+                    #{container_id} .pdf-wrapper .embedded-pdf-container {{
+                        flex: 1 1 auto;
+                        display: flex;
                     }}
                     #{container_id} .pdf-wrapper .embedded-pdf-object,
                     #{container_id} .pdf-wrapper .embedded-pdf-iframe {{
                         width: 100%;
                         height: 100%;
-                        min-height: min({height}px, {scrollable_height_css});
+                        min-height: {height}px;
+                    }}
+                    #{container_id} .pdf-wrapper .embedded-pdf-object {{
+                        flex: 1 1 auto;
+                    }}
+                    #{container_id} .embedded-pdf-iframe {{
+                        border: none;
                     }}
                     </style>
                     """
@@ -3185,6 +3213,21 @@ def exibir_pdf(
                     <div class="pdf-wrapper-default" style="min-height:{height}px;">
                         {pdf_object}
                     </div>
+                    <style>
+                    .pdf-wrapper-default .embedded-pdf-container {{
+                        min-height: {height}px;
+                        display: flex;
+                    }}
+                    .pdf-wrapper-default .embedded-pdf-object,
+                    .pdf-wrapper-default .embedded-pdf-iframe {{
+                        width: 100%;
+                        height: 100%;
+                        min-height: {height}px;
+                    }}
+                    .pdf-wrapper-default .embedded-pdf-iframe {{
+                        border: none;
+                    }}
+                    </style>
                     """
                 ).strip(),
                 unsafe_allow_html=True,
