@@ -29,6 +29,16 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
+def _py_casefold(value: object) -> str | None:
+    """SQLite helper that aplica ``str.casefold`` preservando ``NULL``."""
+
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value.casefold()
+    return str(value).casefold()
+
+
 @contextmanager
 def managed_cursor():
     """Provide a cursor with automatic connection cleanup."""
@@ -89,6 +99,7 @@ def get_connection():
     conn = engine.raw_connection()
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout = 5000")
+    conn.create_function("PYCASEFOLD", 1, _py_casefold)
     return conn
 
 
