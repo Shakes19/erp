@@ -69,6 +69,29 @@ def test_obter_fornecedores_por_marca_supports_unicode():
     assert any(f[0] == forn_id for f in fornecedores)
 
 
+def test_adicionar_marca_fornecedor_guarda_requisito():
+    forn_id = main.inserir_fornecedor("Fornecedor Requisito")
+    assert forn_id > 0
+
+    assert main.adicionar_marca_fornecedor(forn_id, "Marca Req", True) is True
+
+    conn = db.get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT necessita_pais_cliente_final
+              FROM fornecedor_marca
+             WHERE fornecedor_id = ? AND marca = ?
+            """,
+            (forn_id, "Marca Req"),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert row is not None
+    assert row[0] == 1
+
+
 def test_normalizar_quebras_linha_preserves_commas():
     texto = "Linha 1\r\nLinha 2, valor adicional\rLinha 3"
     esperado = "Linha 1\nLinha 2, valor adicional\nLinha 3"
