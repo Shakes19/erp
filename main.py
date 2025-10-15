@@ -115,12 +115,13 @@ PDF_VIEWER_CSS = """
     flex: 1 1 auto;
     display: flex;
     min-height: var(--pdf-min-height, 600px);
+    height: var(--pdf-height, var(--pdf-min-height, 600px));
 }
 
 .pdf-wrapper-default .embedded-pdf-object,
 .pdf-wrapper-default .embedded-pdf-iframe {
     width: 100%;
-    height: 100%;
+    height: var(--pdf-height, var(--pdf-min-height, 600px));
     min-height: var(--pdf-min-height, 600px);
 }
 
@@ -133,7 +134,8 @@ PDF_VIEWER_CSS = """
     position: sticky;
     top: var(--pdf-sticky-top, 0px);
     z-index: 2;
-    align-self: flex-start;
+    align-self: stretch;
+    width: 100%;
 }
 
 .pdf-sticky-container .pdf-title {
@@ -155,12 +157,13 @@ PDF_VIEWER_CSS = """
     flex: 1 1 auto;
     display: flex;
     min-height: var(--pdf-min-height, 600px);
+    height: var(--pdf-height, var(--pdf-min-height, 600px));
 }
 
 .pdf-sticky-container .embedded-pdf-object,
 .pdf-sticky-container .embedded-pdf-iframe {
     width: 100%;
-    height: 100%;
+    height: var(--pdf-height, var(--pdf-min-height, 600px));
     min-height: var(--pdf-min-height, 600px);
 }
 
@@ -3194,7 +3197,7 @@ def exibir_pdf(
     label,
     data_pdf,
     *,
-    height: int = 600,
+    height: int = 900,
     expanded: bool = False,
     use_expander: bool = True,
     sticky: bool = False,
@@ -3219,7 +3222,11 @@ def exibir_pdf(
         """
     ).strip()
 
-    wrapper_style = f"--pdf-min-height:{max(height, 0)}px;"
+    safe_height = max(height, 0)
+    wrapper_style = (
+        f"--pdf-min-height:{safe_height}px; "
+        f"--pdf-height:{safe_height}px;"
+    )
 
     if use_expander:
         with st.expander(label, expanded=expanded):
@@ -3239,9 +3246,10 @@ def exibir_pdf(
         container_id = f"pdf-sticky-{uuid4().hex}"
         sticky_offset = max(sticky_top, 0)
         preferred_height_css = f"calc(100vh - {sticky_offset + 40}px)"
-        scrollable_height_css = f"clamp({height}px, {preferred_height_css}, 100vh)"
+        scrollable_height_css = f"clamp({safe_height}px, {preferred_height_css}, 100vh)"
         container_style = (
-            f"--pdf-min-height:{max(height, 0)}px; "
+            f"--pdf-min-height:{safe_height}px; "
+            f"--pdf-height:{safe_height}px; "
             f"--pdf-sticky-top:{sticky_offset}px; "
             f"--pdf-scroll-height:{scrollable_height_css};"
         )
