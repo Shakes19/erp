@@ -266,11 +266,19 @@ def criar_base_dados_completa():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             fornecedor_id INTEGER NOT NULL,
             marca TEXT NOT NULL,
+            necessita_pais_cliente_final INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
             UNIQUE(fornecedor_id, marca)
         )
         """
     )
+
+    c.execute("PRAGMA table_info(fornecedor_marca)")
+    fornecedor_marca_cols = [row[1] for row in c.fetchall()]
+    if "necessita_pais_cliente_final" not in fornecedor_marca_cols:
+        c.execute(
+            "ALTER TABLE fornecedor_marca ADD COLUMN necessita_pais_cliente_final INTEGER NOT NULL DEFAULT 0"
+        )
 
     # Tabela de processos
     c.execute(

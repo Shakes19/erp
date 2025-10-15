@@ -181,19 +181,39 @@ def eliminar_fornecedor_db(fornecedor_id):
     return removidos > 0
 
 def obter_marcas_fornecedor(fornecedor_id):
-    """Obter marcas associadas a um fornecedor"""
+    """Obter marcas associadas a um fornecedor."""
+
     rows = fetch_all(
         """
-        SELECT TRIM(marca) FROM fornecedor_marca
+        SELECT TRIM(marca) AS marca,
+               COALESCE(necessita_pais_cliente_final, 0) AS necessita_pais_cliente_final
+        FROM fornecedor_marca
         WHERE fornecedor_id = ?
-        AND marca IS NOT NULL
+          AND marca IS NOT NULL
         ORDER BY TRIM(marca)
         """,
         (fornecedor_id,),
     )
-    return [row[0] for row in rows if row[0]]
 
-def adicionar_marca_fornecedor(fornecedor_id, marca):
+    marcas = []
+    for row in rows:
+        if not row:
+            continue
+        marca_nome = row[0]
+        if not marca_nome:
+            continue
+        marcas.append(
+            {
+                "nome": marca_nome,
+                "necessita_pais_cliente_final": bool(row[1]) if len(row) > 1 else False,
+            }
+        )
+
+    return marcas
+
+def adicionar_marca_fornecedor(
+    fornecedor_id, marca, necessita_pais_cliente_final: bool = False
+):
     """Adicionar marca a um fornecedor"""
     marca_limpa = (marca or "").strip()
     if not marca_limpa:
@@ -214,10 +234,14 @@ def adicionar_marca_fornecedor(fornecedor_id, marca):
 
         c.execute(
             """
-            INSERT INTO fornecedor_marca (fornecedor_id, marca)
-            VALUES (?, ?)
+            INSERT INTO fornecedor_marca (
+                fornecedor_id,
+                marca,
+                necessita_pais_cliente_final
+            )
+            VALUES (?, ?, ?)
             """,
-            (fornecedor_id, marca_limpa),
+            (fornecedor_id, marca_limpa, 1 if necessita_pais_cliente_final else 0),
         )
         conn.commit()
         return True
@@ -245,6 +269,36 @@ def remover_marca_fornecedor(fornecedor_id, marca):
     rows_affected = c.rowcount
     conn.close()
     return rows_affected > 0
+
+
+def atualizar_requisito_marca(
+    fornecedor_id: int, marca: str, necessita_pais_cliente_final: bool
+) -> bool:
+    """Atualiza o requisito de país/cliente final para uma marca específica."""
+
+    marca_limpa = (marca or "").strip()
+    if not marca_limpa:
+        return False
+
+    conn = obter_conexao()
+    try:
+        c = conn.cursor()
+        c.execute(
+            """
+            UPDATE fornecedor_marca
+               SET necessita_pais_cliente_final = ?
+             WHERE fornecedor_id = ?
+               AND TRIM(marca) = ?
+            """,
+            (1 if necessita_pais_cliente_final else 0, fornecedor_id, marca_limpa),
+        )
+        conn.commit()
+        return c.rowcount > 0
+    except sqlite3.Error:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
 
 
 def listar_todas_marcas():
@@ -5706,7 +5760,7 @@ elif menu_option == "📩 Process Center":
 
                                 descricao_artigo = limitar_descricao_artigo(
                                     dados_artigo.get("descricao") or "",
-                                    max_linhas=1,
+                                    max_linhas=2,
                                 ) or "Artigo"
                                 numero_artigo = dados_artigo.get("artigo_num") or ""
                                 quantidade_artigo = dados_artigo.get("quantidade")
@@ -5921,9 +5975,17 @@ elif menu_option == "📊 Relatórios":
                     
                     marcas = obter_marcas_fornecedor(fornecedor_sel[0])
                     if marcas:
-                        for marca in marcas:
-                            margem = obter_margem_para_marca(fornecedor_sel[0], marca)
-                            st.write(f"**{marca}**: {margem:.1f}%")
+                        for marca_info in marcas:
+                            nome_marca = marca_info.get("nome", "")
+                            if not nome_marca:
+                                continue
+                            margem = obter_margem_para_marca(fornecedor_sel[0], nome_marca)
+                            requisito_txt = (
+                                " • Requer País e Cliente Final"
+                                if marca_info.get("necessita_pais_cliente_final")
+                                else ""
+                            )
+                            st.write(f"**{nome_marca}**: {margem:.1f}%{requisito_txt}")
                     else:
                         st.info("Nenhuma marca configurada")
                 
@@ -6295,7 +6357,20 @@ elif menu_option == "⚙️ Configurações":
                                             st.error("Erro ao eliminar fornecedor")
 
                             marcas = obter_marcas_fornecedor(forn[0])
-                            st.write(f"**Marcas:** {', '.join(marcas) if marcas else 'Nenhuma'}")
+                            if marcas:
+                                nomes_marcas = []
+                                for info in marcas:
+                                    nome = info.get("nome", "").strip()
+                                    if not nome:
+                                        continue
+                                    if info.get("necessita_pais_cliente_final"):
+                                        nome = f"{nome} (requer País/Cliente Final)"
+                                    nomes_marcas.append(nome)
+                                st.write(
+                                    f"**Marcas:** {', '.join(nomes_marcas) if nomes_marcas else 'Nenhuma'}"
+                                )
+                            else:
+                                st.write("**Marcas:** Nenhuma")
 
             with sub_tab_marcas:
                 st.subheader("Configuração de Marcas e Margens")
@@ -6317,6 +6392,13 @@ elif menu_option == "⚙️ Configurações":
                             st.markdown("### Adicionar Marca")
                             with st.form("add_marca_form"):
                                 nova_marca = st.text_input("Nome da Marca")
+                                necessita_pais_cliente_final = st.checkbox(
+                                    "Requer País e Cliente Final?",
+                                    help=(
+                                        "Selecione quando esta marca exige país e cliente final "
+                                        "para dar seguimento ao processo."
+                                    ),
+                                )
                                 margem_marca = st.number_input(
                                     "Margem (%)",
                                     min_value=0.0,
@@ -6327,7 +6409,11 @@ elif menu_option == "⚙️ Configurações":
 
                                 if st.form_submit_button("➕ Adicionar Marca"):
                                     if nova_marca:
-                                        if adicionar_marca_fornecedor(fornecedor_sel[0], nova_marca):
+                                        if adicionar_marca_fornecedor(
+                                            fornecedor_sel[0],
+                                            nova_marca,
+                                            necessita_pais_cliente_final,
+                                        ):
                                             configurar_margem_marca(fornecedor_sel[0], nova_marca, margem_marca)
                                             st.success(f"Marca {nova_marca} adicionada!")
                                             st.rerun()
@@ -6339,17 +6425,37 @@ elif menu_option == "⚙️ Configurações":
                             marcas = obter_marcas_fornecedor(fornecedor_sel[0])
 
                             if marcas:
-                                for marca in marcas:
-                                    margem = obter_margem_para_marca(fornecedor_sel[0], marca)
+                                for info in marcas:
+                                    nome_marca = info.get("nome", "").strip()
+                                    if not nome_marca:
+                                        continue
+                                    margem = obter_margem_para_marca(
+                                        fornecedor_sel[0], nome_marca
+                                    )
+                                    requisito_atual = bool(
+                                        info.get("necessita_pais_cliente_final")
+                                    )
+                                    titulo_expander = f"{nome_marca} - {margem:.1f}%"
+                                    if requisito_atual:
+                                        titulo_expander += " • Requer País/Cliente Final"
 
-                                    with st.expander(f"{marca} - {margem:.1f}%"):
+                                    with st.expander(titulo_expander):
                                         nova_margem = st.number_input(
                                             "Nova Margem (%)",
                                             min_value=0.0,
                                             max_value=100.0,
                                             value=margem,
                                             step=0.5,
-                                            key=f"margem_{fornecedor_sel[0]}_{marca}"
+                                            key=f"margem_{fornecedor_sel[0]}_{nome_marca}"
+                                        )
+                                        novo_requisito = st.checkbox(
+                                            "Requer País e Cliente Final",
+                                            value=requisito_atual,
+                                            help=(
+                                                "Indique se esta marca exige país e cliente final para "
+                                                "dar seguimento."
+                                            ),
+                                            key=f"req_{fornecedor_sel[0]}_{nome_marca}"
                                         )
 
                                         col1, col2 = st.columns(2)
@@ -6359,10 +6465,44 @@ elif menu_option == "⚙️ Configurações":
                                                 "<div style='display:flex; justify-content:center;'>",
                                                 unsafe_allow_html=True,
                                             )
-                                            if st.button("💾 Atualizar", key=f"upd_{fornecedor_sel[0]}_{marca}"):
-                                                if configurar_margem_marca(fornecedor_sel[0], marca, nova_margem):
-                                                    st.success("Margem atualizada!")
-                                                    st.rerun()
+                                            if st.button(
+                                                "💾 Atualizar",
+                                                key=f"upd_{fornecedor_sel[0]}_{nome_marca}",
+                                            ):
+                                                margem_alterada = abs(nova_margem - margem) > 1e-6
+                                                requisito_alterado = novo_requisito != requisito_atual
+                                                if not (margem_alterada or requisito_alterado):
+                                                    st.info("Nenhuma alteração para guardar.")
+                                                else:
+                                                    sucesso = False
+                                                    erros = []
+                                                    if margem_alterada:
+                                                        if configurar_margem_marca(
+                                                            fornecedor_sel[0],
+                                                            nome_marca,
+                                                            nova_margem,
+                                                        ):
+                                                            sucesso = True
+                                                        else:
+                                                            erros.append("margem")
+                                                    if requisito_alterado:
+                                                        if atualizar_requisito_marca(
+                                                            fornecedor_sel[0],
+                                                            nome_marca,
+                                                            novo_requisito,
+                                                        ):
+                                                            sucesso = True
+                                                        else:
+                                                            erros.append("requisito de país/cliente final")
+
+                                                    if erros:
+                                                        st.error(
+                                                            "Não foi possível atualizar: "
+                                                            + ", ".join(erros)
+                                                        )
+                                                    if sucesso and not erros:
+                                                        st.success("Configurações atualizadas!")
+                                                        st.rerun()
                                             st.markdown("</div>", unsafe_allow_html=True)
 
                                         with col2:
@@ -6370,8 +6510,13 @@ elif menu_option == "⚙️ Configurações":
                                                 "<div style='display:flex; justify-content:center;'>",
                                                 unsafe_allow_html=True,
                                             )
-                                            if st.button("🗑️ Remover", key=f"del_{fornecedor_sel[0]}_{marca}"):
-                                                if remover_marca_fornecedor(fornecedor_sel[0], marca):
+                                            if st.button(
+                                                "🗑️ Remover",
+                                                key=f"del_{fornecedor_sel[0]}_{nome_marca}"
+                                            ):
+                                                if remover_marca_fornecedor(
+                                                    fornecedor_sel[0], nome_marca
+                                                ):
                                                     st.success("Marca removida!")
                                                     st.rerun()
                                             st.markdown("</div>", unsafe_allow_html=True)
