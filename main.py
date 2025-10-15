@@ -34,6 +34,7 @@ from db import (
     fetch_one,
 )
 from services.pdf_service import (
+    ensure_latin1,
     load_pdf_config,
     save_pdf_config,
     obter_config_empresa,
@@ -2140,24 +2141,6 @@ class InquiryPDF(FPDF):
     #  Helpers
     # ------------------------------------------------------------------
     @staticmethod
-    def _safe_text(value: str | int | float | None) -> str:
-        """Return ``value`` coerced to a latin-1 safe string.
-
-        ``fpdf`` internamente utiliza Latin-1 para representar texto. Quando
-        recebe caracteres fora desse intervalo (ex.: travessões “–”) lança
-        ``UnicodeEncodeError`` no momento em que tentamos escrever no PDF.
-        Ao codificar e decodificar com ``errors='replace'`` substituímos os
-        caracteres problemáticos por um marcador visual sem interromper a
-        geração do ficheiro.
-        """
-
-        if value is None:
-            text = ""
-        else:
-            text = str(value)
-        return text.encode("latin-1", errors="replace").decode("latin-1")
-
-    @staticmethod
     def _merge_cfg(source, default):
         if not isinstance(default, dict):
             return source if source is not None else default
@@ -2211,7 +2194,7 @@ class InquiryPDF(FPDF):
         return super().cell(
             w,
             h,
-            self._safe_text(txt),
+            ensure_latin1(txt),
             border,
             ln,
             align,
@@ -2223,7 +2206,7 @@ class InquiryPDF(FPDF):
         return super().multi_cell(
             w,
             h,
-            self._safe_text(txt),
+            ensure_latin1(txt),
             border,
             align,
             fill,
@@ -2409,7 +2392,7 @@ class InquiryPDF(FPDF):
             return [texto or ""]
 
         linhas_resultado: list[str] = []
-        texto_normalizado = self._safe_text(texto)
+        texto_normalizado = ensure_latin1(texto)
 
         for linha_original in texto_normalizado.split("\n"):
             linha = linha_original.strip()

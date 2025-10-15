@@ -11,14 +11,20 @@ from db import fetch_one
 import extract_msg
 
 
-def _safe_text(value: str | None) -> str:
-    """Return text compatible with the Latin-1 encoding used by ``fpdf``."""
+def ensure_latin1(value: str | int | float | None) -> str:
+    """Return ``value`` coerced to a latin-1 safe string for ``fpdf``."""
 
     if value is None:
         text = ""
     else:
         text = str(value)
     return text.encode("latin-1", errors="replace").decode("latin-1")
+
+
+def _safe_text(value: str | None) -> str:
+    """Backward compatible wrapper retained for older imports."""
+
+    return ensure_latin1(value)
 
 @st.cache_data(show_spinner=False)
 def load_pdf_config(tipo):
@@ -91,7 +97,7 @@ def converter_eml_para_pdf(eml_bytes: bytes) -> bytes:
         "",
     ]
     for line in header_lines:
-        pdf.multi_cell(0, 10, _safe_text(line))
+        pdf.multi_cell(0, 10, ensure_latin1(line))
 
     body = ""
     if message.is_multipart():
@@ -100,7 +106,7 @@ def converter_eml_para_pdf(eml_bytes: bytes) -> bytes:
                 body += part.get_content()
     else:
         body = message.get_content()
-    pdf.multi_cell(0, 10, _safe_text(body.strip()))
+    pdf.multi_cell(0, 10, ensure_latin1(body.strip()))
     # ``fpdf`` produz saída em texto Latin-1. Alguns emails podem conter
     # caracteres fora desse intervalo (por exemplo, travessões “–”). Ao
     # codificar com ``errors='replace'`` garantimos que o PDF é gerado sem
@@ -129,10 +135,10 @@ def converter_msg_para_pdf(msg_bytes: bytes) -> bytes:
             "",
         ]
         for line in header_lines:
-            pdf.multi_cell(0, 10, _safe_text(line))
+            pdf.multi_cell(0, 10, ensure_latin1(line))
 
         body = message.body or ""
-        pdf.multi_cell(0, 10, _safe_text(body.strip()))
+        pdf.multi_cell(0, 10, ensure_latin1(body.strip()))
         return pdf.output(dest="S").encode("latin-1", errors="replace")
     finally:
         try:
