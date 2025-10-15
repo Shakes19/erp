@@ -125,6 +125,10 @@ PDF_VIEWER_CSS = """
     min-height: var(--pdf-min-height, 600px);
 }
 
+.pdf-wrapper-default .embedded-pdf-object {
+    display: block;
+}
+
 .pdf-wrapper-default .embedded-pdf-iframe {
     border: none;
 }
@@ -165,6 +169,10 @@ PDF_VIEWER_CSS = """
     width: 100%;
     height: var(--pdf-height, var(--pdf-min-height, 600px));
     min-height: var(--pdf-min-height, 600px);
+}
+
+.pdf-sticky-container .embedded-pdf-object {
+    display: block;
 }
 
 .pdf-sticky-container .embedded-pdf-iframe {
@@ -3216,7 +3224,7 @@ def exibir_pdf(
         f"""
         <div class="embedded-pdf-container">
             <object class="embedded-pdf-object" data="data:application/pdf;base64,{b64}" type="application/pdf">
-                <iframe class="embedded-pdf-iframe" src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}"></iframe>
+                <iframe class="embedded-pdf-iframe" src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{b64}#zoom=page-width"></iframe>
             </object>
         </div>
         """
