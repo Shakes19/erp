@@ -699,6 +699,7 @@ def eliminar_cliente_db(cliente_id):
 
 # ========================== FUNÇÕES DE GESTÃO DE UTILIZADORES ==========================
 
+@st.cache_data(show_spinner=False)
 def listar_utilizadores():
     """Obter todos os utilizadores"""
     return fetch_all(
@@ -735,6 +736,7 @@ def inserir_utilizador(username, password, nome="", email="", role="user", email
             (username, hash_password(password), nome, email, role, email_password),
         )
         conn.commit()
+        listar_utilizadores.clear()
         return c.lastrowid
     except Exception:
         return None
@@ -763,6 +765,7 @@ def atualizar_utilizador(
             params,
         )
         conn.commit()
+        listar_utilizadores.clear()
         return True
     finally:
         conn.close()
@@ -776,6 +779,8 @@ def eliminar_utilizador(user_id):
     conn.commit()
     removed = c.rowcount
     conn.close()
+    if removed:
+        listar_utilizadores.clear()
     return removed > 0
 
 # ========================== FUNÇÕES DE GESTÃO DE RFQs ==========================
@@ -5095,6 +5100,16 @@ elif menu_option == "📩 Process Center":
     if "cotacoes_arq_page" not in st.session_state:
         st.session_state.cotacoes_arq_page = 0
 
+    fornecedores = listar_fornecedores()
+    fornecedor_options = {"Todos": None}
+    fornecedor_options.update({f[1]: f[0] for f in fornecedores})
+    fornecedor_option_labels = list(fornecedor_options.keys())
+
+    utilizadores = listar_utilizadores()
+    utilizador_options = {"Todos": None}
+    utilizador_options.update({(u[2] or u[1]): u[0] for u in utilizadores})
+    utilizador_option_labels = list(utilizador_options.keys())
+
     tab_process_center, tab_pendentes, tab_respondidas, tab_arquivados = st.tabs(
         ["Process Center", "Pendentes", "Respondidas", "Arquivados"]
     )
@@ -5105,23 +5120,25 @@ elif menu_option == "📩 Process Center":
         with col1:
             filtro_ref_pend = st.text_input("🔍 Pesquisar por referência", placeholder="Referência...", key="filtro_pend")
         with col2:
-            fornecedores = listar_fornecedores()
-            opcoes_forn = {"Todos": None}
-            opcoes_forn.update({f[1]: f[0] for f in fornecedores})
-            fornecedor_sel_pend = st.selectbox("Fornecedor", list(opcoes_forn.keys()), key="fornecedor_pend")
+            fornecedor_sel_pend = st.selectbox(
+                "Fornecedor",
+                fornecedor_option_labels,
+                key="fornecedor_pend",
+            )
         with col3:
-            utilizadores = listar_utilizadores()
-            opcoes_user = {"Todos": None}
-            opcoes_user.update({(u[2] or u[1]): u[0] for u in utilizadores})
-            utilizador_sel_pend = st.selectbox("Utilizador", list(opcoes_user.keys()), key="utilizador_pend")
+            utilizador_sel_pend = st.selectbox(
+                "Utilizador",
+                utilizador_option_labels,
+                key="utilizador_pend",
+            )
         with col4:
             st.markdown("<div style='display:flex;justify-content:center;'>", unsafe_allow_html=True)
             if st.button("🔄 Atualizar", key="refresh_pend"):
                 st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
-        fornecedor_id_pend = opcoes_forn[fornecedor_sel_pend]
-        utilizador_id_pend = opcoes_user[utilizador_sel_pend]
+        fornecedor_id_pend = fornecedor_options[fornecedor_sel_pend]
+        utilizador_id_pend = utilizador_options[utilizador_sel_pend]
 
         cotacoes_pendentes, total_pend = obter_todas_cotacoes(
             filtro_ref_pend,
@@ -5235,23 +5252,25 @@ elif menu_option == "📩 Process Center":
         with col1:
             filtro_ref_resp = st.text_input("🔍 Pesquisar por referência", placeholder="Referência...", key="filtro_resp")
         with col2:
-            fornecedores = listar_fornecedores()
-            opcoes_forn = {"Todos": None}
-            opcoes_forn.update({f[1]: f[0] for f in fornecedores})
-            fornecedor_sel_resp = st.selectbox("Fornecedor", list(opcoes_forn.keys()), key="fornecedor_resp")
+            fornecedor_sel_resp = st.selectbox(
+                "Fornecedor",
+                fornecedor_option_labels,
+                key="fornecedor_resp",
+            )
         with col3:
-            utilizadores = listar_utilizadores()
-            opcoes_user = {"Todos": None}
-            opcoes_user.update({(u[2] or u[1]): u[0] for u in utilizadores})
-            utilizador_sel_resp = st.selectbox("Utilizador", list(opcoes_user.keys()), key="utilizador_resp")
+            utilizador_sel_resp = st.selectbox(
+                "Utilizador",
+                utilizador_option_labels,
+                key="utilizador_resp",
+            )
         with col4:
             st.markdown("<div style='display:flex;justify-content:center;'>", unsafe_allow_html=True)
             if st.button("🔄 Atualizar", key="refresh_resp"):
                 st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
-        fornecedor_id_resp = opcoes_forn[fornecedor_sel_resp]
-        utilizador_id_resp = opcoes_user[utilizador_sel_resp]
+        fornecedor_id_resp = fornecedor_options[fornecedor_sel_resp]
+        utilizador_id_resp = utilizador_options[utilizador_sel_resp]
 
         cotacoes_respondidas, total_resp = obter_todas_cotacoes(
             filtro_ref_resp,
@@ -5407,23 +5426,25 @@ elif menu_option == "📩 Process Center":
         with col1:
             filtro_ref_arq = st.text_input("🔍 Pesquisar por referência", placeholder="Referência...", key="filtro_arq")
         with col2:
-            fornecedores = listar_fornecedores()
-            opcoes_forn = {"Todos": None}
-            opcoes_forn.update({f[1]: f[0] for f in fornecedores})
-            fornecedor_sel_arq = st.selectbox("Fornecedor", list(opcoes_forn.keys()), key="fornecedor_arq")
+            fornecedor_sel_arq = st.selectbox(
+                "Fornecedor",
+                fornecedor_option_labels,
+                key="fornecedor_arq",
+            )
         with col3:
-            utilizadores = listar_utilizadores()
-            opcoes_user = {"Todos": None}
-            opcoes_user.update({(u[2] or u[1]): u[0] for u in utilizadores})
-            utilizador_sel_arq = st.selectbox("Utilizador", list(opcoes_user.keys()), key="utilizador_arq")
+            utilizador_sel_arq = st.selectbox(
+                "Utilizador",
+                utilizador_option_labels,
+                key="utilizador_arq",
+            )
         with col4:
             st.markdown("<div style='display:flex;justify-content:center;'>", unsafe_allow_html=True)
             if st.button("🔄 Atualizar", key="refresh_arq"):
                 st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
-        fornecedor_id_arq = opcoes_forn[fornecedor_sel_arq]
-        utilizador_id_arq = opcoes_user[utilizador_sel_arq]
+        fornecedor_id_arq = fornecedor_options[fornecedor_sel_arq]
+        utilizador_id_arq = utilizador_options[utilizador_sel_arq]
 
         cotacoes_arq, total_arq = obter_todas_cotacoes(
             filtro_ref_arq,
