@@ -3687,7 +3687,13 @@ def reset_smart_quotation_state():
 def _clear_smart_pdf_upload() -> None:
     """Remove o ficheiro carregado no widget de Smart Quotation."""
 
-    if "smart_pdf" in st.session_state:
+    st.session_state["_smart_pdf_clear_requested"] = True
+
+
+def _apply_pending_smart_pdf_clear() -> None:
+    """Remove o ficheiro carregado quando existe pedido pendente de limpeza."""
+
+    if st.session_state.pop("_smart_pdf_clear_requested", False):
         st.session_state.pop("smart_pdf", None)
 
 
@@ -5143,6 +5149,8 @@ elif menu_option == "📝 Nova Cotação":
             mostrar_dialogo_requisitos_fornecedor("manual")
 
 elif menu_option == "🤖 Smart Quotation":
+    _apply_pending_smart_pdf_clear()
+
     st.title("🤖 Smart Quotation")
 
     unidades_padrao = ["Peças", "Metros", "KG", "Litros", "Caixas", "Paletes"]
