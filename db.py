@@ -215,10 +215,18 @@ def criar_base_dados_completa():
             telefone TEXT,
             morada TEXT,
             nif TEXT,
+            necessita_pais_cliente_final INTEGER NOT NULL DEFAULT 0,
             data_criacao TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
+
+    c.execute("PRAGMA table_info(fornecedor)")
+    fornecedor_cols = [row[1] for row in c.fetchall()]
+    if "necessita_pais_cliente_final" not in fornecedor_cols:
+        c.execute(
+            "ALTER TABLE fornecedor ADD COLUMN necessita_pais_cliente_final INTEGER NOT NULL DEFAULT 0"
+        )
 
     # Tabela de clientes (empresas)
     c.execute(
@@ -280,6 +288,18 @@ def criar_base_dados_completa():
             "ALTER TABLE fornecedor_marca ADD COLUMN necessita_pais_cliente_final INTEGER NOT NULL DEFAULT 0"
         )
 
+    c.execute(
+        """
+        UPDATE fornecedor
+           SET necessita_pais_cliente_final = 1
+         WHERE id IN (
+            SELECT DISTINCT fornecedor_id
+              FROM fornecedor_marca
+             WHERE necessita_pais_cliente_final = 1
+         )
+        """
+    )
+
     # Tabela de processos
     c.execute(
         """
@@ -296,6 +316,20 @@ def criar_base_dados_completa():
     # Tabela RFQ (pedidos enviados aos fornecedores)
     c.execute(
         """
+        CREATE TABLE IF NOT EXISTS utilizador (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            nome TEXT,
+            email TEXT,
+            role TEXT NOT NULL,
+            email_password TEXT
+        )
+        """
+    )
+
+    c.execute(
+        """
         CREATE TABLE IF NOT EXISTS rfq (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             processo_id INTEGER,
@@ -309,6 +343,8 @@ def criar_base_dados_completa():
             email_solicitante TEXT,
             telefone_solicitante TEXT,
             empresa_solicitante TEXT,
+            cliente_final_nome TEXT,
+            cliente_final_pais TEXT,
             data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
             data_atualizacao TEXT DEFAULT CURRENT_TIMESTAMP,
             utilizador_id INTEGER,
@@ -355,6 +391,8 @@ def criar_base_dados_completa():
                     email_solicitante TEXT,
                     telefone_solicitante TEXT,
                     empresa_solicitante TEXT,
+                    cliente_final_nome TEXT,
+                    cliente_final_pais TEXT,
                     data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
                     data_atualizacao TEXT DEFAULT CURRENT_TIMESTAMP,
                     utilizador_id INTEGER,
@@ -387,6 +425,8 @@ def criar_base_dados_completa():
                     "email_solicitante",
                     "telefone_solicitante",
                     "empresa_solicitante",
+                    "cliente_final_nome",
+                    "cliente_final_pais",
                     "data_criacao",
                     "data_atualizacao",
                     "utilizador_id",
@@ -411,6 +451,10 @@ def criar_base_dados_completa():
         c.execute("ALTER TABLE rfq ADD COLUMN processo_id INTEGER")
     if "cliente_id" not in rfq_columns:
         c.execute("ALTER TABLE rfq ADD COLUMN cliente_id INTEGER")
+    if "cliente_final_nome" not in rfq_columns:
+        c.execute("ALTER TABLE rfq ADD COLUMN cliente_final_nome TEXT")
+    if "cliente_final_pais" not in rfq_columns:
+        c.execute("ALTER TABLE rfq ADD COLUMN cliente_final_pais TEXT")
 
     # Tabela com artigos definidos ao nível de processo para permitir
     # reutilização entre múltiplos fornecedores na mesma cotação
