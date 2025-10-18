@@ -134,11 +134,46 @@ def listar_fornecedores():
     Resultados memorizados para reduzir acessos à base de dados quando o
     utilizador navega entre páginas.
     """
-    return fetch_all(
-        "SELECT id, nome, email, telefone, morada, nif FROM fornecedor ORDER BY nome"
+    rows = fetch_all(
+        """
+        SELECT id,
+               nome,
+               email,
+               telefone,
+               morada,
+               nif,
+               COALESCE(necessita_pais_cliente_final, 0) AS necessita_pais_cliente_final
+          FROM fornecedor
+         ORDER BY nome
+        """
     )
 
-def inserir_fornecedor(nome, email="", telefone="", morada="", nif=""):
+    fornecedores: list[tuple] = []
+    for row in rows:
+        if not row:
+            continue
+        fornecedores.append(
+            (
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+                row[5],
+                bool(row[6]) if len(row) > 6 else False,
+            )
+        )
+
+    return fornecedores
+
+def inserir_fornecedor(
+    nome,
+    email="",
+    telefone="",
+    morada="",
+    nif="",
+    necessita_pais_cliente_final: bool = False,
+):
     """Inserir novo fornecedor"""
     conn = obter_conexao()
     c = conn.cursor()
@@ -153,10 +188,24 @@ def inserir_fornecedor(nome, email="", telefone="", morada="", nif=""):
         else:
             c.execute(
                 """
-                INSERT INTO fornecedor (nome, email, telefone, morada, nif)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO fornecedor (
+                    nome,
+                    email,
+                    telefone,
+                    morada,
+                    nif,
+                    necessita_pais_cliente_final
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (nome, email, telefone, morada, nif),
+                (
+                    nome,
+                    email,
+                    telefone,
+                    morada,
+                    nif,
+                    1 if necessita_pais_cliente_final else 0,
+                ),
             )
             conn.commit()
             listar_fornecedores.clear()
@@ -165,7 +214,15 @@ def inserir_fornecedor(nome, email="", telefone="", morada="", nif=""):
         conn.close()
 
 
-def atualizar_fornecedor(fornecedor_id, nome, email="", telefone="", morada="", nif=""):
+def atualizar_fornecedor(
+    fornecedor_id,
+    nome,
+    email="",
+    telefone="",
+    morada="",
+    nif="",
+    necessita_pais_cliente_final: bool = False,
+):
     """Atualizar dados de um fornecedor existente"""
     conn = obter_conexao()
     c = conn.cursor()
@@ -173,10 +230,18 @@ def atualizar_fornecedor(fornecedor_id, nome, email="", telefone="", morada="", 
         c.execute(
             """
             UPDATE fornecedor
-            SET nome = ?, email = ?, telefone = ?, morada = ?, nif = ?
+            SET nome = ?, email = ?, telefone = ?, morada = ?, nif = ?, necessita_pais_cliente_final = ?
             WHERE id = ?
             """,
-            (nome, email, telefone, morada, nif, fornecedor_id),
+            (
+                nome,
+                email,
+                telefone,
+                morada,
+                nif,
+                1 if necessita_pais_cliente_final else 0,
+                fornecedor_id,
+            ),
         )
         conn.commit()
         listar_fornecedores.clear()
@@ -203,8 +268,7 @@ def obter_marcas_fornecedor(fornecedor_id):
 
     rows = fetch_all(
         """
-        SELECT TRIM(marca) AS marca,
-               COALESCE(necessita_pais_cliente_final, 0) AS necessita_pais_cliente_final
+        SELECT TRIM(marca) AS marca
         FROM fornecedor_marca
         WHERE fornecedor_id = ?
           AND marca IS NOT NULL
@@ -220,18 +284,11 @@ def obter_marcas_fornecedor(fornecedor_id):
         marca_nome = row[0]
         if not marca_nome:
             continue
-        marcas.append(
-            {
-                "nome": marca_nome,
-                "necessita_pais_cliente_final": bool(row[1]) if len(row) > 1 else False,
-            }
-        )
+        marcas.append({"nome": marca_nome})
 
     return marcas
 
-def adicionar_marca_fornecedor(
-    fornecedor_id, marca, necessita_pais_cliente_final: bool = False
-):
+def adicionar_marca_fornecedor(fornecedor_id, marca):
     """Adicionar marca a um fornecedor"""
     marca_limpa = (marca or "").strip()
     if not marca_limpa:
@@ -254,12 +311,11 @@ def adicionar_marca_fornecedor(
             """
             INSERT INTO fornecedor_marca (
                 fornecedor_id,
-                marca,
-                necessita_pais_cliente_final
+                marca
             )
-            VALUES (?, ?, ?)
+            VALUES (?, ?)
             """,
-            (fornecedor_id, marca_limpa, 1 if necessita_pais_cliente_final else 0),
+            (fornecedor_id, marca_limpa),
         )
         conn.commit()
         return True
@@ -289,36 +345,6 @@ def remover_marca_fornecedor(fornecedor_id, marca):
     return rows_affected > 0
 
 
-def atualizar_requisito_marca(
-    fornecedor_id: int, marca: str, necessita_pais_cliente_final: bool
-) -> bool:
-    """Atualiza o requisito de país/cliente final para uma marca específica."""
-
-    marca_limpa = (marca or "").strip()
-    if not marca_limpa:
-        return False
-
-    conn = obter_conexao()
-    try:
-        c = conn.cursor()
-        c.execute(
-            """
-            UPDATE fornecedor_marca
-               SET necessita_pais_cliente_final = ?
-             WHERE fornecedor_id = ?
-               AND TRIM(marca) = ?
-            """,
-            (1 if necessita_pais_cliente_final else 0, fornecedor_id, marca_limpa),
-        )
-        conn.commit()
-        return c.rowcount > 0
-    except sqlite3.Error:
-        conn.rollback()
-        return False
-    finally:
-        conn.close()
-
-
 def listar_todas_marcas():
     """Obter todas as marcas disponíveis"""
     rows = fetch_all(
@@ -333,7 +359,7 @@ def listar_todas_marcas():
 
 
 def obter_fornecedores_por_marca(marca):
-    """Retorna lista de fornecedores (id, nome, email) associados à marca."""
+    """Retorna lista de fornecedores (id, nome, email, requer_dados) associados à marca."""
 
     marca_limpa = (marca or "").strip()
     if not marca_limpa:
@@ -343,7 +369,11 @@ def obter_fornecedores_por_marca(marca):
 
     rows = fetch_all(
         """
-        SELECT f.id, f.nome, f.email, TRIM(fm.marca)
+        SELECT f.id,
+               f.nome,
+               f.email,
+               TRIM(fm.marca),
+               COALESCE(f.necessita_pais_cliente_final, 0) AS necessita_pais_cliente_final
         FROM fornecedor f
         JOIN fornecedor_marca fm ON f.id = fm.fornecedor_id
         WHERE fm.marca IS NOT NULL AND TRIM(fm.marca) != ''
@@ -352,10 +382,10 @@ def obter_fornecedores_por_marca(marca):
     )
 
     fornecedores: list[tuple] = []
-    for fornecedor_id, nome, email, marca_db in rows:
+    for fornecedor_id, nome, email, marca_db, requer_dados in rows:
         marca_bd_limpa = (marca_db or "").strip()
         if marca_bd_limpa.casefold() == marca_normalizada:
-            fornecedores.append((fornecedor_id, nome, email))
+            fornecedores.append((fornecedor_id, nome, email, bool(requer_dados)))
 
     return fornecedores
 
@@ -387,6 +417,9 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
     cliente_id = contexto.get("cliente_id")
     origem = contexto.get("origem", "manual")
     artigos = contexto.get("artigos") or []
+    requisitos_fornecedores = copy.deepcopy(
+        contexto.get("requisitos_fornecedores") or {}
+    )
     if not forcar and referencia_cliente_existe(referencia, cliente_id):
         st.session_state["duplicated_ref_context"] = copy.deepcopy(contexto)
         st.session_state["show_duplicate_ref_dialog"] = True
@@ -431,6 +464,30 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
         st.error("Não foram encontrados fornecedores elegíveis para os artigos selecionados")
         return False
 
+    fornecedores_requer_dados: list[tuple[int, str]] = []
+    for fornecedor_id in fornecedores_map:
+        fornecedor_info = fornecedores_info.get(fornecedor_id)
+        requer_dados = bool(fornecedor_info[3]) if fornecedor_info and len(fornecedor_info) > 3 else False
+        if not requer_dados:
+            continue
+        dados_existentes = requisitos_fornecedores.get(fornecedor_id) or {}
+        cliente_final_val = (dados_existentes.get("cliente_final") or "").strip()
+        pais_val = (dados_existentes.get("pais") or "").strip()
+        if not cliente_final_val or not pais_val:
+            fornecedores_requer_dados.append((fornecedor_id, fornecedor_info[1]))
+
+    if fornecedores_requer_dados:
+        st.session_state["supplier_requirement_context"] = copy.deepcopy(contexto)
+        st.session_state["supplier_requirement_suppliers"] = [
+            {"id": fid, "nome": nome} for fid, nome in fornecedores_requer_dados
+        ]
+        st.session_state["supplier_requirement_data"] = copy.deepcopy(
+            requisitos_fornecedores
+        )
+        st.session_state["supplier_requirement_origin"] = origem
+        st.session_state["show_supplier_requirement_dialog"] = True
+        return False
+
     processo_id, numero_processo, processo_artigos = criar_processo_com_artigos(artigos)
     rfqs_criados: list[tuple[int, tuple]] = []
 
@@ -457,6 +514,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
             processo_id=processo_id,
             numero_processo=numero_processo,
             processo_artigos=processo_artigos,
+            requisitos_fornecedor=requisitos_fornecedores.get(fornecedor_id),
         )
 
         if rfq_id:
@@ -493,6 +551,16 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
         st.session_state.pop("duplicated_ref_context", None)
         st.session_state.pop("duplicated_ref_force", None)
         st.session_state["show_duplicate_ref_dialog"] = False
+
+        for key in (
+            "supplier_requirement_context",
+            "supplier_requirement_suppliers",
+            "supplier_requirement_data",
+            "supplier_requirement_ready",
+            "supplier_requirement_origin",
+            "show_supplier_requirement_dialog",
+        ):
+            st.session_state.pop(key, None)
 
         if origem == "manual":
             st.session_state.artigos = [
@@ -553,6 +621,86 @@ def mostrar_dialogo_referencia_duplicada(origem: str):
             st.session_state.pop("duplicated_ref_context", None)
             st.session_state.pop("duplicated_ref_force", None)
             st.session_state["show_duplicate_ref_dialog"] = False
+            st.rerun()
+
+    _dialogo()
+
+
+def mostrar_dialogo_requisitos_fornecedor(origem: str) -> None:
+    """Solicita país e cliente final antes do envio ao fornecedor."""
+
+    contexto = st.session_state.get("supplier_requirement_context")
+    if (
+        not contexto
+        or contexto.get("origem") != origem
+        or not st.session_state.get("show_supplier_requirement_dialog")
+    ):
+        return
+
+    fornecedores = st.session_state.get("supplier_requirement_suppliers") or []
+    dados_existentes = st.session_state.get("supplier_requirement_data") or {}
+
+    titulo_dialogo = "Informações obrigatórias para o fornecedor"
+
+    @st.dialog(titulo_dialogo)
+    def _dialogo():
+        st.info(
+            "Preencha os campos abaixo antes de enviar o pedido ao fornecedor."
+        )
+
+        entradas: list[tuple[int, str, str, str]] = []
+        for fornecedor_info in fornecedores:
+            fornecedor_id = fornecedor_info.get("id")
+            fornecedor_nome = (fornecedor_info.get("nome") or "Fornecedor").strip()
+            dados = dados_existentes.get(fornecedor_id) or {}
+            cliente_key = f"req_cliente_{origem}_{fornecedor_id}"
+            pais_key = f"req_pais_{origem}_{fornecedor_id}"
+
+            st.markdown(f"**{fornecedor_nome}**")
+            st.text_input(
+                "Cliente Final *",
+                value=dados.get("cliente_final", ""),
+                key=cliente_key,
+                help="Nome do cliente final associado ao pedido.",
+            )
+            st.text_input(
+                "País *",
+                value=dados.get("pais", ""),
+                key=pais_key,
+                help="País do cliente final.",
+            )
+            entradas.append((fornecedor_id, fornecedor_nome, cliente_key, pais_key))
+
+        col_ok, col_cancel = st.columns(2)
+
+        if col_ok.button("Confirmar e continuar"):
+            dados_confirmados: dict[int, dict[str, str]] = {}
+            em_falta: list[str] = []
+            for fornecedor_id, fornecedor_nome, cliente_key, pais_key in entradas:
+                cliente_val = (st.session_state.get(cliente_key) or "").strip()
+                pais_val = (st.session_state.get(pais_key) or "").strip()
+                if not cliente_val or not pais_val:
+                    em_falta.append(fornecedor_nome)
+                dados_confirmados[fornecedor_id] = {
+                    "cliente_final": cliente_val,
+                    "pais": pais_val,
+                }
+
+            if em_falta:
+                st.error("Preencha todos os campos obrigatórios para cada fornecedor.")
+            else:
+                st.session_state["supplier_requirement_data"] = dados_confirmados
+                st.session_state["supplier_requirement_ready"] = origem
+                st.session_state["show_supplier_requirement_dialog"] = False
+                st.rerun()
+
+        if col_cancel.button("Cancelar"):
+            st.session_state.pop("supplier_requirement_context", None)
+            st.session_state.pop("supplier_requirement_suppliers", None)
+            st.session_state.pop("supplier_requirement_data", None)
+            st.session_state.pop("supplier_requirement_ready", None)
+            st.session_state.pop("supplier_requirement_origin", None)
+            st.session_state["show_supplier_requirement_dialog"] = False
             st.rerun()
 
     _dialogo()
@@ -846,6 +994,7 @@ def criar_rfq(
     processo_id=None,
     numero_processo=None,
     processo_artigos=None,
+    requisitos_fornecedor: dict | None = None,
 ):
     """Criar nova RFQ"""
     conn = obter_conexao()
@@ -887,14 +1036,32 @@ def criar_rfq(
             if row:
                 nome_solicitante, email_solicitante, empresa_solicitante = row
 
+        dados_requisito = requisitos_fornecedor or {}
+        cliente_final_nome = (dados_requisito.get("cliente_final") or "").strip()
+        cliente_final_pais = (dados_requisito.get("pais") or "").strip()
+        cliente_final_nome_db = cliente_final_nome or None
+        cliente_final_pais_db = cliente_final_pais or None
+
         def _executar_insercao(conexao: sqlite3.Connection) -> int:
             cursor = conexao.cursor()
             if engine.dialect.name == "sqlite":
                 cursor.execute(
                     """
-                    INSERT INTO rfq (processo_id, fornecedor_id, cliente_id, data, referencia,
-                                   nome_solicitante, email_solicitante, empresa_solicitante, estado, utilizador_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendente', ?)
+                    INSERT INTO rfq (
+                        processo_id,
+                        fornecedor_id,
+                        cliente_id,
+                        data,
+                        referencia,
+                        nome_solicitante,
+                        email_solicitante,
+                        empresa_solicitante,
+                        estado,
+                        utilizador_id,
+                        cliente_final_nome,
+                        cliente_final_pais
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         processo_id,
@@ -905,16 +1072,31 @@ def criar_rfq(
                         nome_solicitante,
                         email_solicitante,
                         empresa_solicitante,
+                        "pendente",
                         utilizador_id,
+                        cliente_final_nome_db,
+                        cliente_final_pais_db,
                     ),
                 )
                 rfq_pk = cursor.lastrowid
             else:
                 cursor.execute(
                     """
-                    INSERT INTO rfq (processo_id, fornecedor_id, cliente_id, data, referencia,
-                                   nome_solicitante, email_solicitante, empresa_solicitante, estado, utilizador_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendente', ?) RETURNING id
+                    INSERT INTO rfq (
+                        processo_id,
+                        fornecedor_id,
+                        cliente_id,
+                        data,
+                        referencia,
+                        nome_solicitante,
+                        email_solicitante,
+                        empresa_solicitante,
+                        estado,
+                        utilizador_id,
+                        cliente_final_nome,
+                        cliente_final_pais
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
                     """,
                     (
                         processo_id,
@@ -925,7 +1107,10 @@ def criar_rfq(
                         nome_solicitante,
                         email_solicitante,
                         empresa_solicitante,
+                        "pendente",
                         utilizador_id,
+                        cliente_final_nome_db,
+                        cliente_final_pais_db,
                     ),
                 )
                 rfq_pk = cursor.fetchone()[0]
@@ -2039,7 +2224,12 @@ def enviar_email_pedido_fornecedor(rfq_id):
         c = conn.cursor()
         c.execute(
             """
-            SELECT f.nome, f.email, r.referencia, COALESCE(p.numero, '')
+            SELECT f.nome,
+                   f.email,
+                   r.referencia,
+                   COALESCE(p.numero, ''),
+                   r.cliente_final_nome,
+                   r.cliente_final_pais
             FROM rfq r
             JOIN fornecedor f ON r.fornecedor_id = f.id
             LEFT JOIN processo p ON r.processo_id = p.id
@@ -2052,7 +2242,14 @@ def enviar_email_pedido_fornecedor(rfq_id):
         if not row:
             st.warning("Fornecedor não encontrado para a RFQ.")
             return False
-        fornecedor_nome, fornecedor_email, referencia, numero_processo = row
+        (
+            fornecedor_nome,
+            fornecedor_email,
+            referencia,
+            numero_processo,
+            cliente_final_nome,
+            cliente_final_pais,
+        ) = row
         if not fornecedor_email:
             st.info("Fornecedor sem email definido — não foi enviado o pedido.")
             return False
@@ -2094,6 +2291,18 @@ Kindly provide us with the following details:
 - HS Code
 - Country of origin
 - Weight
+"""
+
+        detalhes_extra: list[str] = []
+        if cliente_final_nome:
+            detalhes_extra.append(f"- Final client: {cliente_final_nome}")
+        if cliente_final_pais:
+            detalhes_extra.append(f"- Final client country: {cliente_final_pais}")
+
+        if detalhes_extra:
+            corpo += "\nAdditional information provided:\n" + "\n".join(detalhes_extra) + "\n"
+
+        corpo += """
 
 We look forward to receiving your quotation.
 Thank you in advance for your prompt response.
@@ -4704,6 +4913,25 @@ elif menu_option == "📝 Nova Cotação":
         elif st.session_state.get("show_duplicate_ref_dialog"):
             mostrar_dialogo_referencia_duplicada("manual")
 
+    contexto_req_manual = st.session_state.get("supplier_requirement_context")
+    if contexto_req_manual and contexto_req_manual.get("origem") == "manual":
+        if st.session_state.get("supplier_requirement_ready") == "manual":
+            contexto_confirmado = st.session_state.pop("supplier_requirement_context", None)
+            dados_confirmados = copy.deepcopy(
+                st.session_state.get("supplier_requirement_data") or {}
+            )
+            st.session_state.pop("supplier_requirement_suppliers", None)
+            st.session_state.pop("supplier_requirement_data", None)
+            st.session_state.pop("supplier_requirement_ready", None)
+            st.session_state.pop("supplier_requirement_origin", None)
+            st.session_state.pop("show_supplier_requirement_dialog", None)
+            if contexto_confirmado:
+                contexto_confirmado = copy.deepcopy(contexto_confirmado)
+                contexto_confirmado["requisitos_fornecedores"] = dados_confirmados
+                processar_criacao_cotacoes(contexto_confirmado, forcar=True)
+        elif st.session_state.get("show_supplier_requirement_dialog"):
+            mostrar_dialogo_requisitos_fornecedor("manual")
+
 elif menu_option == "🤖 Smart Quotation":
     st.title("🤖 Smart Quotation")
 
@@ -5089,6 +5317,25 @@ elif menu_option == "🤖 Smart Quotation":
                 processar_criacao_cotacoes(contexto_confirmado, forcar=True)
         elif st.session_state.get("show_duplicate_ref_dialog"):
             mostrar_dialogo_referencia_duplicada("smart")
+
+    contexto_req_smart = st.session_state.get("supplier_requirement_context")
+    if contexto_req_smart and contexto_req_smart.get("origem") == "smart":
+        if st.session_state.get("supplier_requirement_ready") == "smart":
+            contexto_confirmado = st.session_state.pop("supplier_requirement_context", None)
+            dados_confirmados = copy.deepcopy(
+                st.session_state.get("supplier_requirement_data") or {}
+            )
+            st.session_state.pop("supplier_requirement_suppliers", None)
+            st.session_state.pop("supplier_requirement_data", None)
+            st.session_state.pop("supplier_requirement_ready", None)
+            st.session_state.pop("supplier_requirement_origin", None)
+            st.session_state.pop("show_supplier_requirement_dialog", None)
+            if contexto_confirmado:
+                contexto_confirmado = copy.deepcopy(contexto_confirmado)
+                contexto_confirmado["requisitos_fornecedores"] = dados_confirmados
+                processar_criacao_cotacoes(contexto_confirmado, forcar=True)
+        elif st.session_state.get("show_supplier_requirement_dialog"):
+            mostrar_dialogo_requisitos_fornecedor("smart")
 elif menu_option == "📩 Process Center":
     st.title("📩 Process Center")
 
@@ -6026,14 +6273,14 @@ elif menu_option == "📊 Relatórios":
                             if not nome_marca:
                                 continue
                             margem = obter_margem_para_marca(fornecedor_sel[0], nome_marca)
-                            requisito_txt = (
-                                " • Requer País e Cliente Final"
-                                if marca_info.get("necessita_pais_cliente_final")
-                                else ""
-                            )
-                            st.write(f"**{nome_marca}**: {margem:.1f}%{requisito_txt}")
+                            st.write(f"**{nome_marca}**: {margem:.1f}%")
                     else:
                         st.info("Nenhuma marca configurada")
+
+                    if len(fornecedor_sel) > 6 and fornecedor_sel[6]:
+                        st.caption(
+                            "Este fornecedor exige País e Cliente Final nas cotações."
+                        )
                 
                 conn.close()
         else:
@@ -6356,10 +6603,21 @@ elif menu_option == "⚙️ Configurações":
                         telefone = st.text_input("Telefone")
                         morada = st.text_area("Morada")
                         nif = st.text_input("NIF")
+                        requer_info = st.checkbox(
+                            "Requer País e Cliente Final?",
+                            help="Assinale quando este fornecedor exige estas informações em cada pedido.",
+                        )
 
                         if st.form_submit_button("➕ Adicionar"):
                             if nome:
-                                forn_id = inserir_fornecedor(nome, email, telefone, morada, nif)
+                                forn_id = inserir_fornecedor(
+                                    nome,
+                                    email,
+                                    telefone,
+                                    morada,
+                                    nif,
+                                    requer_info,
+                                )
                                 if forn_id:
                                     st.success(f"Fornecedor {nome} adicionado!")
                                     st.rerun()
@@ -6371,13 +6629,23 @@ elif menu_option == "⚙️ Configurações":
                     fornecedores = listar_fornecedores()
 
                     for forn in fornecedores:
-                        with st.expander(forn[1]):
+                        titulo_expander = forn[1]
+                        if len(forn) > 6 and forn[6]:
+                            titulo_expander += " • Requer País/Cliente Final"
+
+                        with st.expander(titulo_expander):
                             with st.form(f"edit_forn_{forn[0]}"):
                                 nome_edit = st.text_input("Nome", forn[1])
                                 email_edit = st.text_input("Email", forn[2] or "")
                                 telefone_edit = st.text_input("Telefone", forn[3] or "")
                                 morada_edit = st.text_area("Morada", forn[4] or "")
                                 nif_edit = st.text_input("NIF", forn[5] or "")
+                                requer_info_edit = st.checkbox(
+                                    "Requer País e Cliente Final?",
+                                    value=bool(forn[6]) if len(forn) > 6 else False,
+                                    key=f"forn_req_{forn[0]}",
+                                    help="Quando ativo, o sistema solicitará estes dados antes de enviar o pedido.",
+                                )
 
                                 col_a, col_b = st.columns(2)
                                 with col_a:
@@ -6389,6 +6657,7 @@ elif menu_option == "⚙️ Configurações":
                                             telefone_edit,
                                             morada_edit,
                                             nif_edit,
+                                            requer_info_edit,
                                         ):
                                             st.success("Fornecedor atualizado")
                                             st.rerun()
@@ -6404,14 +6673,11 @@ elif menu_option == "⚙️ Configurações":
 
                             marcas = obter_marcas_fornecedor(forn[0])
                             if marcas:
-                                nomes_marcas = []
-                                for info in marcas:
-                                    nome = info.get("nome", "").strip()
-                                    if not nome:
-                                        continue
-                                    if info.get("necessita_pais_cliente_final"):
-                                        nome = f"{nome} (requer País/Cliente Final)"
-                                    nomes_marcas.append(nome)
+                                nomes_marcas = [
+                                    (info.get("nome", "") or "").strip()
+                                    for info in marcas
+                                    if (info.get("nome") or "").strip()
+                                ]
                                 st.write(
                                     f"**Marcas:** {', '.join(nomes_marcas) if nomes_marcas else 'Nenhuma'}"
                                 )
@@ -6436,15 +6702,12 @@ elif menu_option == "⚙️ Configurações":
 
                         with col1:
                             st.markdown("### Adicionar Marca")
+                            if len(fornecedor_sel) > 6 and fornecedor_sel[6]:
+                                st.info(
+                                    "Este fornecedor exige País e Cliente Final nas cotações."
+                                )
                             with st.form("add_marca_form"):
                                 nova_marca = st.text_input("Nome da Marca")
-                                necessita_pais_cliente_final = st.checkbox(
-                                    "Requer País e Cliente Final?",
-                                    help=(
-                                        "Selecione quando esta marca exige país e cliente final "
-                                        "para dar seguimento ao processo."
-                                    ),
-                                )
                                 margem_marca = st.number_input(
                                     "Margem (%)",
                                     min_value=0.0,
@@ -6456,9 +6719,7 @@ elif menu_option == "⚙️ Configurações":
                                 if st.form_submit_button("➕ Adicionar Marca"):
                                     if nova_marca:
                                         if adicionar_marca_fornecedor(
-                                            fornecedor_sel[0],
-                                            nova_marca,
-                                            necessita_pais_cliente_final,
+                                            fornecedor_sel[0], nova_marca
                                         ):
                                             configurar_margem_marca(fornecedor_sel[0], nova_marca, margem_marca)
                                             st.success(f"Marca {nova_marca} adicionada!")
@@ -6478,12 +6739,7 @@ elif menu_option == "⚙️ Configurações":
                                     margem = obter_margem_para_marca(
                                         fornecedor_sel[0], nome_marca
                                     )
-                                    requisito_atual = bool(
-                                        info.get("necessita_pais_cliente_final")
-                                    )
                                     titulo_expander = f"{nome_marca} - {margem:.1f}%"
-                                    if requisito_atual:
-                                        titulo_expander += " • Requer País/Cliente Final"
 
                                     with st.expander(titulo_expander):
                                         nova_margem = st.number_input(
@@ -6493,15 +6749,6 @@ elif menu_option == "⚙️ Configurações":
                                             value=margem,
                                             step=0.5,
                                             key=f"margem_{fornecedor_sel[0]}_{nome_marca}"
-                                        )
-                                        novo_requisito = st.checkbox(
-                                            "Requer País e Cliente Final",
-                                            value=requisito_atual,
-                                            help=(
-                                                "Indique se esta marca exige país e cliente final para "
-                                                "dar seguimento."
-                                            ),
-                                            key=f"req_{fornecedor_sel[0]}_{nome_marca}"
                                         )
 
                                         col1, col2 = st.columns(2)
@@ -6516,39 +6763,18 @@ elif menu_option == "⚙️ Configurações":
                                                 key=f"upd_{fornecedor_sel[0]}_{nome_marca}",
                                             ):
                                                 margem_alterada = abs(nova_margem - margem) > 1e-6
-                                                requisito_alterado = novo_requisito != requisito_atual
-                                                if not (margem_alterada or requisito_alterado):
+                                                if not margem_alterada:
                                                     st.info("Nenhuma alteração para guardar.")
                                                 else:
-                                                    sucesso = False
-                                                    erros = []
-                                                    if margem_alterada:
-                                                        if configurar_margem_marca(
-                                                            fornecedor_sel[0],
-                                                            nome_marca,
-                                                            nova_margem,
-                                                        ):
-                                                            sucesso = True
-                                                        else:
-                                                            erros.append("margem")
-                                                    if requisito_alterado:
-                                                        if atualizar_requisito_marca(
-                                                            fornecedor_sel[0],
-                                                            nome_marca,
-                                                            novo_requisito,
-                                                        ):
-                                                            sucesso = True
-                                                        else:
-                                                            erros.append("requisito de país/cliente final")
-
-                                                    if erros:
-                                                        st.error(
-                                                            "Não foi possível atualizar: "
-                                                            + ", ".join(erros)
-                                                        )
-                                                    if sucesso and not erros:
-                                                        st.success("Configurações atualizadas!")
+                                                    if configurar_margem_marca(
+                                                        fornecedor_sel[0],
+                                                        nome_marca,
+                                                        nova_margem,
+                                                    ):
+                                                        st.success("Margem atualizada!")
                                                         st.rerun()
+                                                    else:
+                                                        st.error("Não foi possível atualizar a margem.")
                                             st.markdown("</div>", unsafe_allow_html=True)
 
                                         with col2:
