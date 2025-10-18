@@ -489,7 +489,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
         return False
 
     processo_id, numero_processo, processo_artigos = criar_processo_com_artigos(artigos)
-    rfqs_criados: list[tuple[int, tuple]] = []
+    rfqs_criados: list[tuple[int, tuple, dict]] = []
 
     for fornecedor_id, indices in fornecedores_map.items():
         artigos_fornecedor: list[dict] = []
@@ -505,7 +505,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
                 }
             )
 
-        rfq_id, _, _, _ = criar_rfq(
+        rfq_id, _, _, _, email_status = criar_rfq(
             fornecedor_id,
             data_cotacao,
             artigos_fornecedor,
@@ -518,7 +518,10 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
         )
 
         if rfq_id:
-            rfqs_criados.append((rfq_id, fornecedores_info[fornecedor_id]))
+            status_info = email_status or {}
+            fornecedor_info = fornecedores_info[fornecedor_id]
+            status_info.setdefault("fornecedor", fornecedor_info[1])
+            rfqs_criados.append((rfq_id, fornecedor_info, status_info))
             if anexos:
                 guardar_pdf_uploads(
                     rfq_id,
@@ -531,11 +534,11 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
             f"✅ Cotação {numero_processo} (Ref: {referencia}) criada para {len(rfqs_criados)} fornecedor(es)!"
         )
         st.markdown("**Fornecedores notificados:**")
-        for _, fornecedor in rfqs_criados:
+        for _, fornecedor, _ in rfqs_criados:
             st.write(f"• {fornecedor[1]}")
 
         pdf_resultados: list[dict[str, object]] = []
-        for rfq_id, fornecedor in rfqs_criados:
+        for rfq_id, fornecedor, _ in rfqs_criados:
             pdf_bytes = obter_pdf_da_db(rfq_id, "pedido")
             if not pdf_bytes:
                 continue
@@ -592,8 +595,17 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
             st.session_state["smart_success_data"] = {
                 "numero_processo": numero_processo,
                 "referencia": referencia,
-                "fornecedores": [fornecedor[1] for _, fornecedor in rfqs_criados],
+                "fornecedores": [fornecedor[1] for _, fornecedor, _ in rfqs_criados],
                 "pdfs": pdf_resultados,
+                "emails": [
+                    {
+                        "fornecedor": status.get("fornecedor") or fornecedor[1],
+                        "sucesso": bool(status.get("sucesso")),
+                        "mensagem": status.get("mensagem")
+                        or f"Email para {fornecedor[1]} não enviado.",
+                    }
+                    for _, fornecedor, status in rfqs_criados
+                ],
             }
             st.session_state["show_smart_success_dialog"] = True
             reset_smart_quotation_state()
@@ -735,6 +747,7 @@ def mostrar_dialogo_sucesso_smart() -> None:
     referencia = payload.get("referencia") or ""
     fornecedores = payload.get("fornecedores") or []
     pdfs = payload.get("pdfs") or []
+    emails = payload.get("emails") or []
 
     titulo = "Cotação criada"
 
@@ -748,18 +761,20 @@ def mostrar_dialogo_sucesso_smart() -> None:
             for nome in fornecedores:
                 st.write(f"• {nome}")
 
+        if emails:
+            st.markdown("**Estado do envio de emails:**")
+            for idx, info in enumerate(emails, 1):
+                mensagem = info.get("mensagem") or "Estado de envio indisponível."
+                if info.get("sucesso"):
+                    st.success(mensagem)
+                else:
+                    st.error(mensagem)
+
         for idx, info in enumerate(pdfs, 1):
             nome_pdf = info.get("fornecedor") or f"Fornecedor {idx}"
             pdf_bytes = info.get("pdf_bytes")
             if not pdf_bytes:
                 continue
-            exibir_pdf(
-                f"📄 {nome_pdf}",
-                pdf_bytes,
-                expanded=True,
-                use_expander=False,
-                height=500,
-            )
             st.download_button(
                 f"Download PDF - {nome_pdf}",
                 data=pdf_bytes,
@@ -1248,17 +1263,17 @@ def criar_rfq(
         # Gerar PDF
         gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos)
         # Enviar pedido por email ao fornecedor
-        enviar_email_pedido_fornecedor(rfq_id)
+        envio_email = enviar_email_pedido_fornecedor(rfq_id)
 
         invalidate_overview_caches()
-        return rfq_id, numero_processo, processo_id, processo_artigos
+        return rfq_id, numero_processo, processo_id, processo_artigos, envio_email
     except Exception as e:
         conn.rollback()
         if "UNIQUE" in str(e).upper():
             st.error("Erro ao criar RFQ: referência já existente.")
         else:
             st.error(f"Erro ao criar RFQ: {str(e)}")
-        return None, None, None, None
+        return None, None, None, None, None
     finally:
         conn.close()
 
@@ -2287,7 +2302,17 @@ def enviar_email_orcamento(
 
 
 def enviar_email_pedido_fornecedor(rfq_id):
-    """Envia por email o PDF de pedido ao fornecedor associado à RFQ."""
+    """Envia por email o PDF de pedido ao fornecedor associado à RFQ.
+
+    Retorna um dicionário com o estado do envio e uma mensagem legível.
+    """
+
+    resultado = {
+        "sucesso": False,
+        "mensagem": "",
+        "fornecedor": "",
+    }
+
     try:
         # Buscar fornecedor (nome+email), referência e número de processo
         conn = obter_conexao()
@@ -2310,8 +2335,11 @@ def enviar_email_pedido_fornecedor(rfq_id):
         row = c.fetchone()
         conn.close()
         if not row:
-            st.warning("Fornecedor não encontrado para a RFQ.")
-            return False
+            mensagem = "Fornecedor não encontrado para a RFQ."
+            resultado["mensagem"] = mensagem
+            st.warning(mensagem)
+            return resultado
+
         (
             fornecedor_nome,
             fornecedor_email,
@@ -2320,15 +2348,25 @@ def enviar_email_pedido_fornecedor(rfq_id):
             cliente_final_nome,
             cliente_final_pais,
         ) = row
+        resultado["fornecedor"] = fornecedor_nome or ""
+
         if not fornecedor_email:
+            mensagem = (
+                f"Email para {fornecedor_nome} não enviado: fornecedor sem email definido."
+            )
+            resultado["mensagem"] = mensagem
             st.info("Fornecedor sem email definido — não foi enviado o pedido.")
-            return False
+            return resultado
 
         # Obter PDF do pedido
         pdf_bytes = obter_pdf_da_db(rfq_id, "pedido")
         if not pdf_bytes:
+            mensagem = (
+                f"Email para {fornecedor_nome} não enviado: PDF do pedido indisponível."
+            )
+            resultado["mensagem"] = mensagem
             st.error("PDF do pedido não encontrado para envio ao fornecedor.")
-            return False
+            return resultado
 
         config_email = get_system_email_config()
         smtp_server = config_email["server"]
@@ -2340,10 +2378,14 @@ def enviar_email_pedido_fornecedor(rfq_id):
             email_password = current_user[6]
             nome_utilizador = current_user[3]
         else:
+            mensagem = (
+                f"Email para {fornecedor_nome} não enviado: configure o email do utilizador."
+            )
+            resultado["mensagem"] = mensagem
             st.error(
                 "Configure o seu email e palavra-passe no perfil."
             )
-            return False
+            return resultado
 
         # Construir email
         referencia_interna = numero_processo or referencia
@@ -2394,10 +2436,15 @@ Thank you in advance for your prompt response.
             email_user=email_user,
             email_password=email_password,
         )
-        return True
+
+        mensagem = f"Email para {fornecedor_nome} enviado com sucesso."
+        resultado.update({"sucesso": True, "mensagem": mensagem})
+        return resultado
     except Exception as e:
+        mensagem = f"Email para {resultado['fornecedor'] or 'fornecedor'} não enviado: {e}".strip()
+        resultado["mensagem"] = mensagem
         st.error(f"Falha ao enviar email ao fornecedor: {e}")
-        return False
+        return resultado
 
 def guardar_pdf_uploads(rfq_id, tipo_pdf_base, ficheiros):
     """Guardar múltiplos PDFs carregados pelo utilizador na tabela ``pdf_storage``."""
