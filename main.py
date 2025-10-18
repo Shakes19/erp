@@ -473,7 +473,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
         dados_existentes = requisitos_fornecedores.get(fornecedor_id) or {}
         cliente_final_val = (dados_existentes.get("cliente_final") or "").strip()
         pais_val = (dados_existentes.get("pais") or "").strip()
-        if not cliente_final_val or not pais_val:
+        if not pais_val:
             fornecedores_requer_dados.append((fornecedor_id, fornecedor_info[1]))
 
     if fornecedores_requer_dados:
@@ -534,18 +534,24 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
         for _, fornecedor in rfqs_criados:
             st.write(f"• {fornecedor[1]}")
 
-        download_prefix = "download_pdf_" if origem == "manual" else "smart_pdf_"
-        download_label_tpl = "📄 PDF - {nome}" if origem == "manual" else "📄 Download PDF - {nome}"
-
+        pdf_resultados: list[dict[str, object]] = []
         for rfq_id, fornecedor in rfqs_criados:
             pdf_bytes = obter_pdf_da_db(rfq_id, "pedido")
-            if pdf_bytes:
+            if not pdf_bytes:
+                continue
+            pdf_info = {
+                "rfq_id": rfq_id,
+                "fornecedor": fornecedor[1],
+                "pdf_bytes": pdf_bytes,
+            }
+            pdf_resultados.append(pdf_info)
+            if origem == "manual":
                 st.download_button(
-                    download_label_tpl.format(nome=fornecedor[1]),
+                    f"📄 PDF - {fornecedor[1]}",
                     data=pdf_bytes,
                     file_name=f"cotacao_{numero_processo}_{fornecedor[1].replace(' ', '_')}.pdf",
                     mime="application/pdf",
-                    key=f"{download_prefix}{rfq_id}",
+                    key=f"download_pdf_{rfq_id}",
                 )
 
         st.session_state.pop("duplicated_ref_context", None)
@@ -580,6 +586,18 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
                     if key.startswith(prefix):
                         st.session_state.pop(key, None)
                         break
+            st.rerun()
+
+        else:
+            st.session_state["smart_success_data"] = {
+                "numero_processo": numero_processo,
+                "referencia": referencia,
+                "fornecedores": [fornecedor[1] for _, fornecedor in rfqs_criados],
+                "pdfs": pdf_resultados,
+            }
+            st.session_state["show_smart_success_dialog"] = True
+            reset_smart_quotation_state()
+            st.session_state.pop("smart_pdf", None)
             st.rerun()
 
         return True
@@ -645,7 +663,7 @@ def mostrar_dialogo_requisitos_fornecedor(origem: str) -> None:
     @st.dialog(titulo_dialogo)
     def _dialogo():
         st.info(
-            "Preencha os campos abaixo antes de enviar o pedido ao fornecedor."
+            "Informe o país do cliente final antes de enviar o pedido ao fornecedor."
         )
 
         entradas: list[tuple[int, str, str, str]] = []
@@ -658,10 +676,10 @@ def mostrar_dialogo_requisitos_fornecedor(origem: str) -> None:
 
             st.markdown(f"**{fornecedor_nome}**")
             st.text_input(
-                "Cliente Final *",
+                "Cliente Final",
                 value=dados.get("cliente_final", ""),
                 key=cliente_key,
-                help="Nome do cliente final associado ao pedido.",
+                help="Nome do cliente final associado ao pedido (opcional).",
             )
             st.text_input(
                 "País *",
@@ -679,7 +697,7 @@ def mostrar_dialogo_requisitos_fornecedor(origem: str) -> None:
             for fornecedor_id, fornecedor_nome, cliente_key, pais_key in entradas:
                 cliente_val = (st.session_state.get(cliente_key) or "").strip()
                 pais_val = (st.session_state.get(pais_key) or "").strip()
-                if not cliente_val or not pais_val:
+                if not pais_val:
                     em_falta.append(fornecedor_nome)
                 dados_confirmados[fornecedor_id] = {
                     "cliente_final": cliente_val,
@@ -687,7 +705,7 @@ def mostrar_dialogo_requisitos_fornecedor(origem: str) -> None:
                 }
 
             if em_falta:
-                st.error("Preencha todos os campos obrigatórios para cada fornecedor.")
+                st.error("Preencha o país obrigatório para cada fornecedor.")
             else:
                 st.session_state["supplier_requirement_data"] = dados_confirmados
                 st.session_state["supplier_requirement_ready"] = origem
@@ -704,6 +722,58 @@ def mostrar_dialogo_requisitos_fornecedor(origem: str) -> None:
             st.rerun()
 
     _dialogo()
+
+
+def mostrar_dialogo_sucesso_smart() -> None:
+    """Apresenta um resumo em formato pop-up após criar cotações via Smart Quotation."""
+
+    if not st.session_state.get("show_smart_success_dialog"):
+        return
+
+    payload = st.session_state.get("smart_success_data") or {}
+    numero_processo = payload.get("numero_processo") or ""
+    referencia = payload.get("referencia") or ""
+    fornecedores = payload.get("fornecedores") or []
+    pdfs = payload.get("pdfs") or []
+
+    titulo = "Cotação criada"
+
+    @st.dialog(titulo, width="large")
+    def _dialog():
+        st.success(f"Cotação {numero_processo} criada com sucesso!")
+        if referencia:
+            st.write(f"**Referência do cliente:** {referencia}")
+        if fornecedores:
+            st.markdown("**Fornecedores notificados:**")
+            for nome in fornecedores:
+                st.write(f"• {nome}")
+
+        for idx, info in enumerate(pdfs, 1):
+            nome_pdf = info.get("fornecedor") or f"Fornecedor {idx}"
+            pdf_bytes = info.get("pdf_bytes")
+            if not pdf_bytes:
+                continue
+            exibir_pdf(
+                f"📄 {nome_pdf}",
+                pdf_bytes,
+                expanded=True,
+                use_expander=False,
+                height=500,
+            )
+            st.download_button(
+                f"Download PDF - {nome_pdf}",
+                data=pdf_bytes,
+                file_name=f"cotacao_{numero_processo}_{nome_pdf.replace(' ', '_')}.pdf",
+                mime="application/pdf",
+                key=f"smart_dialog_pdf_{idx}",
+            )
+
+        if st.button("Fechar"):
+            st.session_state.pop("smart_success_data", None)
+            st.session_state["show_smart_success_dialog"] = False
+            st.rerun()
+
+    _dialog()
 
 
 # ========================== FUNÇÕES DE GESTÃO DE CLIENTES ==========================
@@ -2427,6 +2497,8 @@ class InquiryPDF(FPDF):
         self.set_margins(15, 15, 15)
         self.set_auto_page_break(auto=True, margin=18)
         self.recipient = {}
+        self.final_client_name = ""
+        self.final_client_country = ""
 
     # ------------------------------------------------------------------
     #  Helpers
@@ -2727,8 +2799,34 @@ class InquiryPDF(FPDF):
         title = header_cfg.get("title", "INQUIRY")
         height = header_cfg.get("title_height", 8)
         self.cell(0, height, title, ln=1)
+
+        info_lines: list[tuple[str, str]] = []
+        nome_final = (self.final_client_name or "").strip()
+        pais_final = (self.final_client_country or "").strip()
+        if nome_final:
+            info_lines.append(("Final client:", nome_final))
+        if pais_final:
+            info_lines.append(("Final client country:", pais_final))
+
         spacing = header_cfg.get("spacing", 4)
-        if spacing:
+        if info_lines:
+            label_font_cfg = header_cfg.get(
+                "metadata_font",
+                {"font": "Helvetica", "font_style": "B", "font_size": 10},
+            )
+            value_font_cfg = header_cfg.get(
+                "metadata_value_font",
+                {"font": "Helvetica", "font_style": "", "font_size": 10},
+            )
+            info_height = header_cfg.get("metadata_line_height", 5)
+            for label, value in info_lines:
+                self.set_font(*self._font_tuple(label_font_cfg, ("Helvetica", "B", 10)))
+                self.cell(40, info_height, label)
+                self.set_font(*self._font_tuple(value_font_cfg, ("Helvetica", "", 10)))
+                self.cell(0, info_height, value, ln=1)
+            if spacing:
+                self.ln(spacing)
+        elif spacing:
             self.ln(spacing)
 
     def add_reference(self, referencia):
@@ -2838,7 +2936,16 @@ class InquiryPDF(FPDF):
         if spacing:
             self.ln(spacing)
 
-    def gerar(self, fornecedor, data, artigos, referencia="", contacto=""):
+    def gerar(
+        self,
+        fornecedor,
+        data,
+        artigos,
+        referencia="",
+        contacto="",
+        cliente_final_nome="",
+        cliente_final_pais="",
+    ):
         """Gera o PDF e devolve bytes"""
         addr_lines = [fornecedor.get("nome", "")]
         if fornecedor.get("morada"):
@@ -2849,6 +2956,8 @@ class InquiryPDF(FPDF):
             addr_lines.append(fornecedor["telefone"])
         if fornecedor.get("nif"):
             addr_lines.append(f"NIF: {fornecedor['nif']}")
+        self.final_client_name = (cliente_final_nome or "").strip()
+        self.final_client_country = (cliente_final_pais or "").strip()
         self.recipient = {
             "address": [l for l in addr_lines if l],
             "metadata": {
@@ -3106,16 +3215,21 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
         # Dados do utilizador que criou a RFQ
         c.execute(
             """
-            SELECT u.nome, u.email
-            FROM rfq
-            LEFT JOIN utilizador u ON rfq.utilizador_id = u.id
-            WHERE rfq.id = ?
+            SELECT u.nome,
+                   u.email,
+                   rfq.cliente_final_nome,
+                   rfq.cliente_final_pais
+              FROM rfq
+              LEFT JOIN utilizador u ON rfq.utilizador_id = u.id
+             WHERE rfq.id = ?
             """,
             (rfq_id,),
         )
         user_row = c.fetchone()
         nome_user = user_row[0] if user_row and user_row[0] else ""
         email_user = user_row[1] if user_row and user_row[1] else ""
+        cliente_final_nome = user_row[2] if user_row and len(user_row) > 2 and user_row[2] else ""
+        cliente_final_pais = user_row[3] if user_row and len(user_row) > 3 and user_row[3] else ""
 
         if empresa:
             linhas = [empresa.get("nome") or "", empresa.get("morada") or ""]
@@ -3168,6 +3282,8 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
             data.strftime("%Y-%m-%d"),
             artigos,
             numero_processo,
+            cliente_final_nome=cliente_final_nome,
+            cliente_final_pais=cliente_final_pais,
         )
 
         c.execute(
@@ -5336,6 +5452,8 @@ elif menu_option == "🤖 Smart Quotation":
                 processar_criacao_cotacoes(contexto_confirmado, forcar=True)
         elif st.session_state.get("show_supplier_requirement_dialog"):
             mostrar_dialogo_requisitos_fornecedor("smart")
+
+    mostrar_dialogo_sucesso_smart()
 elif menu_option == "📩 Process Center":
     st.title("📩 Process Center")
 
