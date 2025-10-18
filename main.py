@@ -4781,6 +4781,9 @@ with st.sidebar:
 # ========================== PÁGINAS DO SISTEMA ==========================
 
 previous_menu_option = st.session_state.get("last_menu_option")
+if previous_menu_option == "🤖 Smart Quotation" and menu_option != "🤖 Smart Quotation":
+    st.session_state.pop("smart_success_data", None)
+    st.session_state.pop("show_smart_success_dialog", None)
 if previous_menu_option != menu_option and menu_option == "🤖 Smart Quotation":
     reset_smart_quotation_state()
 st.session_state.last_menu_option = menu_option
