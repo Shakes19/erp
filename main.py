@@ -3688,7 +3688,7 @@ def _clear_smart_pdf_upload() -> None:
     """Remove o ficheiro carregado no widget de Smart Quotation."""
 
     if "smart_pdf" in st.session_state:
-        st.session_state["smart_pdf"] = None
+        st.session_state.pop("smart_pdf", None)
 
 
 def normalizar_quebras_linha(texto: str) -> str:
