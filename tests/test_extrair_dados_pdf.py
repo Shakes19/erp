@@ -1,5 +1,6 @@
+import main
 from fpdf import FPDF
-from main import extrair_dados_pdf
+from main import extrair_dados_pdf, extrair_dados_pdf_seguro, _dados_pdf_vazios
 
 
 def criar_pdf_bytes():
@@ -354,3 +355,41 @@ def test_extrair_dados_pdf_multi_ktb():
     dados = extrair_dados_pdf(criar_pdf_multi_ktb_bytes())
     assert [item.get("ktb_code") for item in dados["itens"]] == ["A12345", "B67890"]
     assert dados["artigo_num"] == "A12345"
+
+
+def test_extrair_dados_pdf_seguro_retoma_padrao_quando_erro(monkeypatch):
+    def _falha(_):
+        raise ValueError("erro de leitura")
+
+    monkeypatch.setattr(main, "extrair_dados_pdf", _falha)
+    dados, falhou = extrair_dados_pdf_seguro(b"conteudo")
+
+    assert falhou is True
+    assert dados == _dados_pdf_vazios()
+
+
+def test_extrair_dados_pdf_seguro_normaliza_campos(monkeypatch):
+    def _retorno_parcial(_):
+        return {
+            "referencia": None,
+            "cliente": None,
+            "artigo_num": None,
+            "descricao": None,
+            "quantidade": None,
+            "marca": None,
+            "itens": None,
+            "nome": None,
+        }
+
+    monkeypatch.setattr(main, "extrair_dados_pdf", _retorno_parcial)
+    dados, falhou = extrair_dados_pdf_seguro(b"irrelevante")
+
+    assert falhou is False
+    assert dados["referencia"] == ""
+    assert dados["cliente"] == ""
+    assert dados["artigo_num"] == ""
+    assert dados["descricao"] == ""
+    assert dados["quantidade"] == ""
+    assert dados["marca"] == ""
+    assert dados["nome"] == ""
+    assert dados["itens"] == []
