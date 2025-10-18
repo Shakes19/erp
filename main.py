@@ -6629,11 +6629,7 @@ elif menu_option == "⚙️ Configurações":
                     fornecedores = listar_fornecedores()
 
                     for forn in fornecedores:
-                        titulo_expander = forn[1]
-                        if len(forn) > 6 and forn[6]:
-                            titulo_expander += " • Requer País/Cliente Final"
-
-                        with st.expander(titulo_expander):
+                        with st.expander(forn[1]):
                             with st.form(f"edit_forn_{forn[0]}"):
                                 nome_edit = st.text_input("Nome", forn[1])
                                 email_edit = st.text_input("Email", forn[2] or "")
