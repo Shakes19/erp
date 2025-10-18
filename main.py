@@ -4205,6 +4205,23 @@ def extrair_dados_pdf(pdf_bytes):
 
     referencia = linha_apos("Our reference:")
 
+    def limpar_final_destination(valor: str) -> str:
+        """Remove o prefixo ``Final Destination`` e normaliza o resultado."""
+
+        if not valor:
+            return ""
+
+        normalizado = re.sub(
+            r"^Final\s*Destination\s*[:\-]?\s*",
+            "",
+            valor.strip(),
+            flags=re.IGNORECASE,
+        )
+        normalizado = normalizado.replace('","', ", ")
+        normalizado = re.sub(r"\s{2,}", " ", normalizado)
+        normalizado = normalizado.strip().strip(",;\"'")
+        return normalizado
+
     # ----------------------------- CLIENTE -----------------------------
     # Priorizar a extração do contacto ("Contact:" ou assinaturas "i.V."/"i.A.")
     cliente = linha_apos("Contact:")
@@ -4253,6 +4270,9 @@ def extrair_dados_pdf(pdf_bytes):
     # Garantir que o campo "nome" reflete o contacto identificado
     if not nome and cliente:
         nome = cliente
+
+    cliente = limpar_final_destination(cliente)
+    nome = limpar_final_destination(nome)
 
     def limpar_ktb(texto_desc):
         if not texto_desc:
@@ -5470,6 +5490,10 @@ elif menu_option == "🤖 Smart Quotation":
                 )
         else:
             st.warning("Ficheiro carregado não pôde ser processado.")
+    else:
+        if st.session_state.get("smart_pdf_uid"):
+            reset_smart_quotation_state()
+        st.session_state.pop("smart_pdf", None)
 
     contexto_dup_smart = st.session_state.get("duplicated_ref_context")
     if contexto_dup_smart and contexto_dup_smart.get("origem") == "smart":

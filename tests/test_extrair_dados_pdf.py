@@ -222,6 +222,29 @@ def test_extrair_dados_pdf_client_table():
     assert dados["itens"][1]["quantidade"] == 3
 
 
+def criar_pdf_final_destination_bytes():
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(0, 10, "Our reference: DEST-001")
+    pdf.ln()
+    pdf.cell(0, 10, "Client:")
+    pdf.ln()
+    pdf.cell(0, 10, "Final Destination: \"Cliente\",\" País\"")
+    pdf.ln()
+    pdf.cell(0, 10, "KTB-code:")
+    pdf.ln()
+    pdf.cell(0, 10, "FD123")
+    return pdf.output(dest="S").encode("latin-1", errors="replace")
+
+
+def test_extrair_dados_pdf_final_destination():
+    dados = extrair_dados_pdf(criar_pdf_final_destination_bytes())
+    assert dados["cliente"] == "Cliente, País"
+    assert dados["nome"] == "Cliente, País"
+    assert dados["artigo_num"] == "FD123"
+
+
 def criar_pdf_ktb_bytes():
     pdf = FPDF()
     pdf.add_page()
