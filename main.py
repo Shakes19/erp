@@ -3687,7 +3687,7 @@ def reset_smart_quotation_state():
 def _clear_smart_pdf_upload() -> None:
     """Remove o ficheiro carregado no widget de Smart Quotation."""
 
-    if st.session_state.get("smart_pdf") is not None:
+    if "smart_pdf" in st.session_state:
         st.session_state["smart_pdf"] = None
 
 
