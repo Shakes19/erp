@@ -4,6 +4,7 @@ from datetime import datetime, date, timedelta
 from fpdf import FPDF
 import base64
 import json
+import logging
 from collections import defaultdict, OrderedDict
 from io import BytesIO
 import os
@@ -14,7 +15,7 @@ import re
 import copy
 import textwrap
 from uuid import uuid4
-from typing import Iterable
+from typing import Iterable, Any
 from pypdf import PdfReader
 from PIL import Image
 import pandas as pd
@@ -46,6 +47,10 @@ from services.email_service import (
     get_system_email_config,
     send_email,
 )
+
+# ========================== LOGGING ==========================
+
+logger = logging.getLogger(__name__)
 
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
 
@@ -4197,6 +4202,21 @@ def criar_cotacao_cliente_dialog(
             st.error("Falha ao enviar o e-mail ao cliente.")
 
 
+def _dados_pdf_vazios() -> dict[str, Any]:
+    """Estrutura base utilizada quando um PDF não pode ser interpretado."""
+
+    return {
+        "referencia": "",
+        "cliente": "",
+        "artigo_num": "",
+        "descricao": "",
+        "quantidade": "",
+        "marca": "",
+        "itens": [],
+        "nome": "",
+    }
+
+
 def extrair_texto_pdf(pdf_bytes):
     """Retorna todo o texto contido num PDF."""
     reader = PdfReader(BytesIO(pdf_bytes))
@@ -4489,6 +4509,42 @@ def extrair_dados_pdf(pdf_bytes):
         "itens": itens,
         "nome": nome,
     }
+
+
+def extrair_dados_pdf_seguro(pdf_bytes: bytes) -> tuple[dict[str, Any], bool]:
+    """Extrai dados do PDF garantindo a presença de campos obrigatórios.
+
+    Retorna um ``tuple`` composto pelo dicionário de dados normalizado e
+    um ``bool`` que indica se ocorreu algum erro na extração.
+    """
+
+    dados_pdf = _dados_pdf_vazios()
+    try:
+        dados_extraidos = extrair_dados_pdf(pdf_bytes)
+    except Exception:
+        logger.exception("Falha ao extrair informações do PDF carregado.")
+        return dados_pdf, True
+
+    if not isinstance(dados_extraidos, dict):
+        logger.error(
+            "Formato inesperado devolvido por extrair_dados_pdf: %s",
+            type(dados_extraidos),
+        )
+        return dados_pdf, True
+
+    dados_pdf.update(dados_extraidos)
+
+    if not isinstance(dados_pdf.get("itens"), list):
+        dados_pdf["itens"] = []
+
+    if dados_pdf.get("quantidade") is None:
+        dados_pdf["quantidade"] = ""
+
+    for chave in ("referencia", "cliente", "artigo_num", "descricao", "marca", "nome"):
+        if dados_pdf.get(chave) is None:
+            dados_pdf[chave] = ""
+
+    return dados_pdf, False
 
 # ========================== FUNÇÕES DE UTILIDADE ==========================
 
@@ -5164,7 +5220,12 @@ elif menu_option == "🤖 Smart Quotation":
         anexos_processados = processar_upload_pdf(upload_pdf)
         if anexos_processados:
             nome_pdf, pdf_bytes = anexos_processados[0]
-            dados = extrair_dados_pdf(pdf_bytes)
+            dados, extracao_falhou = extrair_dados_pdf_seguro(pdf_bytes)
+            if extracao_falhou:
+                st.warning(
+                    "Não foi possível ler automaticamente o conteúdo do PDF. "
+                    "Os campos foram criados em branco para preenchimento manual."
+                )
             clientes = listar_clientes()
             cliente_options: list[tuple | None] = [None] + clientes
 
