@@ -609,7 +609,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
             }
             st.session_state["show_smart_success_dialog"] = True
             reset_smart_quotation_state()
-            st.session_state.pop("smart_pdf", None)
+            _clear_smart_pdf_upload()
             st.rerun()
 
         return True
@@ -619,6 +619,21 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
     )
     st.error(mensagem_erro)
     return False
+
+
+def _reset_supplier_requirement_dialog_state() -> None:
+    """Limpa o estado associado ao diálogo de requisitos de fornecedor."""
+
+    for key in (
+        "supplier_requirement_context",
+        "supplier_requirement_suppliers",
+        "supplier_requirement_data",
+        "supplier_requirement_ready",
+        "supplier_requirement_origin",
+    ):
+        st.session_state.pop(key, None)
+
+    st.session_state.pop("show_supplier_requirement_dialog", None)
 
 
 def mostrar_dialogo_referencia_duplicada(origem: str):
@@ -672,7 +687,14 @@ def mostrar_dialogo_requisitos_fornecedor(origem: str) -> None:
 
     titulo_dialogo = "Informações obrigatórias para o fornecedor"
 
-    @st.dialog(titulo_dialogo)
+    def _on_dialog_dismiss() -> None:
+        if (
+            not st.session_state.get("supplier_requirement_context")
+            or st.session_state["supplier_requirement_context"].get("origem") == origem
+        ):
+            _reset_supplier_requirement_dialog_state()
+
+    @st.dialog(titulo_dialogo, on_dismiss=_on_dialog_dismiss)
     def _dialogo():
         st.info(
             "Informe o país do cliente final antes de enviar o pedido ao fornecedor."
@@ -725,12 +747,7 @@ def mostrar_dialogo_requisitos_fornecedor(origem: str) -> None:
                 st.rerun()
 
         if col_cancel.button("Cancelar"):
-            st.session_state.pop("supplier_requirement_context", None)
-            st.session_state.pop("supplier_requirement_suppliers", None)
-            st.session_state.pop("supplier_requirement_data", None)
-            st.session_state.pop("supplier_requirement_ready", None)
-            st.session_state.pop("supplier_requirement_origin", None)
-            st.session_state["show_supplier_requirement_dialog"] = False
+            _reset_supplier_requirement_dialog_state()
             st.rerun()
 
     _dialogo()
@@ -751,7 +768,12 @@ def mostrar_dialogo_sucesso_smart() -> None:
 
     titulo = "Cotação criada"
 
-    @st.dialog(titulo, width="large")
+    def _on_dialog_dismiss() -> None:
+        st.session_state.pop("smart_success_data", None)
+        st.session_state["show_smart_success_dialog"] = False
+        _clear_smart_pdf_upload()
+
+    @st.dialog(titulo, width="large", on_dismiss=_on_dialog_dismiss)
     def _dialog():
         st.success(f"Cotação {numero_processo} criada com sucesso!")
         if referencia:
@@ -784,8 +806,7 @@ def mostrar_dialogo_sucesso_smart() -> None:
             )
 
         if st.button("Fechar"):
-            st.session_state.pop("smart_success_data", None)
-            st.session_state["show_smart_success_dialog"] = False
+            _on_dialog_dismiss()
             st.rerun()
 
     _dialog()
@@ -3663,6 +3684,13 @@ def reset_smart_quotation_state():
         st.session_state.pop(key, None)
 
 
+def _clear_smart_pdf_upload() -> None:
+    """Remove o ficheiro carregado no widget de Smart Quotation."""
+
+    if "smart_pdf" in st.session_state:
+        st.session_state["smart_pdf"] = None
+
+
 def normalizar_quebras_linha(texto: str) -> str:
     """Normaliza caracteres de quebra de linha preservando a estrutura original."""
 
@@ -5106,11 +5134,7 @@ elif menu_option == "📝 Nova Cotação":
             dados_confirmados = copy.deepcopy(
                 st.session_state.get("supplier_requirement_data") or {}
             )
-            st.session_state.pop("supplier_requirement_suppliers", None)
-            st.session_state.pop("supplier_requirement_data", None)
-            st.session_state.pop("supplier_requirement_ready", None)
-            st.session_state.pop("supplier_requirement_origin", None)
-            st.session_state.pop("show_supplier_requirement_dialog", None)
+            _reset_supplier_requirement_dialog_state()
             if contexto_confirmado:
                 contexto_confirmado = copy.deepcopy(contexto_confirmado)
                 contexto_confirmado["requisitos_fornecedores"] = dados_confirmados
@@ -5496,7 +5520,7 @@ elif menu_option == "🤖 Smart Quotation":
     else:
         if st.session_state.get("smart_pdf_uid"):
             reset_smart_quotation_state()
-        st.session_state.pop("smart_pdf", None)
+        _clear_smart_pdf_upload()
 
     contexto_dup_smart = st.session_state.get("duplicated_ref_context")
     if contexto_dup_smart and contexto_dup_smart.get("origem") == "smart":
@@ -5515,11 +5539,7 @@ elif menu_option == "🤖 Smart Quotation":
             dados_confirmados = copy.deepcopy(
                 st.session_state.get("supplier_requirement_data") or {}
             )
-            st.session_state.pop("supplier_requirement_suppliers", None)
-            st.session_state.pop("supplier_requirement_data", None)
-            st.session_state.pop("supplier_requirement_ready", None)
-            st.session_state.pop("supplier_requirement_origin", None)
-            st.session_state.pop("show_supplier_requirement_dialog", None)
+            _reset_supplier_requirement_dialog_state()
             if contexto_confirmado:
                 contexto_confirmado = copy.deepcopy(contexto_confirmado)
                 contexto_confirmado["requisitos_fornecedores"] = dados_confirmados
