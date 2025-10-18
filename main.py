@@ -92,6 +92,24 @@ def limitar_descricao_artigo(texto: str, max_linhas: int = 2) -> str:
     return "\n".join(linhas_filtradas)
 
 
+def invalidate_overview_caches() -> None:
+    """Limpar caches utilizadas na dashboard principal.
+
+    A dashboard e a área de relatórios reutilizam as funções
+    ``obter_todas_cotacoes`` e ``obter_estatisticas_db``. Quando estes dados
+    são atualizados a interface podia oscillar entre estados diferentes até
+    que as novas informações fossem calculadas novamente, contribuindo para
+    *layout shifts*.  Ao invalidarmos explicitamente estas caches sempre que
+    existe uma alteração relevante, garantimos que a interface recebe os
+    dados finais de forma estável após a submissão da ação do utilizador.
+    """
+
+    for nome in ("obter_todas_cotacoes", "obter_estatisticas_db"):
+        func = globals().get(nome)
+        if func and hasattr(func, "clear"):
+            func.clear()
+
+
 LOGO_PATH = "assets/logo.png"
 with open(LOGO_PATH, "rb") as _logo_file:
     LOGO_BYTES = _logo_file.read()
@@ -972,6 +990,7 @@ def criar_rfq(
         # Enviar pedido por email ao fornecedor
         enviar_email_pedido_fornecedor(rfq_id)
 
+        invalidate_overview_caches()
         return rfq_id, numero_processo, processo_id, processo_artigos
     except Exception as e:
         conn.rollback()
@@ -984,6 +1003,7 @@ def criar_rfq(
         conn.close()
 
 
+@st.cache_data(show_spinner=False, ttl=30)
 def obter_todas_cotacoes(
     filtro_referencia: str = "",
     estado: str | None = None,
@@ -1150,6 +1170,7 @@ def eliminar_cotacao(rfq_id):
         c.execute("DELETE FROM pdf_storage WHERE rfq_id = ?", (str(rfq_id),))
         c.execute("DELETE FROM rfq WHERE id = ?", (rfq_id,))
         conn.commit()
+        invalidate_overview_caches()
         return True
     except Exception as e:
         conn.rollback()
@@ -1167,6 +1188,7 @@ def arquivar_cotacao(rfq_id):
     try:
         c.execute("UPDATE rfq SET estado = 'arquivada' WHERE id = ?", (rfq_id,))
         conn.commit()
+        invalidate_overview_caches()
         return True
     except Exception as e:
         conn.rollback()
@@ -1306,6 +1328,7 @@ def guardar_respostas(
         }
 
         conn.commit()
+        invalidate_overview_caches()
 
         return True, {
             "processo_id": processo_id,
@@ -3131,8 +3154,9 @@ def gerar_pdf_cliente(rfq_id):
                       tamanho_bytes = excluded.tamanho_bytes""",
             (str(rfq_id), "cliente", pdf_bytes, len(pdf_bytes)),
         )
-        
+
         conn.commit()
+        invalidate_overview_caches()
         return True
 
     except Exception as e:
@@ -4037,6 +4061,7 @@ def extrair_dados_pdf(pdf_bytes):
 
 # ========================== FUNÇÕES DE UTILIDADE ==========================
 
+@st.cache_data(show_spinner=False, ttl=30)
 def obter_estatisticas_db(utilizador_id: int | None = None):
     """Obter estatísticas da base de dados."""
 
@@ -4374,10 +4399,10 @@ if menu_option == "🏠 Dashboard":
         st.markdown("## Bem Vindo!")
     st.markdown("")
 
+    stats = obter_estatisticas_db(st.session_state.get("user_id"))
+
     # Métricas principais
     col1, col2, col3, col4 = st.columns(4)
-    
-    stats = obter_estatisticas_db(st.session_state.get("user_id"))
     
     with col1:
         st.metric("Total RFQs", stats.get('rfq', 0))
