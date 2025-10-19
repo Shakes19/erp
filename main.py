@@ -609,7 +609,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
             }
             st.session_state["show_smart_success_dialog"] = True
             reset_smart_quotation_state()
-            clear_smart_pdf_upload()
+            st.session_state.pop("smart_pdf", None)
             st.rerun()
 
         return True
@@ -740,10 +740,6 @@ def mostrar_dialogo_sucesso_smart() -> None:
     """Apresenta um resumo em formato pop-up após criar cotações via Smart Quotation."""
 
     if not st.session_state.get("show_smart_success_dialog"):
-        if st.session_state.get("smart_success_data"):
-            reset_smart_quotation_state()
-            clear_smart_pdf_upload()
-            st.session_state.pop("smart_success_data", None)
         return
 
     payload = st.session_state.get("smart_success_data") or {}
@@ -757,22 +753,6 @@ def mostrar_dialogo_sucesso_smart() -> None:
 
     @st.dialog(titulo, width="large")
     def _dialog():
-        st.markdown(
-            """
-            <style>
-            [data-testid="stDialog"] > div > div {
-                position: relative;
-            }
-            [data-testid="stDialog"] [data-testid="baseDialogCloseButton"] {
-                position: absolute;
-                top: 0.75rem;
-                right: 0.75rem;
-                margin: 0;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
         st.success(f"Cotação {numero_processo} criada com sucesso!")
         if referencia:
             st.write(f"**Referência do cliente:** {referencia}")
@@ -804,13 +784,11 @@ def mostrar_dialogo_sucesso_smart() -> None:
             )
 
         if st.button("Fechar"):
-            reset_smart_quotation_state()
-            clear_smart_pdf_upload()
             st.session_state.pop("smart_success_data", None)
             st.session_state["show_smart_success_dialog"] = False
+            st.rerun()
 
     _dialog()
-    st.session_state["show_smart_success_dialog"] = False
 
 
 # ========================== FUNÇÕES DE GESTÃO DE CLIENTES ==========================
@@ -3685,11 +3663,6 @@ def reset_smart_quotation_state():
         st.session_state.pop(key, None)
 
 
-def clear_smart_pdf_upload() -> None:
-    """Remove o ficheiro carregado no uploader do Smart Quotation."""
-
-    st.session_state["smart_pdf"] = None
-
 def normalizar_quebras_linha(texto: str) -> str:
     """Normaliza caracteres de quebra de linha preservando a estrutura original."""
 
@@ -4808,13 +4781,8 @@ with st.sidebar:
 # ========================== PÁGINAS DO SISTEMA ==========================
 
 previous_menu_option = st.session_state.get("last_menu_option")
-if previous_menu_option != menu_option:
-    if menu_option == "🤖 Smart Quotation":
-        reset_smart_quotation_state()
-    elif previous_menu_option == "🤖 Smart Quotation":
-        st.session_state.pop("smart_success_data", None)
-        st.session_state["show_smart_success_dialog"] = False
-        clear_smart_pdf_upload()
+if previous_menu_option != menu_option and menu_option == "🤖 Smart Quotation":
+    reset_smart_quotation_state()
 st.session_state.last_menu_option = menu_option
 
 if menu_option == "🏠 Dashboard":
@@ -5525,7 +5493,7 @@ elif menu_option == "🤖 Smart Quotation":
     else:
         if st.session_state.get("smart_pdf_uid"):
             reset_smart_quotation_state()
-        clear_smart_pdf_upload()
+        st.session_state.pop("smart_pdf", None)
 
     contexto_dup_smart = st.session_state.get("duplicated_ref_context")
     if contexto_dup_smart and contexto_dup_smart.get("origem") == "smart":
