@@ -740,6 +740,10 @@ def mostrar_dialogo_sucesso_smart() -> None:
     """Apresenta um resumo em formato pop-up após criar cotações via Smart Quotation."""
 
     if not st.session_state.get("show_smart_success_dialog"):
+        if st.session_state.get("smart_success_data"):
+            reset_smart_quotation_state()
+            st.session_state.pop("smart_pdf", None)
+            st.session_state.pop("smart_success_data", None)
         return
 
     payload = st.session_state.get("smart_success_data") or {}
@@ -753,6 +757,22 @@ def mostrar_dialogo_sucesso_smart() -> None:
 
     @st.dialog(titulo, width="large")
     def _dialog():
+        st.markdown(
+            """
+            <style>
+            [data-testid="stDialog"] > div > div {
+                position: relative;
+            }
+            [data-testid="stDialog"] [data-testid="baseDialogCloseButton"] {
+                position: absolute;
+                top: 0.75rem;
+                right: 0.75rem;
+                margin: 0;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         st.success(f"Cotação {numero_processo} criada com sucesso!")
         if referencia:
             st.write(f"**Referência do cliente:** {referencia}")
