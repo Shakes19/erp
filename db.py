@@ -275,8 +275,6 @@ def criar_base_dados_completa():
             fornecedor_id INTEGER NOT NULL,
             marca TEXT NOT NULL,
             necessita_pais_cliente_final INTEGER NOT NULL DEFAULT 0,
-            margem_percentual REAL NOT NULL DEFAULT 0.0,
-            marca_normalizada TEXT,
             FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
             UNIQUE(fornecedor_id, marca)
         )
@@ -289,101 +287,6 @@ def criar_base_dados_completa():
         c.execute(
             "ALTER TABLE fornecedor_marca ADD COLUMN necessita_pais_cliente_final INTEGER NOT NULL DEFAULT 0"
         )
-
-    if "margem_percentual" not in fornecedor_marca_cols:
-        c.execute(
-            "ALTER TABLE fornecedor_marca ADD COLUMN margem_percentual REAL NOT NULL DEFAULT 0.0"
-        )
-        fornecedor_marca_cols.append("margem_percentual")
-
-    if "marca_normalizada" not in fornecedor_marca_cols:
-        c.execute("ALTER TABLE fornecedor_marca ADD COLUMN marca_normalizada TEXT")
-        fornecedor_marca_cols.append("marca_normalizada")
-
-    # Migrar margens da tabela legacy ``configuracao_margens`` caso exista
-    c.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='configuracao_margens'"
-    )
-    if c.fetchone():
-        c.execute(
-            """
-            UPDATE fornecedor_marca
-               SET margem_percentual = (
-                    SELECT margem_percentual
-                      FROM configuracao_margens cm
-                     WHERE cm.fornecedor_id = fornecedor_marca.fornecedor_id
-                       AND TRIM(cm.marca) = TRIM(fornecedor_marca.marca)
-                       AND (cm.ativo IS NULL OR cm.ativo = 1)
-                     ORDER BY cm.id DESC
-                     LIMIT 1
-               )
-             WHERE EXISTS (
-                    SELECT 1
-                      FROM configuracao_margens cm
-                     WHERE cm.fornecedor_id = fornecedor_marca.fornecedor_id
-                       AND TRIM(cm.marca) = TRIM(fornecedor_marca.marca)
-                       AND (cm.ativo IS NULL OR cm.ativo = 1)
-               )
-            """
-        )
-
-        c.execute("DROP TABLE IF EXISTS configuracao_margens")
-
-    # Eliminar registos duplicados de marcas mantendo o mais relevante
-    c.execute(
-        """
-        SELECT id, fornecedor_id, marca, margem_percentual, marca_normalizada
-          FROM fornecedor_marca
-         WHERE marca IS NOT NULL AND TRIM(marca) != ''
-        """
-    )
-    rows = c.fetchall()
-    vistos: dict[str, tuple[int, float]] = {}
-    ids_remover: list[int] = []
-    for row_id, fornecedor_id, marca, margem, marca_norm_db in rows:
-        marca_norm = (marca_norm_db or "").strip()
-        if not marca_norm:
-            marca_norm = (marca or "").strip().casefold()
-        if not marca_norm:
-            ids_remover.append(row_id)
-            continue
-        margem_valor = float(margem or 0.0)
-        if marca_norm not in vistos:
-            vistos[marca_norm] = (row_id, margem_valor)
-            continue
-
-        keep_id, keep_margin = vistos[marca_norm]
-        if margem_valor > keep_margin:
-            ids_remover.append(keep_id)
-            vistos[marca_norm] = (row_id, margem_valor)
-        else:
-            ids_remover.append(row_id)
-
-    if ids_remover:
-        ids_unicos = sorted(set(ids_remover))
-        c.executemany(
-            "DELETE FROM fornecedor_marca WHERE id = ?",
-            [(row_id,) for row_id in ids_unicos],
-        )
-
-    # Atualizar normalização das marcas remanescentes
-    c.execute(
-        """
-        UPDATE fornecedor_marca
-           SET marca_normalizada = PYCASEFOLD(TRIM(marca))
-         WHERE marca IS NOT NULL AND TRIM(marca) != ''
-        """
-    )
-
-    # Garantir unicidade global da marca independentemente do fornecedor
-    c.execute("DROP INDEX IF EXISTS idx_fornecedor_marca_nome_unico")
-    c.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_fornecedor_marca_nome_unico
-            ON fornecedor_marca(marca_normalizada)
-         WHERE marca_normalizada IS NOT NULL
-        """
-    )
 
     c.execute(
         """
@@ -687,6 +590,21 @@ def criar_base_dados_completa():
             tamanho_bytes INTEGER,
             nome_ficheiro TEXT,
             UNIQUE(rfq_id, tipo_pdf)
+        )
+        """
+    )
+
+    # Tabela de configuração de margens por marca
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS configuracao_margens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fornecedor_id INTEGER,
+            marca TEXT,
+            margem_percentual REAL DEFAULT 0.0,
+            ativo BOOLEAN DEFAULT TRUE,
+            data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE
         )
         """
     )
