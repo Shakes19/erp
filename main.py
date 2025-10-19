@@ -268,8 +268,8 @@ def obter_marcas_fornecedor(fornecedor_id):
 
     rows = fetch_all(
         """
-        SELECT TRIM(marca) AS marca
-        FROM fornecedor_marca
+        SELECT TRIM(marca) AS marca, COALESCE(margem, 0.0)
+        FROM marca
         WHERE fornecedor_id = ?
           AND marca IS NOT NULL
         ORDER BY TRIM(marca)
@@ -284,7 +284,7 @@ def obter_marcas_fornecedor(fornecedor_id):
         marca_nome = row[0]
         if not marca_nome:
             continue
-        marcas.append({"nome": marca_nome})
+        marcas.append({"nome": marca_nome, "margem": float(row[1])})
 
     return marcas
 
@@ -294,28 +294,32 @@ def adicionar_marca_fornecedor(fornecedor_id, marca):
     if not marca_limpa:
         return False
 
+    marca_normalizada = marca_limpa.casefold()
+
     conn = obter_conexao()
     c = conn.cursor()
     try:
         c.execute(
             """
-            SELECT 1 FROM fornecedor_marca
-            WHERE fornecedor_id = ? AND TRIM(marca) = ?
+            SELECT fornecedor_id
+              FROM marca
+             WHERE marca_normalizada = ?
             """,
-            (fornecedor_id, marca_limpa),
+            (marca_normalizada,),
         )
         if c.fetchone():
             return False
 
         c.execute(
             """
-            INSERT INTO fornecedor_marca (
+            INSERT INTO marca (
                 fornecedor_id,
-                marca
+                marca,
+                marca_normalizada
             )
-            VALUES (?, ?)
+            VALUES (?, ?, ?)
             """,
-            (fornecedor_id, marca_limpa),
+            (fornecedor_id, marca_limpa, marca_normalizada),
         )
         conn.commit()
         return True
@@ -330,14 +334,16 @@ def remover_marca_fornecedor(fornecedor_id, marca):
     if not marca_limpa:
         return False
 
+    marca_normalizada = marca_limpa.casefold()
+
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
         """
-        DELETE FROM fornecedor_marca
-        WHERE fornecedor_id = ? AND TRIM(marca) = ?
+        DELETE FROM marca
+        WHERE fornecedor_id = ? AND marca_normalizada = ?
         """,
-        (fornecedor_id, marca_limpa),
+        (fornecedor_id, marca_normalizada),
     )
     conn.commit()
     rows_affected = c.rowcount
@@ -350,7 +356,7 @@ def listar_todas_marcas():
     rows = fetch_all(
         """
         SELECT DISTINCT TRIM(marca)
-        FROM fornecedor_marca
+        FROM marca
         WHERE marca IS NOT NULL AND TRIM(marca) != ''
         ORDER BY TRIM(marca)
         """
@@ -359,7 +365,7 @@ def listar_todas_marcas():
 
 
 def obter_fornecedores_por_marca(marca):
-    """Retorna lista de fornecedores (id, nome, email, requer_dados) associados à marca."""
+    """Retorna lista de fornecedores (id, nome, email, requer_dados, margem) associados à marca."""
 
     marca_limpa = (marca or "").strip()
     if not marca_limpa:
@@ -372,20 +378,22 @@ def obter_fornecedores_por_marca(marca):
         SELECT f.id,
                f.nome,
                f.email,
-               TRIM(fm.marca),
-               COALESCE(f.necessita_pais_cliente_final, 0) AS necessita_pais_cliente_final
-        FROM fornecedor f
-        JOIN fornecedor_marca fm ON f.id = fm.fornecedor_id
-        WHERE fm.marca IS NOT NULL AND TRIM(fm.marca) != ''
-        ORDER BY f.nome
-        """
+               TRIM(m.marca),
+               COALESCE(f.necessita_pais_cliente_final, 0) AS necessita_pais_cliente_final,
+               COALESCE(m.margem, 0.0)
+          FROM fornecedor f
+          JOIN marca m ON f.id = m.fornecedor_id
+         WHERE m.marca_normalizada = ?
+         ORDER BY f.nome
+        """,
+        (marca_normalizada,),
     )
 
     fornecedores: list[tuple] = []
-    for fornecedor_id, nome, email, marca_db, requer_dados in rows:
-        marca_bd_limpa = (marca_db or "").strip()
-        if marca_bd_limpa.casefold() == marca_normalizada:
-            fornecedores.append((fornecedor_id, nome, email, bool(requer_dados)))
+    for fornecedor_id, nome, email, marca_db, requer_dados, margem in rows:
+        fornecedores.append(
+            (fornecedor_id, nome, email, bool(requer_dados), float(margem))
+        )
 
     return fornecedores
 
@@ -2154,25 +2162,27 @@ def obter_margem_para_marca(fornecedor_id, marca):
     """
     try:
         marca_limpa = (marca or "").strip()
+        if not marca_limpa:
+            return 0.0
+
+        marca_normalizada = marca_limpa.casefold()
+
         conn = obter_conexao()
         c = conn.cursor()
-
-        # Procurar margem específica para fornecedor e marca
-        if marca_limpa:
-            c.execute(
-                """
-                SELECT margem_percentual FROM configuracao_margens
-                WHERE fornecedor_id = ? AND TRIM(marca) = ? AND ativo = TRUE
-                ORDER BY id DESC LIMIT 1
-                """,
-                (fornecedor_id, marca_limpa),
-            )
-            result = c.fetchone()
-            if result:
-                conn.close()
-                return result[0]
-
+        c.execute(
+            """
+            SELECT COALESCE(margem, 0.0)
+              FROM marca
+             WHERE fornecedor_id = ?
+               AND marca_normalizada = ?
+             LIMIT 1
+            """,
+            (fornecedor_id, marca_normalizada),
+        )
+        result = c.fetchone()
         conn.close()
+        if result:
+            return float(result[0])
         return 0.0
 
     except Exception as e:
@@ -2186,27 +2196,25 @@ def configurar_margem_marca(fornecedor_id, marca, margem_percentual):
         if not marca_limpa:
             return False
 
+        marca_normalizada = marca_limpa.casefold()
+
         conn = obter_conexao()
         c = conn.cursor()
 
-        # Desativar margens anteriores
         c.execute(
             """
-            UPDATE configuracao_margens SET ativo = FALSE
-            WHERE fornecedor_id = ? AND TRIM(marca) = ?
+            UPDATE marca
+               SET margem = ?
+             WHERE fornecedor_id = ?
+               AND marca_normalizada = ?
             """,
-            (fornecedor_id, marca_limpa),
+            (margem_percentual, fornecedor_id, marca_normalizada),
         )
 
-        # Inserir nova margem
-        c.execute("""
-            INSERT INTO configuracao_margens (fornecedor_id, marca, margem_percentual, ativo)
-            VALUES (?, ?, ?, TRUE)
-        """, (fornecedor_id, marca_limpa, margem_percentual))
-
         conn.commit()
+        atualizados = c.rowcount
         conn.close()
-        return True
+        return atualizados > 0
         
     except Exception as e:
         print(f"Erro ao configurar margem: {e}")
@@ -6910,7 +6918,7 @@ elif menu_option == "⚙️ Configurações":
                                             st.success(f"Marca {nova_marca} adicionada!")
                                             st.rerun()
                                         else:
-                                            st.error("Marca já existe para este fornecedor")
+                                            st.error("Marca já está associada a um fornecedor")
 
                         with col2:
                             st.markdown("### Marcas Existentes")

@@ -267,26 +267,145 @@ def criar_base_dados_completa():
     if "empresa_id" not in cliente_cols:
         c.execute("ALTER TABLE cliente ADD COLUMN empresa_id INTEGER")
 
-    # Tabela de marcas por fornecedor
+    # Migração da tabela fornecedor_marca para marca com coluna de margem
+    c.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='marca'"
+    )
+    marca_existe = c.fetchone() is not None
+    c.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='fornecedor_marca'"
+    )
+    fornecedor_marca_existe = c.fetchone() is not None
+
+    if not marca_existe:
+        c.execute(
+            """
+            CREATE TABLE marca (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fornecedor_id INTEGER NOT NULL,
+                marca TEXT NOT NULL,
+                marca_normalizada TEXT NOT NULL,
+                necessita_pais_cliente_final INTEGER NOT NULL DEFAULT 0,
+                margem REAL NOT NULL DEFAULT 0.0,
+                FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
+                UNIQUE(marca_normalizada)
+            )
+            """
+        )
+
+        if fornecedor_marca_existe:
+            c.execute(
+                """
+                SELECT id,
+                       fornecedor_id,
+                       TRIM(marca) AS marca,
+                       COALESCE(necessita_pais_cliente_final, 0)
+                  FROM fornecedor_marca
+                 WHERE marca IS NOT NULL AND TRIM(marca) != ''
+                """
+            )
+            marcas_antigas = c.fetchall()
+
+            c.execute(
+                """
+                SELECT fornecedor_id,
+                       TRIM(marca) AS marca,
+                       margem_percentual
+                  FROM configuracao_margens
+                 WHERE ativo = TRUE
+                """
+            )
+            margens_antigas = c.fetchall()
+            mapa_margens: dict[tuple[int, str], float] = {}
+            for fornecedor_id_ant, marca_ant, margem in margens_antigas:
+                marca_normalizada = (marca_ant or "").strip().casefold()
+                if not marca_normalizada:
+                    continue
+                mapa_margens[(fornecedor_id_ant, marca_normalizada)] = float(margem or 0.0)
+
+            for marca_id, fornecedor_id_ant, marca_ant, necessita_ant in marcas_antigas:
+                marca_limpa = (marca_ant or "").strip()
+                if not marca_limpa:
+                    continue
+                marca_normalizada = marca_limpa.casefold()
+                margem = mapa_margens.get((fornecedor_id_ant, marca_normalizada), 0.0)
+                c.execute(
+                    """
+                    INSERT OR IGNORE INTO marca (
+                        id,
+                        fornecedor_id,
+                        marca,
+                        marca_normalizada,
+                        necessita_pais_cliente_final,
+                        margem
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        marca_id,
+                        fornecedor_id_ant,
+                        marca_limpa,
+                        marca_normalizada,
+                        necessita_ant,
+                        float(margem),
+                    ),
+                )
+
+            c.execute("DROP TABLE fornecedor_marca")
+
+    c.execute("PRAGMA table_info(marca)")
+    marca_cols = [row[1] for row in c.fetchall()]
+    if "marca_normalizada" not in marca_cols:
+        c.execute("ALTER TABLE marca ADD COLUMN marca_normalizada TEXT")
+        marca_cols.append("marca_normalizada")
+    if "necessita_pais_cliente_final" not in marca_cols:
+        c.execute(
+            "ALTER TABLE marca ADD COLUMN necessita_pais_cliente_final INTEGER NOT NULL DEFAULT 0"
+        )
+    if "margem" not in marca_cols:
+        c.execute(
+            "ALTER TABLE marca ADD COLUMN margem REAL NOT NULL DEFAULT 0.0"
+        )
+
+    # Garantir normalização dos nomes das marcas e preencher coluna auxiliar
     c.execute(
         """
-        CREATE TABLE IF NOT EXISTS fornecedor_marca (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fornecedor_id INTEGER NOT NULL,
-            marca TEXT NOT NULL,
-            necessita_pais_cliente_final INTEGER NOT NULL DEFAULT 0,
-            FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
-            UNIQUE(fornecedor_id, marca)
-        )
+        SELECT id, marca
+          FROM marca
+         WHERE marca IS NOT NULL
         """
     )
-
-    c.execute("PRAGMA table_info(fornecedor_marca)")
-    fornecedor_marca_cols = [row[1] for row in c.fetchall()]
-    if "necessita_pais_cliente_final" not in fornecedor_marca_cols:
+    marcas_existentes = c.fetchall()
+    for marca_id, marca_nome in marcas_existentes:
+        marca_limpa = (marca_nome or "").strip()
+        marca_normalizada = marca_limpa.casefold() if marca_limpa else ""
         c.execute(
-            "ALTER TABLE fornecedor_marca ADD COLUMN necessita_pais_cliente_final INTEGER NOT NULL DEFAULT 0"
+            """
+            UPDATE marca
+               SET marca = ?, marca_normalizada = ?
+             WHERE id = ?
+            """,
+            (marca_limpa, marca_normalizada, marca_id),
         )
+
+    # Eliminar duplicados mantendo o primeiro registo encontrado
+    c.execute(
+        """
+        SELECT id, marca_normalizada
+          FROM marca
+         WHERE marca_normalizada IS NOT NULL AND marca_normalizada != ''
+         ORDER BY id
+        """
+    )
+    vistos: set[str] = set()
+    duplicados: list[int] = []
+    for marca_id, marca_normalizada in c.fetchall():
+        if marca_normalizada in vistos:
+            duplicados.append(marca_id)
+        else:
+            vistos.add(marca_normalizada)
+    for marca_id in duplicados:
+        c.execute("DELETE FROM marca WHERE id = ?", (marca_id,))
 
     c.execute(
         """
@@ -294,11 +413,14 @@ def criar_base_dados_completa():
            SET necessita_pais_cliente_final = 1
          WHERE id IN (
             SELECT DISTINCT fornecedor_id
-              FROM fornecedor_marca
+              FROM marca
              WHERE necessita_pais_cliente_final = 1
          )
         """
     )
+
+    # Tabela antiga de margens deixa de ser necessária
+    c.execute("DROP TABLE IF EXISTS configuracao_margens")
 
     # Tabela de processos
     c.execute(
@@ -594,21 +716,6 @@ def criar_base_dados_completa():
         """
     )
 
-    # Tabela de configuração de margens por marca
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS configuracao_margens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fornecedor_id INTEGER,
-            marca TEXT,
-            margem_percentual REAL DEFAULT 0.0,
-            ativo BOOLEAN DEFAULT TRUE,
-            data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE
-        )
-        """
-    )
-
     # Tabela de configurações de email (sem password)
     c.execute(
         """
@@ -714,7 +821,8 @@ def criar_base_dados_completa():
         "CREATE INDEX IF NOT EXISTS idx_resposta_fornecedor ON resposta_fornecedor(fornecedor_id, rfq_id)",
         "CREATE INDEX IF NOT EXISTS idx_resposta_artigo ON resposta_fornecedor(artigo_id)",
         "CREATE INDEX IF NOT EXISTS idx_fornecedor_nome ON fornecedor(nome)",
-        "CREATE INDEX IF NOT EXISTS idx_fornecedor_marca ON fornecedor_marca(fornecedor_id, marca)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_marca_normalizada ON marca(marca_normalizada)",
+        "CREATE INDEX IF NOT EXISTS idx_marca_fornecedor ON marca(fornecedor_id)",
         "CREATE INDEX IF NOT EXISTS idx_cliente_nome ON cliente(nome)",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_utilizador_username ON utilizador(username)",
     ]
