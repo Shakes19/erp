@@ -33,13 +33,16 @@ def test_obter_fornecedores_por_marca_ignores_whitespace():
     conn = db.get_connection()
     try:
         row = conn.execute(
-            "SELECT marca FROM fornecedor_marca WHERE fornecedor_id = ?", (forn_id,)
+            "SELECT marca, marca_normalizada, margem FROM marca WHERE fornecedor_id = ?",
+            (forn_id,),
         ).fetchone()
     finally:
         conn.close()
 
     assert row is not None
     assert row[0] == "Marca Trim"
+    assert row[1] == "marca trim"
+    assert row[2] == 0.0
 
     fornecedores = main.obter_fornecedores_por_marca("Marca Trim")
     assert any(f[0] == forn_id for f in fornecedores)
