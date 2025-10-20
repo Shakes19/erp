@@ -54,17 +54,28 @@ def test_duplicate_referencia_allowed_for_multiple_suppliers():
     referencia = "REF-123"
     data_iso = datetime.now().isoformat()
 
+    cur.execute("UPDATE processo SET ref_cliente = ? WHERE id = ?", (referencia, processo_id))
+
+    estado_id = db.ensure_estado("pendente", cursor=cur)
     cur.execute(
-        "INSERT INTO rfq (processo_id, fornecedor_id, data, referencia) VALUES (?, ?, ?, ?)",
-        (processo_id, fornecedor_a, data_iso, referencia),
+        "INSERT INTO rfq (processo_id, fornecedor_id, cliente_final_nome, cliente_final_pais, data_atualizacao, estado_id) VALUES (?, ?, NULL, NULL, ?, ?)",
+        (processo_id, fornecedor_a, data_iso, estado_id),
     )
     cur.execute(
-        "INSERT INTO rfq (processo_id, fornecedor_id, data, referencia) VALUES (?, ?, ?, ?)",
-        (processo_id, fornecedor_b, data_iso, referencia),
+        "INSERT INTO rfq (processo_id, fornecedor_id, cliente_final_nome, cliente_final_pais, data_atualizacao, estado_id) VALUES (?, ?, NULL, NULL, ?, ?)",
+        (processo_id, fornecedor_b, data_iso, estado_id),
     )
     conn.commit()
 
-    cur.execute("SELECT COUNT(*) FROM rfq WHERE referencia = ?", (referencia,))
+    cur.execute(
+        """
+        SELECT COUNT(*)
+          FROM rfq
+          JOIN processo ON rfq.processo_id = processo.id
+         WHERE processo.ref_cliente = ?
+        """,
+        (referencia,),
+    )
     count = cur.fetchone()[0]
     conn.close()
 

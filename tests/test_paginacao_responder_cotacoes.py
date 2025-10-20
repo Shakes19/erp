@@ -83,10 +83,16 @@ def test_paginacao_responder_cotacoes(tmp_path, monkeypatch):
     c.execute("INSERT INTO fornecedor(nome) VALUES ('F1')")
     forn_id = c.lastrowid
 
+    estado_id = db_module.ensure_estado("pendente", cursor=c)
     for i in range(25):
         c.execute(
-            "INSERT INTO rfq(fornecedor_id, data, estado, referencia) VALUES (?, '2024-01-01', 'pendente', ?)",
-            (forn_id, f'Ref{i}')
+            "INSERT INTO processo(numero, descricao, ref_cliente) VALUES (?, ?, ?)",
+            (f"PROC-{i}", f"desc {i}", f"Ref{i}"),
+        )
+        processo_id = c.lastrowid
+        c.execute(
+            "INSERT INTO rfq(processo_id, fornecedor_id, cliente_final_nome, cliente_final_pais, data_atualizacao, estado_id) VALUES (?, ?, NULL, NULL, '2024-01-01', ?)",
+            (processo_id, forn_id, estado_id),
         )
     conn.commit()
     conn.close()
