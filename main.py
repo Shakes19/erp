@@ -3265,7 +3265,8 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
                    rfq.cliente_final_nome,
                    rfq.cliente_final_pais
               FROM rfq
-              LEFT JOIN utilizador u ON rfq.utilizador_id = u.id
+              LEFT JOIN processo p ON rfq.processo_id = p.id
+              LEFT JOIN utilizador u ON p.utilizador_id = u.id
              WHERE rfq.id = ?
             """,
             (rfq_id,),
@@ -6387,8 +6388,8 @@ elif menu_option == "📊 Relatórios":
             col1, col2 = st.columns(2)
             with col1:
                 st.info(f"🟡 Pendentes: {pendentes}")
-        with col2:
-            st.success(f"🟢 Respondidas: {respondidas}")
+            with col2:
+                st.success(f"🟢 Respondidas: {respondidas}")
     with tab2:
         st.subheader("Análise por Fornecedor")
         
