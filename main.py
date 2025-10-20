@@ -33,10 +33,6 @@ from db import (
     fetch_all,
     fetch_one,
     ensure_estado,
-    ensure_moeda,
-    ensure_pais,
-    ensure_cliente_final,
-    ensure_solicitante,
     get_marca_id,
     get_artigo_catalogo_id,
 )
@@ -503,7 +499,9 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
         st.session_state["show_supplier_requirement_dialog"] = True
         return False
 
-    processo_id, numero_processo, processo_artigos = criar_processo_com_artigos(artigos)
+    processo_id, numero_processo, processo_artigos = criar_processo_com_artigos(
+        artigos, cliente_id
+    )
     rfqs_criados: list[tuple[int, tuple, dict]] = []
 
     for fornecedor_id, indices in fornecedores_map.items():
@@ -1033,11 +1031,13 @@ def eliminar_utilizador(user_id):
 
 # ========================== FUNÇÕES DE GESTÃO DE RFQs ==========================
 
-def criar_processo_com_artigos(artigos):
+def criar_processo_com_artigos(artigos, cliente_id: int | None = None):
     """Criar um novo processo e respetivos artigos base."""
 
     responsavel_id = st.session_state.get("user_id")
-    processo_id, numero_processo = criar_processo(responsavel_id=responsavel_id)
+    processo_id, numero_processo = criar_processo(
+        responsavel_id=responsavel_id, cliente_id=cliente_id
+    )
     conn = obter_conexao()
     c = conn.cursor()
     processo_artigos: list[dict] = []
@@ -1113,7 +1113,9 @@ def criar_rfq(
 
         ordem_para_processo: dict[int, int | None] = {}
         if processo_id is None or numero_processo is None or processo_artigos is None:
-            processo_id, numero_processo, processo_artigos = criar_processo_com_artigos(artigos)
+            processo_id, numero_processo, processo_artigos = criar_processo_com_artigos(
+                artigos, cliente_id
+            )
             ordem_para_processo = {
                 item.get("ordem", idx + 1): item.get("processo_artigo_id")
                 for idx, item in enumerate(processo_artigos)
@@ -1126,6 +1128,17 @@ def criar_rfq(
                 for idx, item in enumerate(processo_artigos)
                 if item.get("processo_artigo_id")
             }
+
+        if processo_id and cliente_id is not None:
+            c.execute(
+                """
+                UPDATE processo
+                   SET cliente_id = ?
+                 WHERE id = ?
+                   AND COALESCE(cliente_id, -1) != COALESCE(?, -1)
+                """,
+                (cliente_id, processo_id, cliente_id),
+            )
 
         nome_solicitante = ""
         email_solicitante = ""
@@ -1150,16 +1163,6 @@ def criar_rfq(
         cliente_final_pais = (dados_requisito.get("pais") or "").strip()
         cliente_final_nome_db = cliente_final_nome or None
         cliente_final_pais_db = cliente_final_pais or None
-        cliente_final_id = ensure_cliente_final(
-            cliente_final_nome, cliente_final_pais, cursor=c
-        )
-        solicitante_id = ensure_solicitante(
-            nome_solicitante,
-            email_solicitante,
-            telefone_solicitante,
-            empresa_solicitante,
-            cursor=c,
-        )
         estado_padrao = "pendente"
         estado_id = ensure_estado(estado_padrao, cursor=c)
 
@@ -1172,7 +1175,6 @@ def criar_rfq(
                         processo_id,
                         fornecedor_id,
                         cliente_id,
-                        solicitante_id,
                         data,
                         referencia,
                         nome_solicitante,
@@ -1183,16 +1185,14 @@ def criar_rfq(
                         utilizador_id,
                         cliente_final_nome,
                         cliente_final_pais,
-                        cliente_final_id,
                         estado_id
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         processo_id,
                         fornecedor_id,
                         cliente_id,
-                        solicitante_id,
                         data.isoformat(),
                         referencia,
                         nome_solicitante,
@@ -1203,7 +1203,6 @@ def criar_rfq(
                         utilizador_id,
                         cliente_final_nome_db,
                         cliente_final_pais_db,
-                        cliente_final_id,
                         estado_id,
                     ),
                 )
@@ -1215,7 +1214,6 @@ def criar_rfq(
                         processo_id,
                         fornecedor_id,
                         cliente_id,
-                        solicitante_id,
                         data,
                         referencia,
                         nome_solicitante,
@@ -1226,16 +1224,14 @@ def criar_rfq(
                         utilizador_id,
                         cliente_final_nome,
                         cliente_final_pais,
-                        cliente_final_id,
                         estado_id
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
                     """,
                     (
                         processo_id,
                         fornecedor_id,
                         cliente_id,
-                        solicitante_id,
                         data.isoformat(),
                         referencia,
                         nome_solicitante,
@@ -1246,7 +1242,6 @@ def criar_rfq(
                         utilizador_id,
                         cliente_final_nome_db,
                         cliente_final_pais_db,
-                        cliente_final_id,
                         estado_id,
                     ),
                 )
@@ -1590,20 +1585,15 @@ def guardar_respostas(
             # Obter margem configurada para a marca
             margem = obter_margem_para_marca(fornecedor_id, marca)
             preco_venda = custo_total * (1 + margem / 100)
-            pais_origem_limpo = (pais_origem or "").strip()
-            pais_origem_id = (
-                ensure_pais(pais_origem_limpo, cursor=c) if pais_origem_limpo else None
-            )
             moeda_codigo = "EUR"
-            moeda_id = ensure_moeda(moeda_codigo, cursor=c)
 
             c.execute(
                 """
                 INSERT OR REPLACE INTO resposta_fornecedor
                 (fornecedor_id, rfq_id, artigo_id, descricao, custo, prazo_entrega,
                  peso, hs_code, pais_origem, moeda, margem_utilizada, preco_venda,
-                 quantidade_final, observacoes, validade_preco, pais_origem_id, moeda_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 quantidade_final, observacoes, validade_preco)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     fornecedor_id,
@@ -1621,8 +1611,6 @@ def guardar_respostas(
                     quantidade_final,
                     observacoes,
                     validade_preco,
-                    pais_origem_id,
-                    moeda_id,
                 ),
             )
 
