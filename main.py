@@ -2264,7 +2264,7 @@ def enviar_email_pedido_fornecedor(rfq_id):
             """
             SELECT f.nome,
                    f.email,
-                   r.referencia,
+                   COALESCE(p.ref_cliente, ''),
                    COALESCE(p.numero, ''),
                    r.cliente_final_nome,
                    r.cliente_final_pais
@@ -2332,8 +2332,8 @@ def enviar_email_pedido_fornecedor(rfq_id):
 
         # Construir email
         referencia_interna = numero_processo or referencia
-        referencia_texto = referencia if referencia else '—'
-        processo_texto = numero_processo if numero_processo else '—'
+        referencia_texto = referencia if referencia else "—"
+        processo_texto = numero_processo if numero_processo else "—"
         corpo = f"""Request for Quotation – {referencia_interna}
 
 Dear {fornecedor_nome} Team,
