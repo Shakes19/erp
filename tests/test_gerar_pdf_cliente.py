@@ -23,7 +23,16 @@ def test_gerar_pdf_cliente(tmp_path, monkeypatch):
     emp_id = c.lastrowid
     c.execute("INSERT INTO cliente(nome, email, empresa_id) VALUES ('Cliente', 'cli@example.com', ?)", (emp_id,))
     cliente_id = c.lastrowid
-    c.execute("INSERT INTO rfq(fornecedor_id, cliente_id, data, referencia) VALUES (?, ?, '2024-01-01', 'REF1')", (forn_id, cliente_id))
+    c.execute(
+        "INSERT INTO processo(numero, descricao, ref_cliente, cliente_id) VALUES (?, ?, ?, ?)",
+        ("PROC-1", "Proc", "REF1", cliente_id),
+    )
+    processo_id = c.lastrowid
+    estado_id = db_module.ensure_estado("pendente", cursor=c)
+    c.execute(
+        "INSERT INTO rfq(processo_id, fornecedor_id, cliente_final_nome, cliente_final_pais, data_atualizacao, estado_id) VALUES (?, ?, NULL, NULL, '2024-01-01', ?)",
+        (processo_id, forn_id, estado_id),
+    )
     rfq_id = c.lastrowid
     c.execute("INSERT INTO artigo(rfq_id, artigo_num, descricao, quantidade, unidade) VALUES (?, 'A1', 'Item', 2, 'pcs')", (rfq_id,))
     artigo_id = c.lastrowid

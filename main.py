@@ -409,7 +409,7 @@ def referencia_cliente_existe(referencia: str, cliente_id: int | None = None) ->
         return False
 
     params: list = [referencia_limpa]
-    query = "SELECT 1 FROM rfq WHERE TRIM(referencia) = ?"
+    query = "SELECT 1 FROM processo WHERE TRIM(ref_cliente) = ?"
     if cliente_id is not None:
         query += " AND COALESCE(cliente_id, -1) = COALESCE(?, -1)"
         params.append(cliente_id)
@@ -1034,9 +1034,9 @@ def eliminar_utilizador(user_id):
 def criar_processo_com_artigos(artigos, cliente_id: int | None = None):
     """Criar um novo processo e respetivos artigos base."""
 
-    responsavel_id = st.session_state.get("user_id")
+    utilizador_id = st.session_state.get("user_id")
     processo_id, numero_processo = criar_processo(
-        responsavel_id=responsavel_id, cliente_id=cliente_id
+        utilizador_id=utilizador_id, cliente_id=cliente_id
     )
     conn = obter_conexao()
     c = conn.cursor()
@@ -1133,30 +1133,35 @@ def criar_rfq(
             c.execute(
                 """
                 UPDATE processo
-                   SET cliente_id = ?
+                   SET cliente_id = ?, utilizador_id = COALESCE(utilizador_id, ?)
                  WHERE id = ?
                    AND COALESCE(cliente_id, -1) != COALESCE(?, -1)
                 """,
-                (cliente_id, processo_id, cliente_id),
+                (cliente_id, utilizador_id, processo_id, cliente_id),
             )
 
-        nome_solicitante = ""
-        email_solicitante = ""
-        empresa_solicitante = ""
-        telefone_solicitante = ""
-        if cliente_id:
+        referencia_limpa = (referencia or "").strip()
+        if processo_id and referencia_limpa:
             c.execute(
                 """
-                SELECT c.nome, c.email, e.nome
-                FROM cliente c
-                LEFT JOIN cliente_empresa e ON c.empresa_id = e.id
-                WHERE c.id = ?
+                UPDATE processo
+                   SET ref_cliente = ?,
+                       utilizador_id = COALESCE(utilizador_id, ?)
+                 WHERE id = ?
                 """,
-                (cliente_id,),
+                (referencia_limpa, utilizador_id, processo_id),
             )
-            row = c.fetchone()
-            if row:
-                nome_solicitante, email_solicitante, empresa_solicitante = row
+
+        if processo_id and utilizador_id is not None:
+            c.execute(
+                """
+                UPDATE processo
+                   SET utilizador_id = ?
+                 WHERE id = ?
+                   AND COALESCE(utilizador_id, -1) != COALESCE(?, -1)
+                """,
+                (utilizador_id, processo_id, utilizador_id),
+            )
 
         dados_requisito = requisitos_fornecedor or {}
         cliente_final_nome = (dados_requisito.get("cliente_final") or "").strip()
@@ -1168,41 +1173,26 @@ def criar_rfq(
 
         def _executar_insercao(conexao: sqlite3.Connection) -> int:
             cursor = conexao.cursor()
+            data_atualizacao = data.isoformat()
             if engine.dialect.name == "sqlite":
                 cursor.execute(
                     """
                     INSERT INTO rfq (
                         processo_id,
                         fornecedor_id,
-                        cliente_id,
-                        data,
-                        referencia,
-                        nome_solicitante,
-                        email_solicitante,
-                        telefone_solicitante,
-                        empresa_solicitante,
-                        estado,
-                        utilizador_id,
                         cliente_final_nome,
                         cliente_final_pais,
+                        data_atualizacao,
                         estado_id
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
                     (
                         processo_id,
                         fornecedor_id,
-                        cliente_id,
-                        data.isoformat(),
-                        referencia,
-                        nome_solicitante,
-                        email_solicitante,
-                        telefone_solicitante,
-                        empresa_solicitante,
-                        estado_padrao,
-                        utilizador_id,
                         cliente_final_nome_db,
                         cliente_final_pais_db,
+                        data_atualizacao,
                         estado_id,
                     ),
                 )
@@ -1213,35 +1203,19 @@ def criar_rfq(
                     INSERT INTO rfq (
                         processo_id,
                         fornecedor_id,
-                        cliente_id,
-                        data,
-                        referencia,
-                        nome_solicitante,
-                        email_solicitante,
-                        telefone_solicitante,
-                        empresa_solicitante,
-                        estado,
-                        utilizador_id,
                         cliente_final_nome,
                         cliente_final_pais,
+                        data_atualizacao,
                         estado_id
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+                    VALUES (?, ?, ?, ?, ?, ?) RETURNING id
                     """,
                     (
                         processo_id,
                         fornecedor_id,
-                        cliente_id,
-                        data.isoformat(),
-                        referencia,
-                        nome_solicitante,
-                        email_solicitante,
-                        telefone_solicitante,
-                        empresa_solicitante,
-                        estado_padrao,
-                        utilizador_id,
                         cliente_final_nome_db,
                         cliente_final_pais_db,
+                        data_atualizacao,
                         estado_id,
                     ),
                 )
@@ -1351,19 +1325,21 @@ def obter_todas_cotacoes(
         base_query = """
             SELECT rfq.id,
                    rfq.processo_id,
-                   rfq.data,
+                   rfq.data_atualizacao,
                    COALESCE(fornecedor.nome, 'Fornecedor desconhecido'),
-                   rfq.estado,
+                   COALESCE(estado.nome, 'pendente'),
                    COALESCE(processo.numero, 'Sem processo'),
-                   rfq.referencia,
+                   COALESCE(processo.ref_cliente, ''),
                    COUNT(artigo.id) as num_artigos,
-                   rfq.nome_solicitante,
-                   rfq.email_solicitante,
+                   COALESCE(cliente.nome, ''),
+                   COALESCE(cliente.email, ''),
                    u.nome
             FROM rfq
             LEFT JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id
             LEFT JOIN processo ON rfq.processo_id = processo.id
-            LEFT JOIN utilizador u ON rfq.utilizador_id = u.id
+            LEFT JOIN cliente ON processo.cliente_id = cliente.id
+            LEFT JOIN utilizador u ON processo.utilizador_id = u.id
+            LEFT JOIN estado ON rfq.estado_id = estado.id
             LEFT JOIN artigo ON rfq.id = artigo.rfq_id
         """
 
@@ -1371,11 +1347,11 @@ def obter_todas_cotacoes(
         params: list = []
 
         if filtro_referencia:
-            conditions.append("rfq.referencia LIKE ?")
+            conditions.append("processo.ref_cliente LIKE ?")
             params.append(f"%{filtro_referencia}%")
 
         if estado:
-            conditions.append("rfq.estado = ?")
+            conditions.append("COALESCE(estado.nome, 'pendente') = ?")
             params.append(estado)
 
         if fornecedor_id:
@@ -1383,13 +1359,13 @@ def obter_todas_cotacoes(
             params.append(fornecedor_id)
 
         if utilizador_id is not None:
-            conditions.append("rfq.utilizador_id = ?")
+            conditions.append("processo.utilizador_id = ?")
             params.append(utilizador_id)
 
         if conditions:
             base_query += " WHERE " + " AND ".join(conditions)
 
-        base_query += " GROUP BY rfq.id ORDER BY rfq.data DESC"
+        base_query += " GROUP BY rfq.id ORDER BY rfq.data_atualizacao DESC"
 
         query = base_query
         query_params = list(params)
@@ -1413,13 +1389,20 @@ def obter_todas_cotacoes(
                 "num_artigos": row[7],
                 "nome_solicitante": row[8] if row[8] else "",
                 "email_solicitante": row[9] if row[9] else "",
+                "cliente_nome": row[8] if row[8] else "",
+                "cliente_email": row[9] if row[9] else "",
                 "criador": row[10] if row[10] else "",
             }
             for row in resultados
         ]
 
         if return_total:
-            count_query = "SELECT COUNT(*) FROM rfq"
+            count_query = """
+                SELECT COUNT(*)
+                  FROM rfq
+                  LEFT JOIN processo ON rfq.processo_id = processo.id
+                  LEFT JOIN estado ON rfq.estado_id = estado.id
+            """
             if conditions:
                 count_query += " WHERE " + " AND ".join(conditions)
             c.execute(count_query, params)
@@ -1440,12 +1423,29 @@ def obter_detalhes_cotacao(rfq_id):
         conn = obter_conexao()
         c = conn.cursor()
         
-        c.execute("""
-            SELECT rfq.*, COALESCE(fornecedor.nome, 'Fornecedor desconhecido')
-            FROM rfq
-            LEFT JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id
-            WHERE rfq.id = ?
-        """, (rfq_id,))
+        c.execute(
+            """
+            SELECT rfq.id,
+                   rfq.fornecedor_id,
+                   rfq.data_atualizacao,
+                   COALESCE(estado.nome, 'pendente'),
+                   COALESCE(processo.ref_cliente, ''),
+                   COALESCE(processo.numero, ''),
+                   COALESCE(cliente.nome, ''),
+                   COALESCE(cliente.email, ''),
+                   COALESCE(fornecedor.nome, 'Fornecedor desconhecido'),
+                   processo.utilizador_id,
+                   COALESCE(rfq.cliente_final_nome, ''),
+                   COALESCE(rfq.cliente_final_pais, '')
+              FROM rfq
+              LEFT JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id
+              LEFT JOIN processo ON rfq.processo_id = processo.id
+              LEFT JOIN cliente ON processo.cliente_id = cliente.id
+              LEFT JOIN estado ON rfq.estado_id = estado.id
+             WHERE rfq.id = ?
+        """,
+            (rfq_id,)
+        )
         info = c.fetchone()
         
         if not info:
@@ -1475,12 +1475,14 @@ def obter_detalhes_cotacao(rfq_id):
             "data": info[2],
             "estado": info[3],
             "referencia": info[4],
-            "observacoes": info[5] if info[5] else "",
-            "nome_solicitante": info[6] if info[6] else "",
-            "email_solicitante": info[7] if info[7] else "",
-            "fornecedor": info[13],
-            "utilizador_id": info[12],
-            "artigos": artigos
+            "processo_numero": info[5],
+            "nome_solicitante": info[6],
+            "email_solicitante": info[7],
+            "fornecedor": info[8],
+            "utilizador_id": info[9],
+            "cliente_final_nome": info[10],
+            "cliente_final_pais": info[11],
+            "artigos": artigos,
         }
         
     except Exception as e:
@@ -1517,8 +1519,8 @@ def arquivar_cotacao(rfq_id):
     try:
         estado_id = ensure_estado("arquivada", cursor=c)
         c.execute(
-            "UPDATE rfq SET estado = ?, estado_id = ? WHERE id = ?",
-            ("arquivada", estado_id, rfq_id),
+            "UPDATE rfq SET estado_id = ? WHERE id = ?",
+            (estado_id, rfq_id),
         )
         conn.commit()
         invalidate_overview_caches()
@@ -1623,23 +1625,23 @@ def guardar_respostas(
         # Atualizar estado da RFQ
         estado_id = ensure_estado("respondido", cursor=c)
         c.execute(
-            "UPDATE rfq SET estado = ?, estado_id = ? WHERE id = ?",
-            ("respondido", estado_id, rfq_id),
+            "UPDATE rfq SET estado_id = ? WHERE id = ?",
+            (estado_id, rfq_id),
         )
 
         # Obter informações para email
         c.execute(
             """
-            SELECT r.nome_solicitante,
-                   r.email_solicitante,
-                   r.referencia,
-                   p.numero,
-                   COALESCE(c.nome, ''),
-                   COALESCE(c.email, '')
-            FROM rfq r
-            LEFT JOIN processo p ON r.processo_id = p.id
-            LEFT JOIN cliente c ON r.cliente_id = c.id
-            WHERE r.id = ?
+            SELECT COALESCE(cli.nome, ''),
+                   COALESCE(cli.email, ''),
+                   COALESCE(proc.ref_cliente, ''),
+                   proc.numero,
+                   COALESCE(cli.nome, ''),
+                   COALESCE(cli.email, '')
+              FROM rfq r
+              LEFT JOIN processo proc ON r.processo_id = proc.id
+              LEFT JOIN cliente cli ON proc.cliente_id = cli.id
+             WHERE r.id = ?
             """,
             (rfq_id,),
         )
@@ -1850,10 +1852,11 @@ def obter_respostas_por_processo(processo_id):
 
     c.execute(
         """
-        SELECT rfq.fornecedor_id, fornecedor.nome, rfq.estado
-        FROM rfq
-        LEFT JOIN fornecedor ON fornecedor.id = rfq.fornecedor_id
-        WHERE rfq.processo_id = ?
+        SELECT rfq.fornecedor_id, fornecedor.nome, COALESCE(estado.nome, 'pendente')
+          FROM rfq
+          LEFT JOIN fornecedor ON fornecedor.id = rfq.fornecedor_id
+          LEFT JOIN estado ON rfq.estado_id = estado.id
+         WHERE rfq.processo_id = ?
         """,
         (processo_id,),
     )
@@ -1892,14 +1895,14 @@ def procurar_processos_por_termo(termo: str, limite: int = 25):
                processo.numero,
                COALESCE(processo.descricao, ''),
                processo.data_abertura,
-               COALESCE(processo.estado, ''),
+               COALESCE(processo.ref_cliente, ''),
                COUNT(DISTINCT rfq.id) AS total_pedidos
-        FROM processo
-        LEFT JOIN rfq ON rfq.processo_id = processo.id
-        WHERE processo.numero LIKE ? OR rfq.referencia LIKE ?
-        GROUP BY processo.id
-        ORDER BY processo.data_abertura DESC, processo.numero DESC
-        LIMIT ?
+          FROM processo
+          LEFT JOIN rfq ON rfq.processo_id = processo.id
+         WHERE processo.numero LIKE ? OR processo.ref_cliente LIKE ?
+         GROUP BY processo.id
+         ORDER BY processo.data_abertura DESC, processo.numero DESC
+         LIMIT ?
         """,
         (like_term, like_term, limite),
     )
@@ -1910,7 +1913,8 @@ def procurar_processos_por_termo(termo: str, limite: int = 25):
             "numero": row[1],
             "descricao": row[2] or "",
             "data_abertura": row[3],
-            "estado": row[4] or "",
+            "referencia": row[4] or "",
+            "estado": "",
             "total_pedidos": row[5] or 0,
         }
         for row in c.fetchall()
@@ -1927,7 +1931,7 @@ def obter_detalhes_processo(processo_id: int):
     c = conn.cursor()
 
     c.execute(
-        "SELECT id, numero, COALESCE(descricao, ''), data_abertura, COALESCE(estado, '') FROM processo WHERE id = ?",
+        "SELECT id, numero, COALESCE(descricao, ''), data_abertura, COALESCE(ref_cliente, '') FROM processo WHERE id = ?",
         (processo_id,),
     )
     row = c.fetchone()
@@ -1941,7 +1945,7 @@ def obter_detalhes_processo(processo_id: int):
         "numero": row[1],
         "descricao": row[2] or "",
         "data_abertura": row[3],
-        "estado": row[4] or "",
+        "referencia": row[4] or "",
     }
 
     c.execute(
@@ -1970,20 +1974,21 @@ def obter_detalhes_processo(processo_id: int):
     c.execute(
         """
         SELECT rfq.id,
-               rfq.referencia,
-               COALESCE(rfq.estado, 'pendente'),
-               rfq.data,
+               COALESCE(processo.ref_cliente, ''),
+               COALESCE(estado.nome, 'pendente'),
+               rfq.data_atualizacao,
                COALESCE(fornecedor.nome, 'Fornecedor desconhecido') AS fornecedor_nome,
-               COALESCE(rfq.observacoes, ''),
-               COALESCE(rfq.nome_solicitante, ''),
-               COALESCE(rfq.email_solicitante, ''),
+               '' AS observacoes,
                COALESCE(cliente.nome, ''),
-               rfq.utilizador_id
-        FROM rfq
-        LEFT JOIN fornecedor ON fornecedor.id = rfq.fornecedor_id
-        LEFT JOIN cliente ON cliente.id = rfq.cliente_id
-        WHERE rfq.processo_id = ?
-        ORDER BY fornecedor_nome COLLATE NOCASE, rfq.data
+               COALESCE(cliente.email, ''),
+               processo.utilizador_id
+          FROM rfq
+          LEFT JOIN fornecedor ON fornecedor.id = rfq.fornecedor_id
+          LEFT JOIN processo ON processo.id = rfq.processo_id
+          LEFT JOIN cliente ON cliente.id = processo.cliente_id
+          LEFT JOIN estado ON rfq.estado_id = estado.id
+         WHERE rfq.processo_id = ?
+         ORDER BY fornecedor_nome COLLATE NOCASE, rfq.data_atualizacao
         """,
         (processo_id,),
     )
@@ -3302,17 +3307,26 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
         # 1. Obter dados da RFQ e do cliente
         c.execute(
             """
-            SELECT rfq.referencia, rfq.data, rfq.nome_solicitante, rfq.email_solicitante,
-                   ce.nome AS empresa_nome, ce.morada AS empresa_morada, ce.condicoes_pagamento,
-                   c.nome AS cliente_nome, c.email AS cliente_email,
-                   u.nome AS user_nome, u.email AS user_email,
+            SELECT COALESCE(p.ref_cliente, ''),
+                   rfq.data_atualizacao,
+                   COALESCE(c.nome, ''),
+                   COALESCE(c.email, ''),
+                   ce.nome AS empresa_nome,
+                   ce.morada AS empresa_morada,
+                   ce.condicoes_pagamento,
+                   COALESCE(c.nome, ''),
+                   COALESCE(c.email, ''),
+                   u.nome AS user_nome,
+                   u.email AS user_email,
                    p.numero AS processo_numero,
-                   rfq.processo_id
+                   rfq.processo_id,
+                   COALESCE(rfq.cliente_final_nome, ''),
+                   COALESCE(rfq.cliente_final_pais, '')
             FROM rfq
-            LEFT JOIN cliente c ON rfq.cliente_id = c.id
-            LEFT JOIN cliente_empresa ce ON c.empresa_id = ce.id
-            LEFT JOIN utilizador u ON rfq.utilizador_id = u.id
             LEFT JOIN processo p ON rfq.processo_id = p.id
+            LEFT JOIN cliente c ON p.cliente_id = c.id
+            LEFT JOIN cliente_empresa ce ON c.empresa_id = ce.id
+            LEFT JOIN utilizador u ON p.utilizador_id = u.id
             WHERE rfq.id = ?
             """,
             (rfq_id,),
@@ -3337,6 +3351,8 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
             "user_email": row[10] if len(row) > 10 else "",
             "processo_numero": row[11] if len(row) > 11 else "",
             "processo_id": row[12] if len(row) > 12 else None,
+            "cliente_final_nome": row[13] if len(row) > 13 else "",
+            "cliente_final_pais": row[14] if len(row) > 14 else "",
         }
 
         resposta_ids_set = {

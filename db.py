@@ -538,38 +538,71 @@ def criar_base_dados_completa():
             numero TEXT NOT NULL UNIQUE,
             descricao TEXT,
             data_abertura TEXT DEFAULT CURRENT_TIMESTAMP,
-            estado TEXT DEFAULT 'ativo',
-            estado_id INTEGER,
-            responsavel_id INTEGER,
-            FOREIGN KEY (estado_id) REFERENCES estado(id)
-                ON DELETE SET NULL,
-            FOREIGN KEY (responsavel_id) REFERENCES utilizador(id) ON DELETE SET NULL
+            ref_cliente TEXT,
+            utilizador_id INTEGER,
+            cliente_id INTEGER,
+            FOREIGN KEY (utilizador_id) REFERENCES utilizador(id) ON DELETE SET NULL,
+            FOREIGN KEY (cliente_id) REFERENCES cliente(id) ON DELETE SET NULL
         )
         """
     )
 
     c.execute("PRAGMA table_info(processo)")
-    processo_cols = [row[1] for row in c.fetchall()]
-    if "estado_id" not in processo_cols:
-        c.execute("ALTER TABLE processo ADD COLUMN estado_id INTEGER REFERENCES estado(id)")
-    if "responsavel_id" not in processo_cols:
-        c.execute(
-            "ALTER TABLE processo ADD COLUMN responsavel_id INTEGER REFERENCES utilizador(id)"
-        )
-    if "cliente_id" not in processo_cols:
-        c.execute(
-            "ALTER TABLE processo ADD COLUMN cliente_id INTEGER REFERENCES cliente(id)"
-        )
+    processo_info = c.fetchall()
+    processo_cols = [row[1] for row in processo_info]
+    necessita_migracao_processo = False
+    if "ref_cliente" not in processo_cols:
+        necessita_migracao_processo = True
+    if "utilizador_id" not in processo_cols and "responsavel_id" in processo_cols:
+        necessita_migracao_processo = True
+    if "estado" in processo_cols or "estado_id" in processo_cols:
+        necessita_migracao_processo = True
 
-    c.execute(
-        "SELECT id, COALESCE(estado, 'ativo') FROM processo WHERE estado_id IS NULL"
-    )
-    for proc_id, estado_nome in c.fetchall():
-        estado_id = ensure_estado(estado_nome or "ativo", cursor=c)
-        c.execute(
-            "UPDATE processo SET estado_id = ?, estado = ? WHERE id = ?",
-            (estado_id, estado_nome or "ativo", proc_id),
-        )
+    if necessita_migracao_processo:
+        c.execute("PRAGMA foreign_keys = OFF")
+        try:
+            c.execute("ALTER TABLE processo RENAME TO processo_legacy")
+            c.execute(
+                """
+                CREATE TABLE processo (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    numero TEXT NOT NULL UNIQUE,
+                    descricao TEXT,
+                    data_abertura TEXT DEFAULT CURRENT_TIMESTAMP,
+                    ref_cliente TEXT,
+                    utilizador_id INTEGER,
+                    cliente_id INTEGER,
+                    FOREIGN KEY (utilizador_id) REFERENCES utilizador(id) ON DELETE SET NULL,
+                    FOREIGN KEY (cliente_id) REFERENCES cliente(id) ON DELETE SET NULL
+                )
+                """
+            )
+
+            c.execute("PRAGMA table_info(processo_legacy)")
+            legacy_cols = [row[1] for row in c.fetchall()]
+            select_ref = "ref_cliente" if "ref_cliente" in legacy_cols else "NULL"
+            if "referencia" in legacy_cols and "processo_id" in legacy_cols:
+                select_ref = "referencia"
+            select_utilizador = "utilizador_id" if "utilizador_id" in legacy_cols else (
+                "responsavel_id" if "responsavel_id" in legacy_cols else "NULL"
+            )
+            select_cliente = "cliente_id" if "cliente_id" in legacy_cols else "NULL"
+            c.execute(
+                f"""
+                INSERT INTO processo (id, numero, descricao, data_abertura, ref_cliente, utilizador_id, cliente_id)
+                SELECT id,
+                       numero,
+                       descricao,
+                       data_abertura,
+                       {select_ref},
+                       {select_utilizador},
+                       {select_cliente}
+                  FROM processo_legacy
+                """
+            )
+            c.execute("DROP TABLE processo_legacy")
+        finally:
+            c.execute("PRAGMA foreign_keys = ON")
 
     # Tabela RFQ (pedidos enviados aos fornecedores)
     c.execute(
@@ -592,123 +625,39 @@ def criar_base_dados_completa():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             processo_id INTEGER,
             fornecedor_id INTEGER NOT NULL,
-            cliente_id INTEGER,
-            data TEXT NOT NULL,
-            estado TEXT DEFAULT 'pendente',
-            referencia TEXT NOT NULL,
-            observacoes TEXT,
-            nome_solicitante TEXT,
-            email_solicitante TEXT,
-            telefone_solicitante TEXT,
-            empresa_solicitante TEXT,
             cliente_final_nome TEXT,
             cliente_final_pais TEXT,
-            data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
             data_atualizacao TEXT DEFAULT CURRENT_TIMESTAMP,
-            utilizador_id INTEGER,
             estado_id INTEGER,
             FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
-            FOREIGN KEY (cliente_id) REFERENCES cliente(id) ON DELETE SET NULL,
-            FOREIGN KEY (utilizador_id) REFERENCES utilizador(id) ON DELETE SET NULL,
             FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE SET NULL,
             FOREIGN KEY (estado_id) REFERENCES estado(id) ON DELETE SET NULL
         )
         """
     )
 
-    # Migração: versões anteriores tinham UNIQUE(referencia), impedindo várias
-    # perguntas para a mesma referência. Garantir que esse índice foi removido.
-    c.execute("PRAGMA index_list('rfq')")
-    rfq_indexes = c.fetchall()
-    unique_ref_index = None
-    for _, idx_name, is_unique, origin, _ in rfq_indexes:
-        if not is_unique:
-            continue
-        c.execute(f"PRAGMA index_info('{idx_name}')")
-        cols = [row[2] for row in c.fetchall()]
-        if cols == ["referencia"]:
-            unique_ref_index = idx_name
-            break
-
-    if unique_ref_index:
-        # Recriar a tabela sem a restrição UNIQUE. É necessário desativar
-        # temporariamente as foreign keys para permitir a operação de rename.
-        c.execute("PRAGMA foreign_keys = OFF")
-        try:
-            c.execute("ALTER TABLE rfq RENAME TO rfq_old")
-            c.execute(
-                """
-                CREATE TABLE rfq (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    processo_id INTEGER,
-                    fornecedor_id INTEGER NOT NULL,
-                    cliente_id INTEGER,
-                    data TEXT NOT NULL,
-                    estado TEXT DEFAULT 'pendente',
-                    referencia TEXT NOT NULL,
-                    observacoes TEXT,
-                    nome_solicitante TEXT,
-                    email_solicitante TEXT,
-                    telefone_solicitante TEXT,
-                    empresa_solicitante TEXT,
-                    cliente_final_nome TEXT,
-                    cliente_final_pais TEXT,
-                    data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
-                    data_atualizacao TEXT DEFAULT CURRENT_TIMESTAMP,
-                    utilizador_id INTEGER,
-                    estado_id INTEGER,
-                    FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
-                    FOREIGN KEY (cliente_id) REFERENCES cliente(id) ON DELETE SET NULL,
-                    FOREIGN KEY (utilizador_id) REFERENCES utilizador(id) ON DELETE SET NULL,
-                    FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE SET NULL,
-                    FOREIGN KEY (estado_id) REFERENCES estado(id) ON DELETE SET NULL
-                )
-                """
-            )
-
-            c.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='rfq_old'"
-            )
-            has_rfq_old = c.fetchone() is not None
-
-            if has_rfq_old:
-                c.execute("PRAGMA table_info(rfq_old)")
-                old_columns = [row[1] for row in c.fetchall()]
-                column_order = [
-                    "id",
-                    "processo_id",
-                    "fornecedor_id",
-                    "cliente_id",
-                    "data",
-                    "estado",
-                    "referencia",
-                    "observacoes",
-                    "nome_solicitante",
-                    "email_solicitante",
-                    "telefone_solicitante",
-                    "empresa_solicitante",
-                    "cliente_final_nome",
-                    "cliente_final_pais",
-                    "data_criacao",
-                    "data_atualizacao",
-                    "utilizador_id",
-                    "estado_id",
-                ]
-                common_cols = [col for col in column_order if col in old_columns]
-                cols_csv = ", ".join(common_cols)
-                if cols_csv:
-                    c.execute(
-                        f"INSERT INTO rfq ({cols_csv}) SELECT {cols_csv} FROM rfq_old"
-                    )
-
-            c.execute("DROP TABLE IF EXISTS rfq_old")
-        finally:
-            c.execute("PRAGMA foreign_keys = ON")
-
-    # Garantir colunas atualizadas
     c.execute("PRAGMA table_info(rfq)")
     rfq_columns = [row[1] for row in c.fetchall()]
-    if "solicitante_id" in rfq_columns or "cliente_final_id" in rfq_columns:
+    colunas_antigas = {
+        "cliente_id",
+        "data",
+        "estado",
+        "referencia",
+        "observacoes",
+        "nome_solicitante",
+        "email_solicitante",
+        "telefone_solicitante",
+        "empresa_solicitante",
+        "data_criacao",
+        "utilizador_id",
+    }
+    necessita_migracao_rfq = False
+    if "cliente_final_nome" not in rfq_columns or "data_atualizacao" not in rfq_columns:
+        necessita_migracao_rfq = True
+    if any(col in rfq_columns for col in colunas_antigas):
+        necessita_migracao_rfq = True
+
+    if necessita_migracao_rfq:
         c.execute("PRAGMA foreign_keys = OFF")
         try:
             c.execute("ALTER TABLE rfq RENAME TO rfq_legacy")
@@ -718,24 +667,11 @@ def criar_base_dados_completa():
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     processo_id INTEGER,
                     fornecedor_id INTEGER NOT NULL,
-                    cliente_id INTEGER,
-                    data TEXT NOT NULL,
-                    estado TEXT DEFAULT 'pendente',
-                    referencia TEXT NOT NULL,
-                    observacoes TEXT,
-                    nome_solicitante TEXT,
-                    email_solicitante TEXT,
-                    telefone_solicitante TEXT,
-                    empresa_solicitante TEXT,
                     cliente_final_nome TEXT,
                     cliente_final_pais TEXT,
-                    data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
                     data_atualizacao TEXT DEFAULT CURRENT_TIMESTAMP,
-                    utilizador_id INTEGER,
                     estado_id INTEGER,
                     FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
-                    FOREIGN KEY (cliente_id) REFERENCES cliente(id) ON DELETE SET NULL,
-                    FOREIGN KEY (utilizador_id) REFERENCES utilizador(id) ON DELETE SET NULL,
                     FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE SET NULL,
                     FOREIGN KEY (estado_id) REFERENCES estado(id) ON DELETE SET NULL
                 )
@@ -744,32 +680,74 @@ def criar_base_dados_completa():
 
             c.execute("PRAGMA table_info(rfq_legacy)")
             legacy_cols = [row[1] for row in c.fetchall()]
-            column_order = [
-                "id",
-                "processo_id",
-                "fornecedor_id",
-                "cliente_id",
-                "data",
-                "estado",
-                "referencia",
-                "observacoes",
-                "nome_solicitante",
-                "email_solicitante",
-                "telefone_solicitante",
-                "empresa_solicitante",
-                "cliente_final_nome",
-                "cliente_final_pais",
-                "data_criacao",
-                "data_atualizacao",
-                "utilizador_id",
-                "estado_id",
-            ]
-            common_cols = [col for col in column_order if col in legacy_cols]
-            if common_cols:
-                cols_csv = ", ".join(common_cols)
+
+            if "cliente_id" in legacy_cols:
                 c.execute(
-                    f"INSERT INTO rfq ({cols_csv}) SELECT {cols_csv} FROM rfq_legacy"
+                    """
+                    UPDATE processo
+                       SET cliente_id = (
+                            SELECT cliente_id
+                              FROM rfq_legacy
+                             WHERE rfq_legacy.processo_id = processo.id
+                               AND cliente_id IS NOT NULL
+                             ORDER BY rfq_legacy.id
+                             LIMIT 1
+                       )
+                     WHERE cliente_id IS NULL
+                    """
                 )
+
+            if "referencia" in legacy_cols and "processo_id" in legacy_cols:
+                c.execute(
+                    """
+                    UPDATE processo
+                       SET ref_cliente = (
+                           SELECT referencia
+                             FROM rfq_legacy
+                            WHERE rfq_legacy.processo_id = processo.id
+                              AND referencia IS NOT NULL
+                              AND TRIM(referencia) != ''
+                         ORDER BY rfq_legacy.id DESC
+                            LIMIT 1
+                       )
+                     WHERE (
+                        ref_cliente IS NULL OR TRIM(ref_cliente) = ''
+                     )
+                       AND EXISTS (
+                           SELECT 1
+                             FROM rfq_legacy
+                            WHERE rfq_legacy.processo_id = processo.id
+                              AND referencia IS NOT NULL
+                              AND TRIM(referencia) != ''
+                       )
+                    """
+                )
+
+            select_processo = "processo_id" if "processo_id" in legacy_cols else "NULL"
+            select_fornecedor = "fornecedor_id" if "fornecedor_id" in legacy_cols else "NULL"
+            select_cliente_final_nome = (
+                "cliente_final_nome" if "cliente_final_nome" in legacy_cols else "NULL"
+            )
+            select_cliente_final_pais = (
+                "cliente_final_pais" if "cliente_final_pais" in legacy_cols else "NULL"
+            )
+            select_estado_id = "estado_id" if "estado_id" in legacy_cols else "NULL"
+            select_data = "data_atualizacao" if "data_atualizacao" in legacy_cols else (
+                "data" if "data" in legacy_cols else "CURRENT_TIMESTAMP"
+            )
+            c.execute(
+                f"""
+                INSERT INTO rfq (id, processo_id, fornecedor_id, cliente_final_nome, cliente_final_pais, data_atualizacao, estado_id)
+                SELECT id,
+                       {select_processo},
+                       {select_fornecedor},
+                       {select_cliente_final_nome},
+                       {select_cliente_final_pais},
+                       COALESCE({select_data}, CURRENT_TIMESTAMP),
+                       {select_estado_id}
+                  FROM rfq_legacy
+                """
+            )
 
             c.execute("DROP TABLE rfq_legacy")
         finally:
@@ -778,45 +756,26 @@ def criar_base_dados_completa():
         c.execute("PRAGMA table_info(rfq)")
         rfq_columns = [row[1] for row in c.fetchall()]
 
-    required_columns = {
-        "utilizador_id": "INTEGER",
-        "processo_id": "INTEGER",
-        "cliente_id": "INTEGER",
-        "cliente_final_nome": "TEXT",
-        "cliente_final_pais": "TEXT",
-        "data_criacao": "TEXT DEFAULT CURRENT_TIMESTAMP",
-        "data_atualizacao": "TEXT DEFAULT CURRENT_TIMESTAMP",
-        "estado_id": "INTEGER REFERENCES estado(id)",
-    }
-    for coluna, definicao in required_columns.items():
-        if coluna not in rfq_columns:
-            c.execute(f"ALTER TABLE rfq ADD COLUMN {coluna} {definicao}")
-            rfq_columns.append(coluna)
+    if "estado_id" not in rfq_columns:
+        c.execute("ALTER TABLE rfq ADD COLUMN estado_id INTEGER REFERENCES estado(id)")
 
     c.execute(
         """
-        UPDATE processo
-           SET cliente_id = (
-                SELECT cliente_id
-                  FROM rfq
-                 WHERE rfq.processo_id = processo.id
-                   AND cliente_id IS NOT NULL
-                 ORDER BY rfq.id
-                 LIMIT 1
-           )
-         WHERE cliente_id IS NULL
+        SELECT id
+          FROM rfq
+         WHERE estado_id IS NULL
         """
     )
+    for (rfq_id,) in c.fetchall():
+        estado_id = ensure_estado("pendente", cursor=c)
+        c.execute("UPDATE rfq SET estado_id = ? WHERE id = ?", (estado_id, rfq_id))
 
     c.execute(
-        "SELECT id, COALESCE(estado, 'pendente') FROM rfq WHERE estado_id IS NULL"
+        """
+        UPDATE rfq
+           SET data_atualizacao = COALESCE(data_atualizacao, CURRENT_TIMESTAMP)
+        """
     )
-    for rfq_id, estado_nome in c.fetchall():
-        estado_id = ensure_estado(estado_nome or "pendente", cursor=c)
-        c.execute(
-            "UPDATE rfq SET estado_id = ?, estado = ? WHERE id = ?",
-            (estado_id, estado_nome or "pendente", rfq_id),
-        )
 
     # Tabela com artigos definidos ao nível de processo para permitir
     # reutilização entre múltiplos fornecedores na mesma cotação
@@ -1199,9 +1158,9 @@ def criar_base_dados_completa():
     # Criar índices para melhor performance
     indices = [
         "CREATE INDEX IF NOT EXISTS idx_rfq_fornecedor ON rfq(fornecedor_id)",
-        "CREATE INDEX IF NOT EXISTS idx_rfq_data ON rfq(data)",
-        "CREATE INDEX IF NOT EXISTS idx_rfq_estado ON rfq(estado)",
-        "CREATE INDEX IF NOT EXISTS idx_rfq_referencia ON rfq(referencia)",
+        "CREATE INDEX IF NOT EXISTS idx_rfq_processo ON rfq(processo_id)",
+        "CREATE INDEX IF NOT EXISTS idx_rfq_estado_id ON rfq(estado_id)",
+        "CREATE INDEX IF NOT EXISTS idx_rfq_data_atualizacao ON rfq(data_atualizacao)",
         "CREATE INDEX IF NOT EXISTS idx_artigo_rfq ON artigo(rfq_id)",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_artigo_catalogo_num ON artigo_catalogo(artigo_num)",
         "CREATE INDEX IF NOT EXISTS idx_resposta_fornecedor ON resposta_fornecedor(fornecedor_id, rfq_id)",
@@ -1211,7 +1170,8 @@ def criar_base_dados_completa():
         "CREATE INDEX IF NOT EXISTS idx_marca_fornecedor ON marca(fornecedor_id)",
         "CREATE INDEX IF NOT EXISTS idx_cliente_nome ON cliente(nome)",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_utilizador_username ON utilizador(username)",
-        "CREATE INDEX IF NOT EXISTS idx_processo_responsavel ON processo(responsavel_id)",
+        "CREATE INDEX IF NOT EXISTS idx_processo_utilizador ON processo(utilizador_id)",
+        "CREATE INDEX IF NOT EXISTS idx_processo_ref_cliente ON processo(ref_cliente)",
     ]
     for idx in indices:
         c.execute(idx)
@@ -1251,8 +1211,9 @@ def backup_database(backup_path: str | None = None):
 
 def criar_processo(
     descricao: str = "",
-    responsavel_id: int | None = None,
+    utilizador_id: int | None = None,
     cliente_id: int | None = None,
+    ref_cliente: str | None = None,
 ):
     """Cria um novo processo com número sequencial anual."""
     ano = datetime.now().year
@@ -1268,20 +1229,17 @@ def criar_processo(
         max_seq = result.scalar()
         numero = f"{prefixo}{(max_seq or 0) + 1}"
 
-        estado_nome = "ativo"
-        estado_id = ensure_estado(estado_nome)
         insert_result = session.execute(
             text(
-                "INSERT INTO processo (numero, descricao, estado, estado_id, responsavel_id, cliente_id) "
-                "VALUES (:numero, :descricao, :estado, :estado_id, :responsavel_id, :cliente_id)"
+                "INSERT INTO processo (numero, descricao, utilizador_id, cliente_id, ref_cliente) "
+                "VALUES (:numero, :descricao, :utilizador_id, :cliente_id, :ref_cliente)"
             ),
             {
                 "numero": numero,
                 "descricao": descricao,
-                "estado": estado_nome,
-                "estado_id": estado_id,
-                "responsavel_id": responsavel_id,
+                "utilizador_id": utilizador_id,
                 "cliente_id": cliente_id,
+                "ref_cliente": ref_cliente,
             },
         )
         try:
