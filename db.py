@@ -494,7 +494,6 @@ def criar_base_dados_completa():
                 fornecedor_id INTEGER NOT NULL,
                 marca TEXT NOT NULL,
                 marca_normalizada TEXT NOT NULL,
-                necessita_pais_cliente_final INTEGER NOT NULL DEFAULT 0,
                 margem REAL NOT NULL DEFAULT 0.0,
                 FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
                 UNIQUE(marca_normalizada)
@@ -545,20 +544,27 @@ def criar_base_dados_completa():
                         fornecedor_id,
                         marca,
                         marca_normalizada,
-                        necessita_pais_cliente_final,
                         margem
                     )
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
                     (
                         marca_id,
                         fornecedor_id_ant,
                         marca_limpa,
                         marca_normalizada,
-                        necessita_ant,
                         float(margem),
                     ),
                 )
+                if necessita_ant:
+                    c.execute(
+                        """
+                        UPDATE fornecedor
+                           SET necessita_pais_cliente_final = 1
+                         WHERE id = ?
+                        """,
+                        (fornecedor_id_ant,),
+                    )
 
             c.execute("DROP TABLE fornecedor_marca")
 
@@ -567,10 +573,6 @@ def criar_base_dados_completa():
     if "marca_normalizada" not in marca_cols:
         c.execute("ALTER TABLE marca ADD COLUMN marca_normalizada TEXT")
         marca_cols.append("marca_normalizada")
-    if "necessita_pais_cliente_final" not in marca_cols:
-        c.execute(
-            "ALTER TABLE marca ADD COLUMN necessita_pais_cliente_final INTEGER NOT NULL DEFAULT 0"
-        )
     if "margem" not in marca_cols:
         c.execute(
             "ALTER TABLE marca ADD COLUMN margem REAL NOT NULL DEFAULT 0.0"
@@ -615,18 +617,6 @@ def criar_base_dados_completa():
             vistos.add(marca_normalizada)
     for marca_id in duplicados:
         c.execute("DELETE FROM marca WHERE id = ?", (marca_id,))
-
-    c.execute(
-        """
-        UPDATE fornecedor
-           SET necessita_pais_cliente_final = 1
-         WHERE id IN (
-            SELECT DISTINCT fornecedor_id
-              FROM marca
-             WHERE necessita_pais_cliente_final = 1
-         )
-        """
-    )
 
     # Tabela antiga de margens deixa de ser necessária
     c.execute("DROP TABLE IF EXISTS configuracao_margens")
@@ -1112,35 +1102,8 @@ def criar_base_dados_completa():
         """
     )
 
-    # Seleção final de artigos por processo (fornecedor escolhido)
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS processo_artigo_selecao (
-            processo_artigo_id INTEGER PRIMARY KEY,
-            resposta_id INTEGER,
-            selecionado_em TEXT DEFAULT CURRENT_TIMESTAMP,
-            enviado_cliente_em TEXT,
-            selecionado_por INTEGER,
-            acao TEXT,
-            FOREIGN KEY (processo_artigo_id) REFERENCES processo_artigo(id) ON DELETE CASCADE,
-            FOREIGN KEY (resposta_id) REFERENCES resposta_fornecedor(id) ON DELETE SET NULL,
-            FOREIGN KEY (selecionado_por) REFERENCES utilizador(id) ON DELETE SET NULL
-        )
-        """
-    )
-
-    c.execute("PRAGMA table_info(processo_artigo_selecao)")
-    selecao_cols = [row[1] for row in c.fetchall()]
-    if "enviado_cliente_em" not in selecao_cols:
-        c.execute(
-            "ALTER TABLE processo_artigo_selecao ADD COLUMN enviado_cliente_em TEXT"
-        )
-    if "selecionado_por" not in selecao_cols:
-        c.execute(
-            "ALTER TABLE processo_artigo_selecao ADD COLUMN selecionado_por INTEGER REFERENCES utilizador(id)"
-        )
-    if "acao" not in selecao_cols:
-        c.execute("ALTER TABLE processo_artigo_selecao ADD COLUMN acao TEXT")
+    # Remover tabela de seleção de artigos (não é mais necessária)
+    c.execute("DROP TABLE IF EXISTS processo_artigo_selecao")
 
     # Tabela de respostas dos fornecedores
     c.execute(

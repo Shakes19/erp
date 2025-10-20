@@ -1561,8 +1561,6 @@ def guardar_respostas(
 
         total_custos = sum(item[1] for item in respostas if item[1] > 0)
 
-        selecoes_por_artigo: dict[int, int] = {}
-
         # Obter margem para cada artigo baseada na marca
         for item in respostas:
             (
@@ -1628,17 +1626,6 @@ def guardar_respostas(
                 ),
             )
 
-            c.execute(
-                """
-                SELECT id FROM resposta_fornecedor
-                WHERE fornecedor_id = ? AND rfq_id = ? AND artigo_id = ?
-                """,
-                (fornecedor_id, rfq_id, artigo_id),
-            )
-            resposta_row = c.fetchone()
-            if resposta_row and processo_artigo_id:
-                selecoes_por_artigo[processo_artigo_id] = resposta_row[0]
-
         # Guardar custos adicionais
         c.execute(
             "INSERT OR REPLACE INTO resposta_custos (rfq_id, custo_envio, custo_embalagem) VALUES (?, ?, ?)",
@@ -1684,7 +1671,6 @@ def guardar_respostas(
 
         return True, {
             "processo_id": processo_id,
-            "selecoes": selecoes_por_artigo,
             "rfq_info": rfq_info,
         }
 
@@ -1901,115 +1887,6 @@ def obter_respostas_por_processo(processo_id):
     return artigos_ordenados, fornecedores_lista
 
 
-def obter_selecoes_processo(processo_id):
-    """Obtém seleções atuais por artigo de processo."""
-
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute(
-        "SELECT processo_artigo_id, resposta_id FROM processo_artigo_selecao WHERE processo_artigo_id IN (SELECT id FROM processo_artigo WHERE processo_id = ?)",
-        (processo_id,),
-    )
-    selecoes = {row[0]: row[1] for row in c.fetchall() if row[1]}
-    conn.close()
-    return selecoes
-
-
-def guardar_selecoes_processo(selecoes: dict[int, int | None]):
-    """Atualiza a tabela de seleções do processo."""
-
-    if not selecoes:
-        return True
-
-    conn = obter_conexao()
-    c = conn.cursor()
-    utilizador_id = st.session_state.get("user_id")
-
-    try:
-        for processo_artigo_id, resposta_id in selecoes.items():
-            if resposta_id:
-                c.execute(
-                    """
-                    INSERT INTO processo_artigo_selecao (
-                        processo_artigo_id,
-                        resposta_id,
-                        selecionado_em,
-                        enviado_cliente_em,
-                        selecionado_por,
-                        acao
-                    )
-                    VALUES (?, ?, CURRENT_TIMESTAMP, NULL, ?, 'selecionado')
-                    ON CONFLICT(processo_artigo_id) DO UPDATE SET
-                        resposta_id = excluded.resposta_id,
-                        selecionado_em = CURRENT_TIMESTAMP,
-                        enviado_cliente_em = NULL,
-                        selecionado_por = excluded.selecionado_por,
-                        acao = excluded.acao
-                    """,
-                    (processo_artigo_id, resposta_id, utilizador_id),
-                )
-            else:
-                c.execute(
-                    """
-                    INSERT INTO processo_artigo_selecao (
-                        processo_artigo_id,
-                        resposta_id,
-                        selecionado_em,
-                        enviado_cliente_em,
-                        selecionado_por,
-                        acao
-                    )
-                    VALUES (?, NULL, CURRENT_TIMESTAMP, NULL, ?, 'removido')
-                    ON CONFLICT(processo_artigo_id) DO UPDATE SET
-                        resposta_id = NULL,
-                        selecionado_em = CURRENT_TIMESTAMP,
-                        enviado_cliente_em = NULL,
-                        selecionado_por = excluded.selecionado_por,
-                        acao = 'removido'
-                    """,
-                    (processo_artigo_id, utilizador_id),
-                )
-        conn.commit()
-        return True
-    except Exception as e:
-        conn.rollback()
-        st.error(f"Erro ao guardar seleção: {e}")
-        return False
-    finally:
-        conn.close()
-
-
-def marcar_artigos_enviados(processo_artigo_ids: Iterable[int]):
-    """Atualiza a marcação de artigos enviados ao cliente."""
-
-    ids = [pid for pid in set(processo_artigo_ids or []) if pid]
-    if not ids:
-        return True
-
-    conn = obter_conexao()
-    c = conn.cursor()
-
-    try:
-        placeholders = ",".join(["?"] * len(ids))
-        c.execute(
-            f"""
-            UPDATE processo_artigo_selecao
-            SET enviado_cliente_em = CURRENT_TIMESTAMP,
-                acao = 'enviado_cliente'
-            WHERE processo_artigo_id IN ({placeholders})
-            """,
-            ids,
-        )
-        conn.commit()
-        return True
-    except Exception as e:
-        conn.rollback()
-        st.error(f"Erro ao marcar artigos enviados: {e}")
-        return False
-    finally:
-        conn.close()
-
-
 def procurar_processos_por_termo(termo: str, limite: int = 25):
     """Pesquisa processos pelo número ou por referências de cliente associadas."""
 
@@ -2172,25 +2049,6 @@ def obter_detalhes_processo(processo_id: int):
 
     conn.close()
 
-    processo_artigo_ids = [artigo.get("id") for artigo in artigos_processo if artigo.get("id")]
-    selecoes_envio: dict[int, dict] = {}
-
-    if processo_artigo_ids:
-        placeholders_sel = ",".join(["?"] * len(processo_artigo_ids))
-        c.execute(
-            f"""
-            SELECT processo_artigo_id, resposta_id, enviado_cliente_em
-            FROM processo_artigo_selecao
-            WHERE processo_artigo_id IN ({placeholders_sel})
-            """,
-            processo_artigo_ids,
-        )
-        for proc_id, resposta_id, enviado_em in c.fetchall():
-            selecoes_envio[proc_id] = {
-                "resposta_id": resposta_id,
-                "enviado_cliente_em": enviado_em,
-            }
-
     rfqs = []
     for rfq_row in rfqs_rows:
         rfq_id = rfq_row[0]
@@ -2202,11 +2060,6 @@ def obter_detalhes_processo(processo_id: int):
             artigo for artigo in artigos_rfq if artigo.get("processo_artigo_id")
         ]
         total_artigos_cliente = len(artigos_clientes)
-        enviados_cliente = sum(
-            1
-            for artigo in artigos_clientes
-            if selecoes_envio.get(artigo.get("processo_artigo_id"), {}).get("enviado_cliente_em")
-        )
         rfqs.append(
             {
                 "id": rfq_id,
@@ -2222,7 +2075,7 @@ def obter_detalhes_processo(processo_id: int):
                 "artigos": artigos_rfq,
                 "total_respostas": respostas_por_rfq.get(rfq_id, 0),
                 "total_artigos_cliente": total_artigos_cliente,
-                "artigos_enviados_cliente": enviados_cliente,
+                "artigos_enviados_cliente": 0,
             }
         )
 
@@ -2238,14 +2091,7 @@ def obter_detalhes_processo(processo_id: int):
         "rfqs": rfqs,
         "total_rfqs": len(rfqs),
         "respondidas": respondidas,
-        "cliente_envios": {
-            "total": len(processo_artigo_ids),
-            "enviados": sum(
-                1
-                for info in selecoes_envio.values()
-                if info.get("enviado_cliente_em")
-            ),
-        },
+        "cliente_envios": {"total": 0, "enviados": 0},
     }
 
 # ========================== FUNÇÕES DE GESTÃO DE MARGENS ==========================
@@ -3455,8 +3301,12 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
         st.error(f"Erro ao gerar PDF: {str(e)}")
         return None
 
-def gerar_pdf_cliente(rfq_id):
-    """Gerar PDF para cliente com tratamento de erros"""
+def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
+    """Gerar PDF para cliente com tratamento de erros.
+
+    Se ``resposta_ids`` for fornecido, apenas as respostas indicadas serão
+    incluídas no documento gerado.
+    """
     try:
         conn = obter_conexao()
         c = conn.cursor()
@@ -3501,42 +3351,37 @@ def gerar_pdf_cliente(rfq_id):
             "processo_id": row[12] if len(row) > 12 else None,
         }
 
-        selecoes = obter_selecoes_processo(rfq_data.get("processo_id")) if rfq_data.get("processo_id") else {}
+        resposta_ids_set = {
+            int(rid)
+            for rid in (resposta_ids or [])
+            if isinstance(rid, (int, str)) and str(rid).isdigit()
+        }
 
-        if selecoes:
+        base_query = """
+            SELECT a.artigo_num,
+                   rf.descricao,
+                   COALESCE(rf.quantidade_final, a.quantidade) AS quantidade_final,
+                   a.unidade,
+                   rf.preco_venda,
+                   rf.prazo_entrega,
+                   rf.peso,
+                   rf.hs_code,
+                   rf.pais_origem,
+                   COALESCE(pa.ordem, a.ordem) AS ordem
+            FROM resposta_fornecedor rf
+            JOIN artigo a ON rf.artigo_id = a.id
+            LEFT JOIN processo_artigo pa ON pa.id = a.processo_artigo_id
+        """
+
+        if resposta_ids_set:
+            placeholders = ",".join(["?"] * len(resposta_ids_set))
             c.execute(
-                """
-                SELECT a.artigo_num,
-                       rf.descricao,
-                       COALESCE(rf.quantidade_final, a.quantidade) AS quantidade_final,
-                       a.unidade,
-                       rf.preco_venda,
-                       rf.prazo_entrega,
-                       rf.peso,
-                       rf.hs_code,
-                       rf.pais_origem,
-                       pa.ordem
-                FROM processo_artigo_selecao sel
-                JOIN resposta_fornecedor rf ON sel.resposta_id = rf.id
-                JOIN artigo a ON rf.artigo_id = a.id
-                LEFT JOIN processo_artigo pa ON pa.id = sel.processo_artigo_id
-                WHERE pa.processo_id = ?
-                ORDER BY pa.ordem
-                """,
-                (rfq_data.get("processo_id"),),
+                f"{base_query} WHERE rf.id IN ({placeholders}) ORDER BY ordem, rf.id",
+                tuple(resposta_ids_set),
             )
         else:
             c.execute(
-                """
-                SELECT a.artigo_num, rf.descricao, rf.quantidade_final,
-                       a.unidade, rf.preco_venda,
-                       rf.prazo_entrega, rf.peso, rf.hs_code, rf.pais_origem,
-                       a.ordem
-                FROM resposta_fornecedor rf
-                JOIN artigo a ON rf.artigo_id = a.id
-                WHERE rf.rfq_id = ?
-                ORDER BY a.ordem
-                """,
+                f"{base_query} WHERE rf.rfq_id = ? ORDER BY ordem, rf.id",
                 (rfq_id,),
             )
 
@@ -4045,15 +3890,6 @@ def responder_cotacao_dialog(cotacao):
                     )
                     st.session_state[anexos_resposta_key] = []
 
-                selecoes_auto = (info_envio or {}).get("selecoes") or {}
-                selecoes_guardadas = True
-                if selecoes_auto:
-                    selecoes_guardadas = guardar_selecoes_processo(selecoes_auto)
-
-                if not selecoes_guardadas:
-                    st.warning("Resposta guardada, mas não foi possível preparar a seleção para o cliente.")
-                    return
-
                 st.success("Resposta guardada com sucesso.")
                 st.rerun()
         else:
@@ -4139,7 +3975,8 @@ def criar_cotacao_cliente_dialog(
             preco = resposta.get("preco_venda") or 0
             moeda = resposta.get("moeda") or "EUR"
             validade = resposta.get("validade_preco") or ""
-            fornecedor_nome = (resposta.get("fornecedor_nome") or "").strip()
+            fornecedor_valor = resposta.get("fornecedor_nome")
+            fornecedor_nome = fornecedor_valor.strip() if isinstance(fornecedor_valor, str) else ""
             quantidade = resposta.get("quantidade_final") or resposta.get("quantidade_original") or "-"
 
             resumo_partes = []
@@ -4207,31 +4044,7 @@ def criar_cotacao_cliente_dialog(
         st.error("Selecione pelo menos um artigo para gerar a cotação do cliente.")
         return
 
-    selecoes: dict[int, int | None] = {}
-    artigos_marcados: dict[int, bool] = {}
-    for resposta in respostas:
-        proc_art_id = resposta.get("processo_artigo_id")
-        if not proc_art_id:
-            continue
-        selecionado = bool(selecao_respostas.get(resposta['id']))
-        artigos_marcados.setdefault(proc_art_id, False)
-        if selecionado:
-            selecoes[proc_art_id] = resposta['id']
-            artigos_marcados[proc_art_id] = True
-
-    for proc_art_id, selecionado in artigos_marcados.items():
-        if not selecionado:
-            selecoes[proc_art_id] = None
-
-    if not selecoes:
-        st.error("Não foi possível associar os artigos selecionados ao processo.")
-        return
-
-    if not guardar_selecoes_processo(selecoes):
-        st.error("Não foi possível guardar a seleção de artigos para o processo.")
-        return
-
-    if not gerar_pdf_cliente(rfq_id):
+    if not gerar_pdf_cliente(rfq_id, resposta_ids=selecionados):
         st.error("Não foi possível gerar o PDF do cliente.")
         return
 
@@ -4261,7 +4074,6 @@ def criar_cotacao_cliente_dialog(
             numero_processo or "",
             rfq_id,
         ):
-            marcar_artigos_enviados([pid for pid, resp in selecoes.items() if resp])
             st.success("E-mail enviado ao cliente com sucesso!")
         else:
             st.error("Falha ao enviar o e-mail ao cliente.")
