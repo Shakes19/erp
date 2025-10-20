@@ -2267,7 +2267,9 @@ def enviar_email_pedido_fornecedor(rfq_id):
                    COALESCE(p.ref_cliente, ''),
                    COALESCE(p.numero, ''),
                    r.cliente_final_nome,
-                   r.cliente_final_pais
+                   r.cliente_final_pais,
+                   r.fornecedor_id,
+                   r.data_atualizacao
             FROM rfq r
             JOIN fornecedor f ON r.fornecedor_id = f.id
             LEFT JOIN processo p ON r.processo_id = p.id
@@ -2276,7 +2278,6 @@ def enviar_email_pedido_fornecedor(rfq_id):
             (rfq_id,),
         )
         row = c.fetchone()
-        conn.close()
         if not row:
             mensagem = "Fornecedor não encontrado para a RFQ."
             resultado["mensagem"] = mensagem
@@ -2290,6 +2291,8 @@ def enviar_email_pedido_fornecedor(rfq_id):
             numero_processo,
             cliente_final_nome,
             cliente_final_pais,
+            fornecedor_id,
+            data_atualizacao,
         ) = row
         resultado["fornecedor"] = fornecedor_nome or ""
 
@@ -2303,6 +2306,53 @@ def enviar_email_pedido_fornecedor(rfq_id):
 
         # Obter PDF do pedido
         pdf_bytes = obter_pdf_da_db(rfq_id, "pedido")
+        if not pdf_bytes:
+            artigos_para_pdf: list[dict] = []
+            try:
+                c.execute(
+                    """
+                    SELECT artigo_num,
+                           descricao,
+                           quantidade,
+                           unidade,
+                           COALESCE(especificacoes, ''),
+                           COALESCE(marca, '')
+                      FROM artigo
+                     WHERE rfq_id = ?
+                     ORDER BY ordem, id
+                    """,
+                    (rfq_id,),
+                )
+                artigos_para_pdf = [
+                    {
+                        "artigo_num": artigo_row[0] or "",
+                        "descricao": artigo_row[1] or "",
+                        "quantidade": artigo_row[2],
+                        "unidade": artigo_row[3] or "",
+                        "especificacoes": artigo_row[4] or "",
+                        "marca": artigo_row[5] or "",
+                    }
+                    for artigo_row in c.fetchall()
+                ]
+            except Exception:
+                artigos_para_pdf = []
+
+            data_pdf = None
+            if data_atualizacao:
+                try:
+                    data_pdf = datetime.fromisoformat(str(data_atualizacao)).date()
+                except ValueError:
+                    data_pdf = None
+            if data_pdf is None:
+                data_pdf = datetime.now().date()
+
+            pdf_bytes = gerar_e_armazenar_pdf(
+                rfq_id,
+                fornecedor_id,
+                data_pdf,
+                artigos_para_pdf,
+            )
+
         if not pdf_bytes:
             mensagem = (
                 f"Email para {fornecedor_nome} não enviado: PDF do pedido indisponível."
@@ -2388,6 +2438,11 @@ Thank you in advance for your prompt response.
         resultado["mensagem"] = mensagem
         st.error(f"Falha ao enviar email ao fornecedor: {e}")
         return resultado
+    finally:
+        try:
+            conn.close()  # type: ignore[has-type]
+        except (AttributeError, NameError):
+            pass
 
 def guardar_pdf_uploads(rfq_id, tipo_pdf_base, ficheiros):
     """Guardar múltiplos PDFs carregados pelo utilizador na tabela ``pdf_storage``."""
