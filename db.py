@@ -133,6 +133,212 @@ def verify_password(password: str, hashed: str | bytes | None) -> bool:
         return False
 
 
+def _get_or_create_value(
+    table: str,
+    column: str,
+    value: str,
+    *,
+    cursor: sqlite3.Cursor | None = None,
+) -> int | None:
+    """Insert ``value`` into ``table`` if missing and return the row id."""
+
+    normalized = (value or "").strip()
+    if not normalized:
+        return None
+
+    own_connection = cursor is None
+    conn = None
+    if own_connection:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            f"INSERT OR IGNORE INTO {table} ({column}) VALUES (?)",
+            (normalized,),
+        )
+        cursor.execute(
+            f"SELECT id FROM {table} WHERE {column} = ?",
+            (normalized,),
+        )
+        row = cursor.fetchone()
+        if own_connection and conn is not None:
+            conn.commit()
+        return row[0] if row else None
+    finally:
+        if own_connection and conn is not None:
+            conn.close()
+
+
+def ensure_estado(nome: str, cursor: sqlite3.Cursor | None = None) -> int:
+    """Return the identifier for ``nome`` in ``estado`` creating it if needed."""
+
+    estado_id = _get_or_create_value("estado", "nome", nome, cursor=cursor)
+    if estado_id is None:
+        raise ValueError("Estado deve ser um texto não vazio")
+    return estado_id
+
+
+def ensure_moeda(codigo: str, cursor: sqlite3.Cursor | None = None) -> int:
+    """Return the identifier for ``codigo`` in ``moeda`` creating it if needed."""
+
+    moeda_id = _get_or_create_value("moeda", "codigo", codigo, cursor=cursor)
+    if moeda_id is None:
+        raise ValueError("Código de moeda inválido")
+    return moeda_id
+
+
+def ensure_pais(nome: str, cursor: sqlite3.Cursor | None = None) -> int | None:
+    """Return the identifier for ``nome`` in ``pais`` creating it if needed."""
+
+    return _get_or_create_value("pais", "nome", nome, cursor=cursor)
+
+
+def get_marca_id(marca: str, cursor: sqlite3.Cursor | None = None) -> int | None:
+    """Return the ``marca`` identifier by normalized name."""
+
+    marca_normalizada = (marca or "").strip().casefold()
+    if not marca_normalizada:
+        return None
+
+    own_connection = cursor is None
+    conn = None
+    if own_connection:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            "SELECT id FROM marca WHERE marca_normalizada = ?",
+            (marca_normalizada,),
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+    finally:
+        if own_connection and conn is not None:
+            conn.close()
+
+
+def get_artigo_catalogo_id(
+    artigo_num: str | None, cursor: sqlite3.Cursor | None = None
+) -> int | None:
+    """Return the catalogue identifier for ``artigo_num`` if it exists."""
+
+    codigo = (artigo_num or "").strip()
+    if not codigo:
+        return None
+
+    own_connection = cursor is None
+    conn = None
+    if own_connection:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            "SELECT id FROM artigo_catalogo WHERE artigo_num = ?",
+            (codigo,),
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+    finally:
+        if own_connection and conn is not None:
+            conn.close()
+
+
+def ensure_cliente_final(
+    nome: str, pais: str | None = None, cursor: sqlite3.Cursor | None = None
+) -> int | None:
+    """Return the identifier for the final client, creating it if needed."""
+
+    nome_limpo = (nome or "").strip()
+    if not nome_limpo:
+        return None
+    pais_limpo = (pais or "").strip() or None
+
+    own_connection = cursor is None
+    conn = None
+    if own_connection:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO cliente_final (nome, pais)
+            VALUES (?, ?)
+            """,
+            (nome_limpo, pais_limpo),
+        )
+        cursor.execute(
+            """
+            SELECT id
+              FROM cliente_final
+             WHERE nome = ?
+               AND ((pais IS NULL AND ? IS NULL) OR pais = ?)
+            """,
+            (nome_limpo, pais_limpo, pais_limpo),
+        )
+        row = cursor.fetchone()
+        if own_connection and conn is not None:
+            conn.commit()
+        return row[0] if row else None
+    finally:
+        if own_connection and conn is not None:
+            conn.close()
+
+
+def ensure_solicitante(
+    nome: str | None = None,
+    email: str | None = None,
+    telefone: str | None = None,
+    empresa: str | None = None,
+    cursor: sqlite3.Cursor | None = None,
+) -> int | None:
+    """Return the identifier for the requester, creating it if needed."""
+
+    nome_limpo = (nome or "").strip()
+    email_limpo = (email or "").strip()
+    telefone_limpo = (telefone or "").strip()
+    empresa_limpa = (empresa or "").strip()
+
+    if not any((nome_limpo, email_limpo, telefone_limpo, empresa_limpa)):
+        return None
+
+    own_connection = cursor is None
+    conn = None
+    if own_connection:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO solicitante (nome, email, telefone, empresa)
+            VALUES (?, ?, ?, ?)
+            """,
+            (nome_limpo, email_limpo, telefone_limpo, empresa_limpa),
+        )
+        cursor.execute(
+            """
+            SELECT id
+              FROM solicitante
+             WHERE nome = ?
+               AND email = ?
+               AND telefone = ?
+               AND empresa = ?
+            """,
+            (nome_limpo, email_limpo, telefone_limpo, empresa_limpa),
+        )
+        row = cursor.fetchone()
+        if own_connection and conn is not None:
+            conn.commit()
+        return row[0] if row else None
+    finally:
+        if own_connection and conn is not None:
+            conn.close()
+
+
 def ensure_artigo_catalogo_schema(conn: sqlite3.Connection) -> None:
     """Ensure the ``artigo_catalogo`` table exists with ``validade_preco`` column.
 
@@ -181,6 +387,9 @@ def criar_base_dados_completa():
 
     conn = get_connection()
     c = conn.cursor()
+
+    # Garantir que a tabela de catálogo existe antes de referências posteriores
+    ensure_artigo_catalogo_schema(conn)
 
     # Limpeza defensiva: versões anteriores podiam deixar a tabela temporária
     # ``rfq_old`` para trás caso a migração fosse interrompida.  Isto fazia com
@@ -422,6 +631,57 @@ def criar_base_dados_completa():
     # Tabela antiga de margens deixa de ser necessária
     c.execute("DROP TABLE IF EXISTS configuracao_margens")
 
+    # Tabelas de lookup normalizadas
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS estado (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL UNIQUE
+        )
+        """
+    )
+
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cliente_final (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            pais TEXT,
+            UNIQUE(nome, pais)
+        )
+        """
+    )
+
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS moeda (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL UNIQUE
+        )
+        """
+    )
+
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pais (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL UNIQUE
+        )
+        """
+    )
+
+    # Valores padrão para tabelas de lookup
+    for estado_padrao in ("ativo", "pendente", "respondido", "arquivada"):
+        try:
+            ensure_estado(estado_padrao, cursor=c)
+        except ValueError:
+            pass
+
+    try:
+        ensure_moeda("EUR", cursor=c)
+    except ValueError:
+        pass
+
     # Tabela de processos
     c.execute(
         """
@@ -430,10 +690,34 @@ def criar_base_dados_completa():
             numero TEXT NOT NULL UNIQUE,
             descricao TEXT,
             data_abertura TEXT DEFAULT CURRENT_TIMESTAMP,
-            estado TEXT DEFAULT 'ativo'
+            estado TEXT DEFAULT 'ativo',
+            estado_id INTEGER,
+            responsavel_id INTEGER,
+            FOREIGN KEY (estado_id) REFERENCES estado(id)
+                ON DELETE SET NULL,
+            FOREIGN KEY (responsavel_id) REFERENCES utilizador(id) ON DELETE SET NULL
         )
         """
     )
+
+    c.execute("PRAGMA table_info(processo)")
+    processo_cols = [row[1] for row in c.fetchall()]
+    if "estado_id" not in processo_cols:
+        c.execute("ALTER TABLE processo ADD COLUMN estado_id INTEGER REFERENCES estado(id)")
+    if "responsavel_id" not in processo_cols:
+        c.execute(
+            "ALTER TABLE processo ADD COLUMN responsavel_id INTEGER REFERENCES utilizador(id)"
+        )
+
+    c.execute(
+        "SELECT id, COALESCE(estado, 'ativo') FROM processo WHERE estado_id IS NULL"
+    )
+    for proc_id, estado_nome in c.fetchall():
+        estado_id = ensure_estado(estado_nome or "ativo", cursor=c)
+        c.execute(
+            "UPDATE processo SET estado_id = ?, estado = ? WHERE id = ?",
+            (estado_id, estado_nome or "ativo", proc_id),
+        )
 
     # Tabela RFQ (pedidos enviados aos fornecedores)
     c.execute(
@@ -452,11 +736,25 @@ def criar_base_dados_completa():
 
     c.execute(
         """
+        CREATE TABLE IF NOT EXISTS solicitante (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT,
+            email TEXT,
+            telefone TEXT,
+            empresa TEXT,
+            UNIQUE(nome, email, telefone, empresa)
+        )
+        """
+    )
+
+    c.execute(
+        """
         CREATE TABLE IF NOT EXISTS rfq (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             processo_id INTEGER,
             fornecedor_id INTEGER NOT NULL,
             cliente_id INTEGER,
+            solicitante_id INTEGER,
             data TEXT NOT NULL,
             estado TEXT DEFAULT 'pendente',
             referencia TEXT NOT NULL,
@@ -467,13 +765,18 @@ def criar_base_dados_completa():
             empresa_solicitante TEXT,
             cliente_final_nome TEXT,
             cliente_final_pais TEXT,
+            cliente_final_id INTEGER,
             data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
             data_atualizacao TEXT DEFAULT CURRENT_TIMESTAMP,
             utilizador_id INTEGER,
+            estado_id INTEGER,
             FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
             FOREIGN KEY (cliente_id) REFERENCES cliente(id) ON DELETE SET NULL,
             FOREIGN KEY (utilizador_id) REFERENCES utilizador(id) ON DELETE SET NULL,
-            FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE SET NULL
+            FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE SET NULL,
+            FOREIGN KEY (solicitante_id) REFERENCES solicitante(id) ON DELETE SET NULL,
+            FOREIGN KEY (cliente_final_id) REFERENCES cliente_final(id) ON DELETE SET NULL,
+            FOREIGN KEY (estado_id) REFERENCES estado(id) ON DELETE SET NULL
         )
         """
     )
@@ -577,6 +880,86 @@ def criar_base_dados_completa():
         c.execute("ALTER TABLE rfq ADD COLUMN cliente_final_nome TEXT")
     if "cliente_final_pais" not in rfq_columns:
         c.execute("ALTER TABLE rfq ADD COLUMN cliente_final_pais TEXT")
+    if "cliente_final_id" not in rfq_columns:
+        c.execute(
+            "ALTER TABLE rfq ADD COLUMN cliente_final_id INTEGER REFERENCES cliente_final(id)"
+        )
+    if "estado_id" not in rfq_columns:
+        c.execute("ALTER TABLE rfq ADD COLUMN estado_id INTEGER REFERENCES estado(id)")
+    if "solicitante_id" not in rfq_columns:
+        c.execute(
+            "ALTER TABLE rfq ADD COLUMN solicitante_id INTEGER REFERENCES solicitante(id)"
+        )
+        rfq_columns.append("solicitante_id")
+
+    if {
+        "nome_solicitante",
+        "email_solicitante",
+        "telefone_solicitante",
+        "empresa_solicitante",
+        "solicitante_id",
+    }.issubset(set(rfq_columns)):
+        c.execute(
+            """
+            SELECT id,
+                   COALESCE(nome_solicitante, ''),
+                   COALESCE(email_solicitante, ''),
+                   COALESCE(telefone_solicitante, ''),
+                   COALESCE(empresa_solicitante, '')
+              FROM rfq
+             WHERE solicitante_id IS NULL
+            """
+        )
+        solicitantes_antigos = c.fetchall()
+        for rfq_id, nome_ant, email_ant, telefone_ant, empresa_ant in solicitantes_antigos:
+            solicitante_id = ensure_solicitante(
+                nome_ant, email_ant, telefone_ant, empresa_ant, cursor=c
+            )
+            if solicitante_id:
+                c.execute(
+                    "UPDATE rfq SET solicitante_id = ? WHERE id = ?",
+                    (solicitante_id, rfq_id),
+                )
+
+    if "cliente_final_nome" in rfq_columns and "cliente_final_id" in rfq_columns:
+        c.execute(
+            """
+            INSERT OR IGNORE INTO cliente_final (nome, pais)
+            SELECT DISTINCT TRIM(COALESCE(cliente_final_nome, '')),
+                            NULLIF(TRIM(COALESCE(cliente_final_pais, '')), '')
+              FROM rfq
+             WHERE cliente_final_nome IS NOT NULL
+               AND TRIM(cliente_final_nome) != ''
+            """
+        )
+
+        c.execute(
+            """
+            UPDATE rfq
+               SET cliente_final_id = (
+                    SELECT id
+                      FROM cliente_final
+                     WHERE nome = TRIM(COALESCE(rfq.cliente_final_nome, ''))
+                       AND (
+                            (cliente_final.pais IS NULL AND (rfq.cliente_final_pais IS NULL OR TRIM(rfq.cliente_final_pais) = ''))
+                            OR cliente_final.pais = TRIM(COALESCE(rfq.cliente_final_pais, ''))
+                       )
+                )
+             WHERE cliente_final_id IS NULL
+               AND cliente_final_nome IS NOT NULL
+               AND TRIM(cliente_final_nome) != ''
+            """
+        )
+
+    c.execute(
+        "SELECT id, COALESCE(estado, 'pendente') FROM rfq WHERE estado_id IS NULL"
+    )
+    for rfq_id, estado_nome in c.fetchall():
+        estado_id = ensure_estado(estado_nome or "pendente", cursor=c)
+        c.execute(
+            "UPDATE rfq SET estado_id = ?, estado = ? WHERE id = ?",
+            (estado_id, estado_nome or "pendente", rfq_id),
+        )
 
     # Tabela com artigos definidos ao nível de processo para permitir
     # reutilização entre múltiplos fornecedores na mesma cotação
@@ -591,8 +974,59 @@ def criar_base_dados_completa():
             unidade TEXT NOT NULL DEFAULT 'Peças',
             marca TEXT,
             ordem INTEGER DEFAULT 1,
-            FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE CASCADE
+            marca_id INTEGER,
+            artigo_catalogo_id INTEGER,
+            FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE CASCADE,
+            FOREIGN KEY (marca_id) REFERENCES marca(id) ON DELETE SET NULL,
+            FOREIGN KEY (artigo_catalogo_id) REFERENCES artigo_catalogo(id) ON DELETE SET NULL
         )
+        """
+    )
+
+    c.execute("PRAGMA table_info(processo_artigo)")
+    proc_art_cols = [row[1] for row in c.fetchall()]
+    if "marca_id" not in proc_art_cols:
+        c.execute(
+            "ALTER TABLE processo_artigo ADD COLUMN marca_id INTEGER REFERENCES marca(id)"
+        )
+    if "artigo_catalogo_id" not in proc_art_cols:
+        c.execute(
+            "ALTER TABLE processo_artigo ADD COLUMN artigo_catalogo_id INTEGER REFERENCES artigo_catalogo(id)"
+        )
+
+    c.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_processo_artigo_catalogo
+        ON processo_artigo(processo_id, artigo_catalogo_id)
+        WHERE artigo_catalogo_id IS NOT NULL
+        """
+    )
+
+    c.execute(
+        """
+        UPDATE processo_artigo
+           SET marca_id = (
+                SELECT id
+                  FROM marca
+                 WHERE marca_normalizada = PYCASEFOLD(COALESCE(processo_artigo.marca, ''))
+           )
+         WHERE marca_id IS NULL
+           AND marca IS NOT NULL
+           AND TRIM(marca) != ''
+        """
+    )
+
+    c.execute(
+        """
+        UPDATE processo_artigo
+           SET artigo_catalogo_id = (
+                SELECT id
+                  FROM artigo_catalogo
+                 WHERE artigo_num = processo_artigo.artigo_num
+           )
+         WHERE artigo_catalogo_id IS NULL
+           AND artigo_num IS NOT NULL
+           AND TRIM(artigo_num) != ''
         """
     )
 
@@ -610,8 +1044,12 @@ def criar_base_dados_completa():
             marca TEXT,
             ordem INTEGER DEFAULT 1,
             processo_artigo_id INTEGER,
+            marca_id INTEGER,
+            artigo_catalogo_id INTEGER,
             FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE,
-            FOREIGN KEY (processo_artigo_id) REFERENCES processo_artigo(id) ON DELETE CASCADE
+            FOREIGN KEY (processo_artigo_id) REFERENCES processo_artigo(id) ON DELETE CASCADE,
+            FOREIGN KEY (marca_id) REFERENCES marca(id) ON DELETE SET NULL,
+            FOREIGN KEY (artigo_catalogo_id) REFERENCES artigo_catalogo(id) ON DELETE SET NULL
         )
         """
     )
@@ -623,6 +1061,42 @@ def criar_base_dados_completa():
         c.execute(
             "ALTER TABLE artigo ADD COLUMN processo_artigo_id INTEGER REFERENCES processo_artigo(id)"
         )
+    if "marca_id" not in artigo_cols:
+        c.execute(
+            "ALTER TABLE artigo ADD COLUMN marca_id INTEGER REFERENCES marca(id)"
+        )
+    if "artigo_catalogo_id" not in artigo_cols:
+        c.execute(
+            "ALTER TABLE artigo ADD COLUMN artigo_catalogo_id INTEGER REFERENCES artigo_catalogo(id)"
+        )
+
+    c.execute(
+        """
+        UPDATE artigo
+           SET marca_id = (
+                SELECT id
+                  FROM marca
+                 WHERE marca_normalizada = PYCASEFOLD(COALESCE(artigo.marca, ''))
+           )
+         WHERE marca_id IS NULL
+           AND marca IS NOT NULL
+           AND TRIM(marca) != ''
+        """
+    )
+
+    c.execute(
+        """
+        UPDATE artigo
+           SET artigo_catalogo_id = (
+                SELECT id
+                  FROM artigo_catalogo
+                 WHERE artigo_num = artigo.artigo_num
+           )
+         WHERE artigo_catalogo_id IS NULL
+           AND artigo_num IS NOT NULL
+           AND TRIM(artigo_num) != ''
+        """
+    )
 
     # Tabela de catálogo de artigos
     c.execute(
@@ -646,8 +1120,11 @@ def criar_base_dados_completa():
             resposta_id INTEGER,
             selecionado_em TEXT DEFAULT CURRENT_TIMESTAMP,
             enviado_cliente_em TEXT,
+            selecionado_por INTEGER,
+            acao TEXT,
             FOREIGN KEY (processo_artigo_id) REFERENCES processo_artigo(id) ON DELETE CASCADE,
-            FOREIGN KEY (resposta_id) REFERENCES resposta_fornecedor(id) ON DELETE SET NULL
+            FOREIGN KEY (resposta_id) REFERENCES resposta_fornecedor(id) ON DELETE SET NULL,
+            FOREIGN KEY (selecionado_por) REFERENCES utilizador(id) ON DELETE SET NULL
         )
         """
     )
@@ -658,6 +1135,12 @@ def criar_base_dados_completa():
         c.execute(
             "ALTER TABLE processo_artigo_selecao ADD COLUMN enviado_cliente_em TEXT"
         )
+    if "selecionado_por" not in selecao_cols:
+        c.execute(
+            "ALTER TABLE processo_artigo_selecao ADD COLUMN selecionado_por INTEGER REFERENCES utilizador(id)"
+        )
+    if "acao" not in selecao_cols:
+        c.execute("ALTER TABLE processo_artigo_selecao ADD COLUMN acao TEXT")
 
     # Tabela de respostas dos fornecedores
     c.execute(
@@ -680,11 +1163,74 @@ def criar_base_dados_completa():
             observacoes TEXT,
             data_resposta TEXT DEFAULT CURRENT_TIMESTAMP,
             validade_preco TEXT,
+            pais_origem_id INTEGER,
+            moeda_id INTEGER,
             FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
             FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE,
             FOREIGN KEY (artigo_id) REFERENCES artigo(id) ON DELETE CASCADE,
+            FOREIGN KEY (pais_origem_id) REFERENCES pais(id) ON DELETE SET NULL,
+            FOREIGN KEY (moeda_id) REFERENCES moeda(id) ON DELETE SET NULL,
             UNIQUE (fornecedor_id, rfq_id, artigo_id)
         )
+        """
+    )
+
+    c.execute("PRAGMA table_info(resposta_fornecedor)")
+    resposta_cols = [row[1] for row in c.fetchall()]
+    if "pais_origem_id" not in resposta_cols:
+        c.execute(
+            "ALTER TABLE resposta_fornecedor ADD COLUMN pais_origem_id INTEGER REFERENCES pais(id)"
+        )
+    if "moeda_id" not in resposta_cols:
+        c.execute(
+            "ALTER TABLE resposta_fornecedor ADD COLUMN moeda_id INTEGER REFERENCES moeda(id)"
+        )
+
+    c.execute(
+        """
+        INSERT OR IGNORE INTO moeda (codigo)
+        SELECT DISTINCT TRIM(COALESCE(moeda, ''))
+          FROM resposta_fornecedor
+         WHERE moeda IS NOT NULL
+           AND TRIM(moeda) != ''
+        """
+    )
+
+    c.execute(
+        """
+        UPDATE resposta_fornecedor
+           SET moeda_id = (
+                SELECT id
+                  FROM moeda
+                 WHERE codigo = TRIM(COALESCE(resposta_fornecedor.moeda, ''))
+           )
+         WHERE moeda_id IS NULL
+           AND moeda IS NOT NULL
+           AND TRIM(moeda) != ''
+        """
+    )
+
+    c.execute(
+        """
+        INSERT OR IGNORE INTO pais (nome)
+        SELECT DISTINCT TRIM(COALESCE(pais_origem, ''))
+          FROM resposta_fornecedor
+         WHERE pais_origem IS NOT NULL
+           AND TRIM(pais_origem) != ''
+        """
+    )
+
+    c.execute(
+        """
+        UPDATE resposta_fornecedor
+           SET pais_origem_id = (
+                SELECT id
+                  FROM pais
+                 WHERE nome = TRIM(COALESCE(resposta_fornecedor.pais_origem, ''))
+           )
+         WHERE pais_origem_id IS NULL
+           AND pais_origem IS NOT NULL
+           AND TRIM(pais_origem) != ''
         """
     )
 
@@ -825,6 +1371,8 @@ def criar_base_dados_completa():
         "CREATE INDEX IF NOT EXISTS idx_marca_fornecedor ON marca(fornecedor_id)",
         "CREATE INDEX IF NOT EXISTS idx_cliente_nome ON cliente(nome)",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_utilizador_username ON utilizador(username)",
+        "CREATE INDEX IF NOT EXISTS idx_rfq_solicitante ON rfq(solicitante_id)",
+        "CREATE INDEX IF NOT EXISTS idx_processo_responsavel ON processo(responsavel_id)",
     ]
     for idx in indices:
         c.execute(idx)
@@ -862,7 +1410,7 @@ def backup_database(backup_path: str | None = None):
     dest.close()
     return backup_path
 
-def criar_processo(descricao: str = ""):
+def criar_processo(descricao: str = "", responsavel_id: int | None = None):
     """Cria um novo processo com número sequencial anual."""
     ano = datetime.now().year
     prefixo = f"QT{ano}-"
@@ -877,11 +1425,20 @@ def criar_processo(descricao: str = ""):
         max_seq = result.scalar()
         numero = f"{prefixo}{(max_seq or 0) + 1}"
 
+        estado_nome = "ativo"
+        estado_id = ensure_estado(estado_nome)
         insert_result = session.execute(
             text(
-                "INSERT INTO processo (numero, descricao) VALUES (:numero, :descricao)"
+                "INSERT INTO processo (numero, descricao, estado, estado_id, responsavel_id) "
+                "VALUES (:numero, :descricao, :estado, :estado_id, :responsavel_id)"
             ),
-            {"numero": numero, "descricao": descricao},
+            {
+                "numero": numero,
+                "descricao": descricao,
+                "estado": estado_nome,
+                "estado_id": estado_id,
+                "responsavel_id": responsavel_id,
+            },
         )
         try:
             processo_id = insert_result.lastrowid
