@@ -32,6 +32,13 @@ from db import (
     procurar_artigos_catalogo,
     fetch_all,
     fetch_one,
+    ensure_estado,
+    ensure_moeda,
+    ensure_pais,
+    ensure_cliente_final,
+    ensure_solicitante,
+    get_marca_id,
+    get_artigo_catalogo_id,
 )
 from services.pdf_service import (
     ensure_latin1,
@@ -1029,7 +1036,8 @@ def eliminar_utilizador(user_id):
 def criar_processo_com_artigos(artigos):
     """Criar um novo processo e respetivos artigos base."""
 
-    processo_id, numero_processo = criar_processo()
+    responsavel_id = st.session_state.get("user_id")
+    processo_id, numero_processo = criar_processo(responsavel_id=responsavel_id)
     conn = obter_conexao()
     c = conn.cursor()
     processo_artigos: list[dict] = []
@@ -1043,11 +1051,14 @@ def criar_processo_com_artigos(artigos):
             )
             quantidade_artigo = art.get("quantidade", 1)
             unidade_artigo = art.get("unidade", "Peças")
+            marca_id = get_marca_id(marca_artigo, cursor=c)
+            artigo_catalogo_id = get_artigo_catalogo_id(artigo_num, cursor=c)
             c.execute(
                 """
                 INSERT INTO processo_artigo (processo_id, artigo_num, descricao,
-                                             quantidade, unidade, marca, ordem)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                                             quantidade, unidade, marca, ordem,
+                                             marca_id, artigo_catalogo_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     processo_id,
@@ -1057,6 +1068,8 @@ def criar_processo_com_artigos(artigos):
                     unidade_artigo,
                     marca_artigo,
                     ordem,
+                    marca_id,
+                    artigo_catalogo_id,
                 ),
             )
             processo_artigos.append(
@@ -1069,6 +1082,8 @@ def criar_processo_com_artigos(artigos):
                     "marca": marca_artigo,
                     "ordem": ordem,
                     "processo_artigo_id": c.lastrowid,
+                    "marca_id": marca_id,
+                    "artigo_catalogo_id": artigo_catalogo_id,
                 }
             )
 
@@ -1115,6 +1130,7 @@ def criar_rfq(
         nome_solicitante = ""
         email_solicitante = ""
         empresa_solicitante = ""
+        telefone_solicitante = ""
         if cliente_id:
             c.execute(
                 """
@@ -1134,6 +1150,18 @@ def criar_rfq(
         cliente_final_pais = (dados_requisito.get("pais") or "").strip()
         cliente_final_nome_db = cliente_final_nome or None
         cliente_final_pais_db = cliente_final_pais or None
+        cliente_final_id = ensure_cliente_final(
+            cliente_final_nome, cliente_final_pais, cursor=c
+        )
+        solicitante_id = ensure_solicitante(
+            nome_solicitante,
+            email_solicitante,
+            telefone_solicitante,
+            empresa_solicitante,
+            cursor=c,
+        )
+        estado_padrao = "pendente"
+        estado_id = ensure_estado(estado_padrao, cursor=c)
 
         def _executar_insercao(conexao: sqlite3.Connection) -> int:
             cursor = conexao.cursor()
@@ -1144,31 +1172,39 @@ def criar_rfq(
                         processo_id,
                         fornecedor_id,
                         cliente_id,
+                        solicitante_id,
                         data,
                         referencia,
                         nome_solicitante,
                         email_solicitante,
+                        telefone_solicitante,
                         empresa_solicitante,
                         estado,
                         utilizador_id,
                         cliente_final_nome,
-                        cliente_final_pais
+                        cliente_final_pais,
+                        cliente_final_id,
+                        estado_id
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         processo_id,
                         fornecedor_id,
                         cliente_id,
+                        solicitante_id,
                         data.isoformat(),
                         referencia,
                         nome_solicitante,
                         email_solicitante,
+                        telefone_solicitante,
                         empresa_solicitante,
-                        "pendente",
+                        estado_padrao,
                         utilizador_id,
                         cliente_final_nome_db,
                         cliente_final_pais_db,
+                        cliente_final_id,
+                        estado_id,
                     ),
                 )
                 rfq_pk = cursor.lastrowid
@@ -1179,31 +1215,39 @@ def criar_rfq(
                         processo_id,
                         fornecedor_id,
                         cliente_id,
+                        solicitante_id,
                         data,
                         referencia,
                         nome_solicitante,
                         email_solicitante,
+                        telefone_solicitante,
                         empresa_solicitante,
                         estado,
                         utilizador_id,
                         cliente_final_nome,
-                        cliente_final_pais
+                        cliente_final_pais,
+                        cliente_final_id,
+                        estado_id
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
                     """,
                     (
                         processo_id,
                         fornecedor_id,
                         cliente_id,
+                        solicitante_id,
                         data.isoformat(),
                         referencia,
                         nome_solicitante,
                         email_solicitante,
+                        telefone_solicitante,
                         empresa_solicitante,
-                        "pendente",
+                        estado_padrao,
                         utilizador_id,
                         cliente_final_nome_db,
                         cliente_final_pais_db,
+                        cliente_final_id,
+                        estado_id,
                     ),
                 )
                 rfq_pk = cursor.fetchone()[0]
@@ -1224,11 +1268,16 @@ def criar_rfq(
                             processo_artigo_id = processo_artigos[ordem - 1].get(
                                 "processo_artigo_id"
                             )
+                    marca_id = get_marca_id(marca_art, cursor=cursor)
+                    artigo_catalogo_id = get_artigo_catalogo_id(
+                        art.get("artigo_num"), cursor=cursor
+                    )
                     cursor.execute(
                         """
                         INSERT INTO artigo (rfq_id, artigo_num, descricao, quantidade,
-                                          unidade, especificacoes, marca, ordem, processo_artigo_id)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                          unidade, especificacoes, marca, ordem,
+                                          processo_artigo_id, marca_id, artigo_catalogo_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             rfq_pk,
@@ -1240,6 +1289,8 @@ def criar_rfq(
                             marca_art,
                             ordem,
                             processo_artigo_id,
+                            marca_id,
+                            artigo_catalogo_id,
                         ),
                     )
 
@@ -1469,7 +1520,11 @@ def arquivar_cotacao(rfq_id):
     conn = obter_conexao()
     c = conn.cursor()
     try:
-        c.execute("UPDATE rfq SET estado = 'arquivada' WHERE id = ?", (rfq_id,))
+        estado_id = ensure_estado("arquivada", cursor=c)
+        c.execute(
+            "UPDATE rfq SET estado = ?, estado_id = ? WHERE id = ?",
+            ("arquivada", estado_id, rfq_id),
+        )
         conn.commit()
         invalidate_overview_caches()
         return True
@@ -1537,13 +1592,20 @@ def guardar_respostas(
             # Obter margem configurada para a marca
             margem = obter_margem_para_marca(fornecedor_id, marca)
             preco_venda = custo_total * (1 + margem / 100)
+            pais_origem_limpo = (pais_origem or "").strip()
+            pais_origem_id = (
+                ensure_pais(pais_origem_limpo, cursor=c) if pais_origem_limpo else None
+            )
+            moeda_codigo = "EUR"
+            moeda_id = ensure_moeda(moeda_codigo, cursor=c)
 
             c.execute(
                 """
                 INSERT OR REPLACE INTO resposta_fornecedor
                 (fornecedor_id, rfq_id, artigo_id, descricao, custo, prazo_entrega,
-                 peso, hs_code, pais_origem, margem_utilizada, preco_venda, quantidade_final, observacoes, validade_preco)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 peso, hs_code, pais_origem, moeda, margem_utilizada, preco_venda,
+                 quantidade_final, observacoes, validade_preco, pais_origem_id, moeda_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     fornecedor_id,
@@ -1555,11 +1617,14 @@ def guardar_respostas(
                     peso,
                     hs_code,
                     pais_origem,
+                    moeda_codigo,
                     margem,
                     preco_venda,
                     quantidade_final,
                     observacoes,
                     validade_preco,
+                    pais_origem_id,
+                    moeda_id,
                 ),
             )
 
@@ -1581,7 +1646,11 @@ def guardar_respostas(
         )
 
         # Atualizar estado da RFQ
-        c.execute("UPDATE rfq SET estado = 'respondido' WHERE id = ?", (rfq_id,))
+        estado_id = ensure_estado("respondido", cursor=c)
+        c.execute(
+            "UPDATE rfq SET estado = ?, estado_id = ? WHERE id = ?",
+            ("respondido", estado_id, rfq_id),
+        )
 
         # Obter informações para email
         c.execute(
@@ -1854,25 +1923,51 @@ def guardar_selecoes_processo(selecoes: dict[int, int | None]):
 
     conn = obter_conexao()
     c = conn.cursor()
+    utilizador_id = st.session_state.get("user_id")
 
     try:
         for processo_artigo_id, resposta_id in selecoes.items():
             if resposta_id:
                 c.execute(
-                """
-                INSERT INTO processo_artigo_selecao (processo_artigo_id, resposta_id, selecionado_em)
-                VALUES (?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(processo_artigo_id) DO UPDATE SET
-                    resposta_id = excluded.resposta_id,
-                    selecionado_em = CURRENT_TIMESTAMP,
-                    enviado_cliente_em = NULL
-                """,
-                (processo_artigo_id, resposta_id),
-            )
+                    """
+                    INSERT INTO processo_artigo_selecao (
+                        processo_artigo_id,
+                        resposta_id,
+                        selecionado_em,
+                        enviado_cliente_em,
+                        selecionado_por,
+                        acao
+                    )
+                    VALUES (?, ?, CURRENT_TIMESTAMP, NULL, ?, 'selecionado')
+                    ON CONFLICT(processo_artigo_id) DO UPDATE SET
+                        resposta_id = excluded.resposta_id,
+                        selecionado_em = CURRENT_TIMESTAMP,
+                        enviado_cliente_em = NULL,
+                        selecionado_por = excluded.selecionado_por,
+                        acao = excluded.acao
+                    """,
+                    (processo_artigo_id, resposta_id, utilizador_id),
+                )
             else:
                 c.execute(
-                    "DELETE FROM processo_artigo_selecao WHERE processo_artigo_id = ?",
-                    (processo_artigo_id,),
+                    """
+                    INSERT INTO processo_artigo_selecao (
+                        processo_artigo_id,
+                        resposta_id,
+                        selecionado_em,
+                        enviado_cliente_em,
+                        selecionado_por,
+                        acao
+                    )
+                    VALUES (?, NULL, CURRENT_TIMESTAMP, NULL, ?, 'removido')
+                    ON CONFLICT(processo_artigo_id) DO UPDATE SET
+                        resposta_id = NULL,
+                        selecionado_em = CURRENT_TIMESTAMP,
+                        enviado_cliente_em = NULL,
+                        selecionado_por = excluded.selecionado_por,
+                        acao = 'removido'
+                    """,
+                    (processo_artigo_id, utilizador_id),
                 )
         conn.commit()
         return True
@@ -1899,7 +1994,8 @@ def marcar_artigos_enviados(processo_artigo_ids: Iterable[int]):
         c.execute(
             f"""
             UPDATE processo_artigo_selecao
-            SET enviado_cliente_em = CURRENT_TIMESTAMP
+            SET enviado_cliente_em = CURRENT_TIMESTAMP,
+                acao = 'enviado_cliente'
             WHERE processo_artigo_id IN ({placeholders})
             """,
             ids,
