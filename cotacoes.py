@@ -62,7 +62,17 @@ def listar_fornecedores():
 def obter_artigos(rfq_id):
     with obter_sessao() as session:
         result = session.execute(
-            text("SELECT id, descricao, quantidade, unidade FROM artigo WHERE rfq_id = :rfq_id"),
+            text(
+                """
+                SELECT a.id,
+                       a.descricao,
+                       a.quantidade,
+                       COALESCE(u.nome, '') AS unidade
+                  FROM artigo a
+                  LEFT JOIN unidade u ON a.unidade_id = u.id
+                 WHERE a.rfq_id = :rfq_id
+                """
+            ),
             {"rfq_id": rfq_id},
         )
         return result.fetchall()
