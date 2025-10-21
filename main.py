@@ -33,6 +33,7 @@ from db import (
     fetch_all,
     fetch_one,
     ensure_estado,
+    ensure_unidade,
     get_marca_id,
     get_artigo_catalogo_id,
 )
@@ -365,6 +366,98 @@ def listar_todas_marcas():
         """
     )
     return [row[0] for row in rows if row[0]]
+
+
+@st.cache_data(show_spinner=False)
+def listar_unidades():
+    """Obter todas as unidades configuradas."""
+
+    rows = fetch_all(
+        """
+        SELECT id, nome
+          FROM unidade
+         WHERE nome IS NOT NULL AND TRIM(nome) != ''
+         ORDER BY nome COLLATE NOCASE
+        """
+    )
+    unidades: list[tuple[int, str]] = []
+    for row in rows:
+        unidades.append((int(row[0]), row[1]))
+    return unidades
+
+
+def inserir_unidade(nome: str) -> int | None:
+    """Adicionar uma nova unidade normalizada."""
+
+    nome_limpo = (nome or "").strip()
+    if not nome_limpo:
+        return None
+
+    conn = obter_conexao()
+    cursor = conn.cursor()
+    try:
+        unidade_id = ensure_unidade(nome_limpo, cursor=cursor)
+        conn.commit()
+        listar_unidades.clear()
+        return unidade_id
+    except (ValueError, sqlite3.IntegrityError):
+        conn.rollback()
+        return None
+    finally:
+        conn.close()
+
+
+def atualizar_unidade(unidade_id: int, nome: str) -> bool:
+    """Atualizar o nome de uma unidade existente."""
+
+    nome_limpo = (nome or "").strip()
+    if not nome_limpo:
+        return False
+
+    conn = obter_conexao()
+    cursor = conn.cursor()
+    try:
+        nome_normalizado = nome_limpo.casefold()
+        cursor.execute(
+            "UPDATE unidade SET nome = ?, nome_normalizada = ? WHERE id = ?",
+            (nome_limpo, nome_normalizado, unidade_id),
+        )
+        conn.commit()
+        if cursor.rowcount:
+            listar_unidades.clear()
+        return cursor.rowcount > 0
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
+def eliminar_unidade(unidade_id: int) -> bool:
+    """Eliminar unidade, respeitando referências existentes."""
+
+    conn = obter_conexao()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM unidade WHERE id = ?", (unidade_id,))
+        conn.commit()
+        if cursor.rowcount:
+            listar_unidades.clear()
+        return cursor.rowcount > 0
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
+def obter_nomes_unidades() -> list[str]:
+    """Lista de unidades para seleção em formulários."""
+
+    nomes = [nome for _, nome in listar_unidades()]
+    if not nomes:
+        nomes = ["Peças", "Metros", "KG", "Litros", "Caixas", "Paletes"]
+    return nomes
 
 
 def obter_fornecedores_por_marca(marca):
@@ -1050,13 +1143,17 @@ def criar_processo_com_artigos(artigos, cliente_id: int | None = None):
                 art.get("descricao", ""), marca_artigo
             )
             quantidade_artigo = art.get("quantidade", 1)
-            unidade_artigo = art.get("unidade", "Peças")
+            unidade_artigo = art.get("unidade", "Peças") or "Peças"
+            try:
+                unidade_id = ensure_unidade(unidade_artigo, cursor=c)
+            except ValueError:
+                unidade_id = ensure_unidade("Peças", cursor=c)
             marca_id = get_marca_id(marca_artigo, cursor=c)
             artigo_catalogo_id = get_artigo_catalogo_id(artigo_num, cursor=c)
             c.execute(
                 """
                 INSERT INTO processo_artigo (processo_id, artigo_num, descricao,
-                                             quantidade, unidade, marca, ordem,
+                                             quantidade, unidade_id, marca, ordem,
                                              marca_id, artigo_catalogo_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -1065,7 +1162,7 @@ def criar_processo_com_artigos(artigos, cliente_id: int | None = None):
                     artigo_num,
                     descricao_artigo,
                     quantidade_artigo,
-                    unidade_artigo,
+                    unidade_id,
                     marca_artigo,
                     ordem,
                     marca_id,
@@ -1241,21 +1338,26 @@ def criar_rfq(
                     artigo_catalogo_id = get_artigo_catalogo_id(
                         art.get("artigo_num"), cursor=cursor
                     )
+                    unidade_nome = art.get("unidade", "Peças") or "Peças"
+                    try:
+                        unidade_id = ensure_unidade(unidade_nome, cursor=cursor)
+                    except ValueError:
+                        unidade_id = ensure_unidade("Peças", cursor=cursor)
+
                     cursor.execute(
                         """
                         INSERT INTO artigo (rfq_id, artigo_num, descricao, quantidade,
-                                          unidade, especificacoes, marca, ordem,
+                                          unidade_id, especificacoes, ordem,
                                           processo_artigo_id, marca_id, artigo_catalogo_id)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             rfq_pk,
                             art.get("artigo_num", ""),
                             descricao_art,
                             art.get("quantidade", 1),
-                            art.get("unidade", "Peças"),
+                            unidade_id,
                             art.get("especificacoes", ""),
-                            marca_art,
                             ordem,
                             processo_artigo_id,
                             marca_id,
@@ -1452,20 +1554,35 @@ def obter_detalhes_cotacao(rfq_id):
             conn.close()
             return None
         
-        c.execute("""
-            SELECT * FROM artigo
-            WHERE rfq_id = ?
-            ORDER BY ordem, id
-        """, (rfq_id,))
-        artigos = [{
-            "id": row[0],
-            "artigo_num": row[2] if row[2] else "",
-            "descricao": row[3],
-            "quantidade": row[4],
-            "unidade": row[5],
-            "especificacoes": row[6] if row[6] else "",
-            "marca": row[7] if row[7] else ""
-        } for row in c.fetchall()]
+        c.execute(
+            """
+            SELECT a.id,
+                   COALESCE(a.artigo_num, ''),
+                   a.descricao,
+                   a.quantidade,
+                   COALESCE(u.nome, ''),
+                   COALESCE(a.especificacoes, ''),
+                   COALESCE(m.marca, '')
+              FROM artigo a
+              LEFT JOIN unidade u ON a.unidade_id = u.id
+              LEFT JOIN marca m ON a.marca_id = m.id
+             WHERE a.rfq_id = ?
+             ORDER BY a.ordem, a.id
+            """,
+            (rfq_id,),
+        )
+        artigos = [
+            {
+                "id": row[0],
+                "artigo_num": row[1],
+                "descricao": row[2],
+                "quantidade": row[3],
+                "unidade": row[4],
+                "especificacoes": row[5],
+                "marca": row[6],
+            }
+            for row in c.fetchall()
+        ]
         
         conn.close()
         
@@ -1574,7 +1691,12 @@ def guardar_respostas(
 
             # Obter marca e artigo do processo associado
             c.execute(
-                "SELECT marca, processo_artigo_id FROM artigo WHERE id = ?",
+                """
+                SELECT COALESCE(m.marca, ''), a.processo_artigo_id
+                  FROM artigo a
+                  LEFT JOIN marca m ON a.marca_id = m.id
+                 WHERE a.id = ?
+                """,
                 (artigo_id,),
             )
             marca_result = c.fetchone()
@@ -1593,9 +1715,9 @@ def guardar_respostas(
                 """
                 INSERT OR REPLACE INTO resposta_fornecedor
                 (fornecedor_id, rfq_id, artigo_id, descricao, custo, prazo_entrega,
-                 peso, hs_code, pais_origem, moeda, margem_utilizada, preco_venda,
+                 peso, hs_code, pais_origem, moeda, preco_venda,
                  quantidade_final, observacoes, validade_preco)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     fornecedor_id,
@@ -1608,7 +1730,6 @@ def guardar_respostas(
                     hs_code,
                     pais_origem,
                     moeda_codigo,
-                    margem,
                     preco_venda,
                     quantidade_final,
                     observacoes,
@@ -1678,43 +1799,67 @@ def obter_respostas_cotacao(rfq_id):
     
     c.execute(
         """
-        SELECT rf.*, a.descricao AS descricao_original,
+        SELECT rf.id,
+               rf.fornecedor_id,
+               rf.rfq_id,
+               rf.artigo_id,
+               rf.descricao,
+               rf.custo,
+               rf.prazo_entrega,
+               rf.quantidade_final,
+               rf.peso,
+               rf.hs_code,
+               rf.pais_origem,
+               rf.moeda,
+               rf.preco_venda,
+               rf.observacoes,
+               rf.data_resposta,
+               rf.validade_preco,
+               a.descricao AS descricao_original,
                a.quantidade AS quantidade_original,
                a.processo_artigo_id,
-               fornecedor.nome AS fornecedor_nome
-        FROM resposta_fornecedor rf
-        JOIN artigo a ON rf.artigo_id = a.id
-        LEFT JOIN fornecedor ON fornecedor.id = rf.fornecedor_id
-        WHERE rf.rfq_id = ?
-        ORDER BY a.ordem, rf.artigo_id
+               fornecedor.nome AS fornecedor_nome,
+               COALESCE(u.nome, '') AS unidade_nome,
+               COALESCE(m.marca, '') AS marca_nome
+          FROM resposta_fornecedor rf
+          JOIN artigo a ON rf.artigo_id = a.id
+          LEFT JOIN fornecedor ON fornecedor.id = rf.fornecedor_id
+          LEFT JOIN unidade u ON a.unidade_id = u.id
+          LEFT JOIN marca m ON a.marca_id = m.id
+         WHERE rf.rfq_id = ?
+         ORDER BY a.ordem, rf.artigo_id
         """,
         (rfq_id,),
     )
 
     respostas = []
     for row in c.fetchall():
-        respostas.append({
-            "id": row[0],
-            "fornecedor_id": row[1],
-            "rfq_id": row[2],
-            "artigo_id": row[3],
-            "descricao": row[4] if row[4] else row[17],
-            "custo": row[5],
-            "prazo_entrega": row[6],
-            "quantidade_final": row[7] if row[7] else row[18],
-            "peso": row[8],
-            "hs_code": row[9],
-            "pais_origem": row[10],
-            "moeda": row[11],
-            "margem_utilizada": row[12],
-            "preco_venda": row[13],
-            "observacoes": row[14],
-            "validade_preco": row[16],
-            "descricao_original": row[17],
-            "quantidade_original": row[18],
-            "processo_artigo_id": row[19],
-            "fornecedor_nome": row[20] if len(row) > 20 else "",
-        })
+        respostas.append(
+            {
+                "id": row[0],
+                "fornecedor_id": row[1],
+                "rfq_id": row[2],
+                "artigo_id": row[3],
+                "descricao": row[4] if row[4] else row[16],
+                "custo": row[5],
+                "prazo_entrega": row[6],
+                "quantidade_final": row[7] if row[7] else row[17],
+                "peso": row[8],
+                "hs_code": row[9],
+                "pais_origem": row[10],
+                "moeda": row[11],
+                "preco_venda": row[12],
+                "observacoes": row[13],
+                "data_resposta": row[14],
+                "validade_preco": row[15],
+                "descricao_original": row[16],
+                "quantidade_original": row[17],
+                "processo_artigo_id": row[18],
+                "fornecedor_nome": row[19] or "",
+                "unidade": row[20],
+                "marca": row[21],
+            }
+        )
 
     conn.close()
     return respostas
@@ -1758,7 +1903,7 @@ def obter_respostas_por_processo(processo_id):
                pa.artigo_num,
                pa.descricao,
                pa.quantidade,
-               pa.unidade,
+               COALESCE(u.nome, ''),
                pa.marca,
                pa.ordem,
                rf.id as resposta_id,
@@ -1773,6 +1918,7 @@ def obter_respostas_por_processo(processo_id):
                r.estado,
                rf.validade_preco
         FROM processo_artigo pa
+        LEFT JOIN unidade u ON pa.unidade_id = u.id
         LEFT JOIN artigo a ON a.processo_artigo_id = pa.id
         LEFT JOIN rfq r ON a.rfq_id = r.id
         LEFT JOIN resposta_fornecedor rf ON rf.artigo_id = a.id AND rf.rfq_id = r.id
@@ -1950,10 +2096,17 @@ def obter_detalhes_processo(processo_id: int):
 
     c.execute(
         """
-        SELECT id, COALESCE(artigo_num, ''), descricao, quantidade, unidade, COALESCE(marca, ''), ordem
-        FROM processo_artigo
-        WHERE processo_id = ?
-        ORDER BY ordem, id
+        SELECT pa.id,
+               COALESCE(pa.artigo_num, ''),
+               pa.descricao,
+               pa.quantidade,
+               COALESCE(u.nome, ''),
+               COALESCE(pa.marca, ''),
+               pa.ordem
+          FROM processo_artigo pa
+          LEFT JOIN unidade u ON pa.unidade_id = u.id
+         WHERE pa.processo_id = ?
+         ORDER BY pa.ordem, pa.id
         """,
         (processo_id,),
     )
@@ -2004,11 +2157,20 @@ def obter_detalhes_processo(processo_id: int):
 
         c.execute(
             f"""
-            SELECT rfq_id, id, COALESCE(artigo_num, ''), descricao, quantidade, unidade,
-                   COALESCE(marca, ''), ordem, processo_artigo_id
-            FROM artigo
-            WHERE rfq_id IN ({placeholders})
-            ORDER BY rfq_id, ordem, id
+            SELECT a.rfq_id,
+                   a.id,
+                   COALESCE(a.artigo_num, ''),
+                   a.descricao,
+                   a.quantidade,
+                   COALESCE(u.nome, ''),
+                   COALESCE(m.marca, ''),
+                   a.ordem,
+                   a.processo_artigo_id
+              FROM artigo a
+              LEFT JOIN unidade u ON a.unidade_id = u.id
+              LEFT JOIN marca m ON a.marca_id = m.id
+             WHERE a.rfq_id IN ({placeholders})
+             ORDER BY a.rfq_id, a.ordem, a.id
             """,
             rfq_ids,
         )
@@ -3421,7 +3583,7 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
             SELECT a.artigo_num,
                    rf.descricao,
                    COALESCE(rf.quantidade_final, a.quantidade) AS quantidade_final,
-                   a.unidade,
+                   COALESCE(u.nome, ''),
                    rf.preco_venda,
                    rf.prazo_entrega,
                    rf.peso,
@@ -3430,6 +3592,7 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
                    COALESCE(pa.ordem, a.ordem) AS ordem
             FROM resposta_fornecedor rf
             JOIN artigo a ON rf.artigo_id = a.id
+            LEFT JOIN unidade u ON a.unidade_id = u.id
             LEFT JOIN processo_artigo pa ON pa.id = a.processo_artigo_id
         """
 
@@ -4912,10 +5075,15 @@ elif menu_option == "📝 Nova Cotação":
                         placeholder="Insira a quantidade",
                     )
 
+                    opcoes_unidade = obter_nomes_unidades()
+                    unidade_atual = artigo.get('unidade') or (opcoes_unidade[0] if opcoes_unidade else "Peças")
+                    if unidade_atual not in opcoes_unidade:
+                        opcoes_unidade = [*opcoes_unidade, unidade_atual]
+                    indice_unidade = opcoes_unidade.index(unidade_atual) if unidade_atual in opcoes_unidade else 0
                     artigo['unidade'] = st.selectbox(
                         "Unidade",
-                        ["Peças", "Metros", "KG", "Litros", "Caixas", "Paletes"],
-                        index=0,
+                        opcoes_unidade,
+                        index=indice_unidade,
                         key=f"nova_unidade_{i}",
                     )
 
@@ -5094,7 +5262,8 @@ elif menu_option == "📝 Nova Cotação":
 elif menu_option == "🤖 Smart Quotation":
     st.title("🤖 Smart Quotation")
 
-    unidades_padrao = ["Peças", "Metros", "KG", "Litros", "Caixas", "Paletes"]
+    unidades_padrao = obter_nomes_unidades()
+    unidade_padrao = unidades_padrao[0] if unidades_padrao else "Peças"
     upload_pdf = st.file_uploader(
         "📎 Pedido do cliente (PDF ou email)",
         type=["pdf", "eml", "msg"],
@@ -5118,7 +5287,7 @@ elif menu_option == "🤖 Smart Quotation":
                 reset_smart_quotation_state()
                 st.session_state.smart_pdf_uid = pdf_uid
                 st.session_state.smart_referencia = dados.get("referencia") or ""
-                st.session_state.smart_unidade = "Peças"
+                st.session_state.smart_unidade = unidade_padrao
                 st.session_state.smart_marca = dados.get("marca") or ""
 
                 itens_extraidos = dados.get("itens") or []
@@ -5140,7 +5309,7 @@ elif menu_option == "🤖 Smart Quotation":
                         else:
                             quantidade_str = str(quantidade_item).strip()
 
-                    unidade_item = (item.get("unidade") or "Peças").strip() or "Peças"
+                    unidade_item = (item.get("unidade") or unidade_padrao).strip() or unidade_padrao
                     marca_item = (item.get("marca") or marca_padrao_pdf).strip()
                     if not marca_item and descricao_item:
                         marca_item = descricao_item.split()[0]
@@ -5175,7 +5344,7 @@ elif menu_option == "🤖 Smart Quotation":
                                 "artigo_num": dados.get("artigo_num") or "",
                                 "descricao": descricao_principal,
                                 "quantidade": quantidade_base_str,
-                                "unidade": "Peças",
+                                "unidade": unidade_padrao,
                                 "marca": marca_padrao_pdf,
                             }
                         ]
@@ -5185,7 +5354,7 @@ elif menu_option == "🤖 Smart Quotation":
                                 "artigo_num": "",
                                 "descricao": "",
                                 "quantidade": quantidade_base_str,
-                                "unidade": "Peças",
+                                "unidade": unidade_padrao,
                                 "marca": marca_padrao_pdf,
                             }
                         ]
@@ -5201,8 +5370,8 @@ elif menu_option == "🤖 Smart Quotation":
                         "quantidade", "",
                     )
                     st.session_state[f"smart_artigos_{idx}_unidade"] = artigo.get(
-                        "unidade", "Peças"
-                    ) or "Peças"
+                        "unidade", unidade_padrao
+                    ) or unidade_padrao
                     marca_extraida = extrair_primeira_palavra(descricao_guardada)
                     if not marca_extraida:
                         marca_extraida = artigo.get("marca", "") or ""
@@ -5284,7 +5453,7 @@ elif menu_option == "🤖 Smart Quotation":
                         )
                     with col_uni:
                         unidade_key = f"smart_artigos_{idx}_unidade"
-                        unidade_atual = st.session_state.get(unidade_key, "Peças")
+                        unidade_atual = st.session_state.get(unidade_key, unidade_padrao)
                         opcoes_unidade = [*unidades_padrao]
                         if unidade_atual not in opcoes_unidade:
                             opcoes_unidade.append(unidade_atual)
@@ -5330,7 +5499,7 @@ elif menu_option == "🤖 Smart Quotation":
                                 f"smart_artigos_{idx}_quantidade", "",
                             ),
                             "unidade": st.session_state.get(
-                                f"smart_artigos_{idx}_unidade", "Peças"
+                                f"smart_artigos_{idx}_unidade", unidade_padrao
                             ),
                             "marca": st.session_state.get(
                                 f"smart_artigos_{idx}_marca", "",
@@ -5387,11 +5556,11 @@ elif menu_option == "🤖 Smart Quotation":
 
                             unidade_val = (
                                 st.session_state.get(
-                                    f"smart_artigos_{idx}_unidade", "Peças"
+                                    f"smart_artigos_{idx}_unidade", unidade_padrao
                                 )
-                                or "Peças"
+                                or unidade_padrao
                             )
-                            unidade_val = str(unidade_val).strip() or "Peças"
+                            unidade_val = str(unidade_val).strip() or unidade_padrao
 
                             quantidade_raw = (
                                 st.session_state.get(
@@ -6738,8 +6907,18 @@ elif menu_option == "⚙️ Configurações":
         st.error("Sem permissão para aceder a esta área")
     else:
         st.title("⚙️ Configurações do Sistema")
-        tab_fornecedores, tab_clientes, tab_users, tab_email, tab_backup, tab_layout, tab_empresa = st.tabs([
+        (
+            tab_fornecedores,
+            tab_unidades,
+            tab_clientes,
+            tab_users,
+            tab_email,
+            tab_backup,
+            tab_layout,
+            tab_empresa,
+        ) = st.tabs([
             "Fornecedores",
+            "Unidades",
             "Clientes",
             "Utilizadores",
             "Email",
@@ -6955,6 +7134,47 @@ elif menu_option == "⚙️ Configurações":
                                             st.markdown("</div>", unsafe_allow_html=True)
                             else:
                                 st.info("Nenhuma marca configurada")
+
+        with tab_unidades:
+            st.subheader("Gestão de Unidades")
+
+            with st.form("nova_unidade_form"):
+                nome_unidade = st.text_input("Nome da Unidade *")
+                adicionar_unidade = st.form_submit_button("➕ Adicionar")
+
+            if adicionar_unidade:
+                if inserir_unidade(nome_unidade):
+                    st.success("Unidade adicionada com sucesso!")
+                    st.rerun()
+                else:
+                    st.error(
+                        "Não foi possível adicionar a unidade. Verifique se o nome já existe."
+                    )
+
+            unidades_existentes = listar_unidades()
+            if unidades_existentes:
+                for unidade_id, unidade_nome in unidades_existentes:
+                    with st.form(f"editar_unidade_{unidade_id}"):
+                        nome_editado = st.text_input("Nome", unidade_nome)
+                        col_salvar, col_eliminar = st.columns(2)
+                        with col_salvar:
+                            if st.form_submit_button("💾 Guardar"):
+                                if atualizar_unidade(unidade_id, nome_editado):
+                                    st.success("Unidade atualizada")
+                                    st.rerun()
+                                else:
+                                    st.error("Não foi possível atualizar a unidade.")
+                        with col_eliminar:
+                            if st.form_submit_button("🗑️ Eliminar"):
+                                if eliminar_unidade(unidade_id):
+                                    st.success("Unidade eliminada")
+                                    st.rerun()
+                                else:
+                                    st.error(
+                                        "Não é possível eliminar a unidade enquanto estiver em uso."
+                                    )
+            else:
+                st.info("Nenhuma unidade registada.")
 
         with tab_clientes:
             st.subheader("Gestão de Clientes")
