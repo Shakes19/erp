@@ -4647,21 +4647,47 @@ def obter_estatisticas_db(utilizador_id: int | None = None):
             stats["artigo"] = c.fetchone()[0]
 
         if utilizador_id is None:
-            c.execute("SELECT COUNT(*) FROM rfq WHERE estado = 'pendente'")
+            c.execute(
+                """
+                SELECT COUNT(*)
+                FROM rfq r
+                LEFT JOIN estado e ON r.estado_id = e.id
+                WHERE COALESCE(e.nome, 'pendente') = 'pendente'
+                """
+            )
             stats["rfq_pendentes"] = c.fetchone()[0]
         else:
             c.execute(
-                "SELECT COUNT(*) FROM rfq WHERE estado = 'pendente' AND utilizador_id = ?",
+                """
+                SELECT COUNT(*)
+                FROM rfq r
+                LEFT JOIN estado e ON r.estado_id = e.id
+                WHERE COALESCE(e.nome, 'pendente') = 'pendente'
+                  AND r.utilizador_id = ?
+                """,
                 (utilizador_id,),
             )
             stats["rfq_pendentes"] = c.fetchone()[0]
 
         if utilizador_id is None:
-            c.execute("SELECT COUNT(*) FROM rfq WHERE estado = 'respondido'")
+            c.execute(
+                """
+                SELECT COUNT(*)
+                FROM rfq r
+                LEFT JOIN estado e ON r.estado_id = e.id
+                WHERE COALESCE(e.nome, 'pendente') = 'respondido'
+                """
+            )
             stats["rfq_respondidas"] = c.fetchone()[0]
         else:
             c.execute(
-                "SELECT COUNT(*) FROM rfq WHERE estado = 'respondido' AND utilizador_id = ?",
+                """
+                SELECT COUNT(*)
+                FROM rfq r
+                LEFT JOIN estado e ON r.estado_id = e.id
+                WHERE COALESCE(e.nome, 'pendente') = 'respondido'
+                  AND r.utilizador_id = ?
+                """,
                 (utilizador_id,),
             )
             stats["rfq_respondidas"] = c.fetchone()[0]
@@ -6576,13 +6602,17 @@ elif menu_option == "📊 Relatórios":
                 conn = obter_conexao()
                 c = conn.cursor()
                 
-                c.execute("""
+                c.execute(
+                    """
                     SELECT COUNT(*) as total,
-                           SUM(CASE WHEN estado = 'respondido' THEN 1 ELSE 0 END) as respondidas,
-                           SUM(CASE WHEN estado = 'pendente' THEN 1 ELSE 0 END) as pendentes
-                    FROM rfq
-                    WHERE fornecedor_id = ?
-                """, (fornecedor_sel[0],))
+                           SUM(CASE WHEN COALESCE(e.nome, 'pendente') = 'respondido' THEN 1 ELSE 0 END) as respondidas,
+                           SUM(CASE WHEN COALESCE(e.nome, 'pendente') = 'pendente' THEN 1 ELSE 0 END) as pendentes
+                    FROM rfq r
+                    LEFT JOIN estado e ON r.estado_id = e.id
+                    WHERE r.fornecedor_id = ?
+                    """,
+                    (fornecedor_sel[0],),
+                )
                 
                 stats_forn = c.fetchone()
                 
@@ -6639,10 +6669,11 @@ elif menu_option == "📊 Relatórios":
                 c.execute(
                     """
                     SELECT COUNT(*) as total,
-                           SUM(CASE WHEN estado = 'respondido' THEN 1 ELSE 0 END) as respondidas,
-                           SUM(CASE WHEN estado = 'pendente' THEN 1 ELSE 0 END) as pendentes
-                    FROM rfq
-                    WHERE utilizador_id = ?
+                           SUM(CASE WHEN COALESCE(e.nome, 'pendente') = 'respondido' THEN 1 ELSE 0 END) as respondidas,
+                           SUM(CASE WHEN COALESCE(e.nome, 'pendente') = 'pendente' THEN 1 ELSE 0 END) as pendentes
+                    FROM rfq r
+                    LEFT JOIN estado e ON r.estado_id = e.id
+                    WHERE r.utilizador_id = ?
                     """,
                     (user_sel[0],),
                 )
@@ -6909,18 +6940,18 @@ elif menu_option == "⚙️ Configurações":
         st.title("⚙️ Configurações do Sistema")
         (
             tab_fornecedores,
-            tab_unidades,
             tab_clientes,
             tab_users,
+            tab_unidades,
             tab_email,
             tab_backup,
             tab_layout,
             tab_empresa,
         ) = st.tabs([
             "Fornecedores",
-            "Unidades",
             "Clientes",
             "Utilizadores",
+            "Unidades",
             "Email",
             "Backup",
             "Layout PDF",
@@ -7135,47 +7166,6 @@ elif menu_option == "⚙️ Configurações":
                             else:
                                 st.info("Nenhuma marca configurada")
 
-        with tab_unidades:
-            st.subheader("Gestão de Unidades")
-
-            with st.form("nova_unidade_form"):
-                nome_unidade = st.text_input("Nome da Unidade *")
-                adicionar_unidade = st.form_submit_button("➕ Adicionar")
-
-            if adicionar_unidade:
-                if inserir_unidade(nome_unidade):
-                    st.success("Unidade adicionada com sucesso!")
-                    st.rerun()
-                else:
-                    st.error(
-                        "Não foi possível adicionar a unidade. Verifique se o nome já existe."
-                    )
-
-            unidades_existentes = listar_unidades()
-            if unidades_existentes:
-                for unidade_id, unidade_nome in unidades_existentes:
-                    with st.form(f"editar_unidade_{unidade_id}"):
-                        nome_editado = st.text_input("Nome", unidade_nome)
-                        col_salvar, col_eliminar = st.columns(2)
-                        with col_salvar:
-                            if st.form_submit_button("💾 Guardar"):
-                                if atualizar_unidade(unidade_id, nome_editado):
-                                    st.success("Unidade atualizada")
-                                    st.rerun()
-                                else:
-                                    st.error("Não foi possível atualizar a unidade.")
-                        with col_eliminar:
-                            if st.form_submit_button("🗑️ Eliminar"):
-                                if eliminar_unidade(unidade_id):
-                                    st.success("Unidade eliminada")
-                                    st.rerun()
-                                else:
-                                    st.error(
-                                        "Não é possível eliminar a unidade enquanto estiver em uso."
-                                    )
-            else:
-                st.info("Nenhuma unidade registada.")
-
         with tab_clientes:
             st.subheader("Gestão de Clientes")
 
@@ -7277,7 +7267,12 @@ elif menu_option == "⚙️ Configurações":
                                     col_a, col_b = st.columns(2)
                                     with col_a:
                                         if st.form_submit_button("💾 Guardar"):
-                                            atualizar_cliente(cli[0], nome_edit, email_edit, empresa_sel_edit[0])
+                                            atualizar_cliente(
+                                                cli[0],
+                                                nome_edit,
+                                                email_edit,
+                                                empresa_sel_edit[0],
+                                            )
                                             st.success("Comercial atualizado")
                                             st.rerun()
                                     with col_b:
@@ -7355,7 +7350,59 @@ elif menu_option == "⚙️ Configurações":
                                             st.rerun()
                                         else:
                                             st.error("Erro ao eliminar utilizador")
-        
+
+        with tab_unidades:
+            st.subheader("Gestão de Unidades")
+
+            col_add, col_list = st.columns(2)
+
+            with col_add:
+                st.markdown("### Adicionar Unidade")
+                with st.form("nova_unidade_form"):
+                    nome_unidade = st.text_input("Nome da Unidade *")
+                    adicionar_unidade = st.form_submit_button("➕ Adicionar")
+
+                if adicionar_unidade:
+                    if inserir_unidade(nome_unidade):
+                        st.success("Unidade adicionada com sucesso!")
+                        st.rerun()
+                    else:
+                        st.error(
+                            "Não foi possível adicionar a unidade. Verifique se o nome já existe."
+                        )
+
+            with col_list:
+                st.markdown("### Unidades Registadas")
+                unidades_existentes = listar_unidades()
+
+                if unidades_existentes:
+                    for unidade_id, unidade_nome in unidades_existentes:
+                        titulo_expander = f"{unidade_nome} (ID {unidade_id})"
+                        with st.expander(titulo_expander):
+                            with st.form(f"editar_unidade_{unidade_id}"):
+                                nome_editado = st.text_input("Nome", unidade_nome)
+                                col_salvar, col_eliminar = st.columns(2)
+
+                                with col_salvar:
+                                    if st.form_submit_button("💾 Guardar"):
+                                        if atualizar_unidade(unidade_id, nome_editado):
+                                            st.success("Unidade atualizada")
+                                            st.rerun()
+                                        else:
+                                            st.error("Não foi possível atualizar a unidade.")
+
+                                with col_eliminar:
+                                    if st.form_submit_button("🗑️ Eliminar"):
+                                        if eliminar_unidade(unidade_id):
+                                            st.success("Unidade eliminada")
+                                            st.rerun()
+                                        else:
+                                            st.error(
+                                                "Não é possível eliminar a unidade enquanto estiver em uso."
+                                            )
+                else:
+                    st.info("Nenhuma unidade registada.")
+
         with tab_email:
             st.subheader("Configuração de Email")
             
