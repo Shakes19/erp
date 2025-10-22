@@ -2225,8 +2225,8 @@ def obter_detalhes_processo(processo_id: int):
                 "observacoes": rfq_row[5] or "",
                 "nome_solicitante": rfq_row[6] or "",
                 "email_solicitante": rfq_row[7] or "",
-                "cliente": rfq_row[8] or "",
-                "utilizador_id": rfq_row[9],
+                "cliente": rfq_row[6] or "",
+                "utilizador_id": rfq_row[8],
                 "artigos": artigos_rfq,
                 "total_respostas": respostas_por_rfq.get(rfq_id, 0),
                 "total_artigos_cliente": total_artigos_cliente,
@@ -4612,7 +4612,12 @@ def obter_estatisticas_db(utilizador_id: int | None = None):
             c.execute("SELECT COUNT(*) FROM rfq")
         else:
             c.execute(
-                "SELECT COUNT(*) FROM rfq WHERE utilizador_id = ?",
+                """
+                SELECT COUNT(*)
+                  FROM rfq r
+                  JOIN processo p ON r.processo_id = p.id
+                 WHERE p.utilizador_id = ?
+                """,
                 (utilizador_id,),
             )
         stats["rfq"] = c.fetchone()[0]
@@ -4623,9 +4628,11 @@ def obter_estatisticas_db(utilizador_id: int | None = None):
         else:
             c.execute(
                 """
-                SELECT COUNT(DISTINCT fornecedor_id)
-                FROM rfq
-                WHERE utilizador_id = ? AND fornecedor_id IS NOT NULL
+                SELECT COUNT(DISTINCT r.fornecedor_id)
+                  FROM rfq r
+                  JOIN processo p ON r.processo_id = p.id
+                 WHERE p.utilizador_id = ?
+                   AND r.fornecedor_id IS NOT NULL
                 """,
                 (utilizador_id,),
             )
@@ -4638,9 +4645,10 @@ def obter_estatisticas_db(utilizador_id: int | None = None):
             c.execute(
                 """
                 SELECT COUNT(*)
-                FROM artigo a
-                JOIN rfq r ON a.rfq_id = r.id
-                WHERE r.utilizador_id = ?
+                  FROM artigo a
+                  JOIN rfq r ON a.rfq_id = r.id
+                  JOIN processo p ON r.processo_id = p.id
+                 WHERE p.utilizador_id = ?
                 """,
                 (utilizador_id,),
             )
@@ -4660,10 +4668,11 @@ def obter_estatisticas_db(utilizador_id: int | None = None):
             c.execute(
                 """
                 SELECT COUNT(*)
-                FROM rfq r
-                LEFT JOIN estado e ON r.estado_id = e.id
-                WHERE COALESCE(e.nome, 'pendente') = 'pendente'
-                  AND r.utilizador_id = ?
+                  FROM rfq r
+                  JOIN processo p ON r.processo_id = p.id
+                  LEFT JOIN estado e ON r.estado_id = e.id
+                 WHERE COALESCE(e.nome, 'pendente') = 'pendente'
+                   AND p.utilizador_id = ?
                 """,
                 (utilizador_id,),
             )
@@ -4683,10 +4692,11 @@ def obter_estatisticas_db(utilizador_id: int | None = None):
             c.execute(
                 """
                 SELECT COUNT(*)
-                FROM rfq r
-                LEFT JOIN estado e ON r.estado_id = e.id
-                WHERE COALESCE(e.nome, 'pendente') = 'respondido'
-                  AND r.utilizador_id = ?
+                  FROM rfq r
+                  JOIN processo p ON r.processo_id = p.id
+                  LEFT JOIN estado e ON r.estado_id = e.id
+                 WHERE COALESCE(e.nome, 'pendente') = 'respondido'
+                   AND p.utilizador_id = ?
                 """,
                 (utilizador_id,),
             )
@@ -4698,13 +4708,11 @@ def obter_estatisticas_db(utilizador_id: int | None = None):
             c.execute(
                 """
                 SELECT COUNT(*)
-                FROM pdf_storage
-                WHERE tipo_pdf = 'cliente'
-                  AND rfq_id IN (
-                      SELECT CAST(id AS TEXT)
-                      FROM rfq
-                      WHERE utilizador_id = ?
-                  )
+                  FROM pdf_storage ps
+                  JOIN rfq r ON CAST(ps.rfq_id AS INTEGER) = r.id
+                  JOIN processo p ON r.processo_id = p.id
+                 WHERE ps.tipo_pdf = 'cliente'
+                   AND p.utilizador_id = ?
                 """,
                 (utilizador_id,),
             )
@@ -5717,6 +5725,16 @@ elif menu_option == "📩 Process Center":
     utilizador_options.update({(u[2] or u[1]): u[0] for u in utilizadores})
     utilizador_option_labels = list(utilizador_options.keys())
 
+    current_user_id = st.session_state.get("user_id")
+    default_user_label = next(
+        (label for label, uid in utilizador_options.items() if uid == current_user_id),
+        None,
+    )
+    if default_user_label:
+        for key in ("utilizador_pend", "utilizador_resp", "utilizador_arq"):
+            if key not in st.session_state:
+                st.session_state[key] = default_user_label
+
     tab_process_center, tab_pendentes, tab_respondidas, tab_arquivados = st.tabs(
         ["Process Center", "Pendentes", "Respondidas", "Arquivados"]
     )
@@ -6656,10 +6674,19 @@ elif menu_option == "📊 Relatórios":
         utilizadores = listar_utilizadores()
 
         if utilizadores:
+            current_user_id = st.session_state.get("user_id")
+            default_index = 0
+            if current_user_id is not None:
+                for idx, user in enumerate(utilizadores):
+                    if user[0] == current_user_id:
+                        default_index = idx
+                        break
+
             user_sel = st.selectbox(
                 "Selecionar Utilizador",
                 options=utilizadores,
                 format_func=lambda x: x[1],
+                index=default_index,
             )
 
             if user_sel:
@@ -6671,9 +6698,10 @@ elif menu_option == "📊 Relatórios":
                     SELECT COUNT(*) as total,
                            SUM(CASE WHEN COALESCE(e.nome, 'pendente') = 'respondido' THEN 1 ELSE 0 END) as respondidas,
                            SUM(CASE WHEN COALESCE(e.nome, 'pendente') = 'pendente' THEN 1 ELSE 0 END) as pendentes
-                    FROM rfq r
-                    LEFT JOIN estado e ON r.estado_id = e.id
-                    WHERE r.utilizador_id = ?
+                      FROM rfq r
+                      JOIN processo p ON r.processo_id = p.id
+                      LEFT JOIN estado e ON r.estado_id = e.id
+                     WHERE p.utilizador_id = ?
                     """,
                     (user_sel[0],),
                 )
