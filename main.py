@@ -946,16 +946,25 @@ def listar_clientes():
 
 def inserir_empresa(nome, morada="", condicoes_pagamento=""):
     """Inserir nova empresa de cliente"""
+
+    nome_limpo = (nome or "").strip()
+    if not nome_limpo:
+        raise ValueError("Nome da empresa é obrigatório")
+
     conn = obter_conexao()
     c = conn.cursor()
     try:
-        c.execute("SELECT id FROM cliente_empresa WHERE nome = ?", (nome,))
+        c.execute(
+            "SELECT id FROM cliente_empresa WHERE PYCASEFOLD(nome) = PYCASEFOLD(?)",
+            (nome_limpo,),
+        )
         existente = c.fetchone()
         if existente:
             return existente[0]
+
         c.execute(
             "INSERT INTO cliente_empresa (nome, morada, condicoes_pagamento) VALUES (?, ?, ?)",
-            (nome, morada, condicoes_pagamento),
+            (nome_limpo, morada, condicoes_pagamento),
         )
         conn.commit()
         listar_empresas.clear()
@@ -964,7 +973,7 @@ def inserir_empresa(nome, morada="", condicoes_pagamento=""):
         conn.close()
         if "no such table" in str(e).lower():
             criar_base_dados_completa()
-            return inserir_empresa(nome, morada, condicoes_pagamento)
+            return inserir_empresa(nome_limpo, morada, condicoes_pagamento)
         raise
     finally:
         try:
@@ -1000,16 +1009,40 @@ def eliminar_empresa_db(empresa_id):
 
 def inserir_cliente(nome, email="", empresa_id=None):
     """Inserir novo cliente"""
+
+    nome_limpo = (nome or "").strip()
+    if not nome_limpo:
+        raise ValueError("Nome do cliente é obrigatório")
+
+    email_limpo = (email or "").strip()
+
     conn = obter_conexao()
     c = conn.cursor()
     try:
-        c.execute("SELECT id FROM cliente WHERE nome = ?", (nome,))
+        # Evitar duplicados pelo nome (ignorando maiúsculas/minúsculas) para a mesma empresa
+        c.execute(
+            """
+            SELECT id
+              FROM cliente
+             WHERE PYCASEFOLD(nome) = PYCASEFOLD(?)
+               AND COALESCE(empresa_id, -1) = COALESCE(?, -1)
+            """,
+            (nome_limpo, empresa_id),
+        )
         existente = c.fetchone()
+        if not existente and email_limpo:
+            # Se o email já existir reutilizamos o mesmo registo
+            c.execute(
+                "SELECT id FROM cliente WHERE PYCASEFOLD(email) = PYCASEFOLD(?)",
+                (email_limpo,),
+            )
+            existente = c.fetchone()
         if existente:
             return existente[0]
+
         c.execute(
             "INSERT INTO cliente (nome, email, empresa_id) VALUES (?, ?, ?)",
-            (nome, email, empresa_id),
+            (nome_limpo, email_limpo or None, empresa_id),
         )
         conn.commit()
         listar_clientes.clear()
@@ -1071,15 +1104,35 @@ def obter_utilizador_por_id(user_id):
 
 def inserir_utilizador(username, password, nome="", email="", role="user", email_password=""):
     """Inserir novo utilizador"""
+
+    username_limpo = (username or "").strip()
+    if not username_limpo or not password:
+        raise ValueError("Username e palavra-passe são obrigatórios")
+
     conn = obter_conexao()
     c = conn.cursor()
     try:
+        c.execute(
+            "SELECT id FROM utilizador WHERE PYCASEFOLD(username) = PYCASEFOLD(?)",
+            (username_limpo,),
+        )
+        existente = c.fetchone()
+        if existente:
+            return existente[0]
+
         c.execute(
             """
             INSERT INTO utilizador (username, password, nome, email, role, email_password)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (username, hash_password(password), nome, email, role, email_password),
+            (
+                username_limpo,
+                hash_password(password),
+                nome,
+                email,
+                role,
+                email_password,
+            ),
         )
         conn.commit()
         listar_utilizadores.clear()
