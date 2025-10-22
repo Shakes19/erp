@@ -7,7 +7,7 @@ from email.parser import BytesParser
 import streamlit as st
 from fpdf import FPDF
 
-from db import fetch_all, fetch_one
+from db import fetch_all, fetch_one, resolve_processo_id
 import extract_msg
 
 
@@ -72,8 +72,17 @@ def obter_config_empresa():
     return None
 
 
-def obter_pdf_da_db(rfq_id, tipo_pdf="pedido", *, return_all: bool = False):
-    """Retrieve stored PDF bytes for a RFQ.
+def obter_pdf_da_db(
+    identificador,
+    tipo_pdf="pedido",
+    *,
+    return_all: bool = False,
+):
+    """Retrieve stored PDF bytes linked to a processo.
+
+    ``identificador`` may be either a ``processo`` ID or an ``rfq`` ID.  The
+    latter is transparently mapped to its parent process to preserve backwards
+    compatibility with existing callers.
 
     When ``return_all`` is ``True`` every PDF that matches ``tipo_pdf`` or the
     ``tipo_pdf`` prefix (e.g. ``pedido_1``) is returned ordered with the base
@@ -82,14 +91,18 @@ def obter_pdf_da_db(rfq_id, tipo_pdf="pedido", *, return_all: bool = False):
     expect a single ``bytes`` object even when multiple versions exist.
     """
 
+    processo_id = resolve_processo_id(identificador)
+    if processo_id is None:
+        return [] if return_all else None
+
     rows = fetch_all(
         """
         SELECT tipo_pdf, pdf_data, nome_ficheiro
           FROM pdf_storage
-         WHERE rfq_id = ? AND (tipo_pdf = ? OR tipo_pdf LIKE ?)
+         WHERE processo_id = ? AND (tipo_pdf = ? OR tipo_pdf LIKE ?)
          ORDER BY CASE WHEN tipo_pdf = ? THEN 0 ELSE 1 END, tipo_pdf
         """,
-        (str(rfq_id), tipo_pdf, f"{tipo_pdf}_%", tipo_pdf),
+        (str(processo_id), tipo_pdf, f"{tipo_pdf}_%", tipo_pdf),
     )
 
     if return_all:
