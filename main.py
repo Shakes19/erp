@@ -179,41 +179,48 @@ def inserir_fornecedor(
     necessita_pais_cliente_final: bool = False,
 ):
     """Inserir novo fornecedor"""
+    nome_limpo = (nome or "").strip()
+    if not nome_limpo:
+        return None
+
     conn = obter_conexao()
     c = conn.cursor()
-    
+
     try:
         # Verificar se o fornecedor já existe
-        c.execute("SELECT id FROM fornecedor WHERE nome = ?", (nome,))
+        c.execute(
+            "SELECT id FROM fornecedor WHERE PYCASEFOLD(nome) = PYCASEFOLD(?)",
+            (nome_limpo,),
+        )
         resultado = c.fetchone()
-        
+
         if resultado:
-            return resultado[0]
-        else:
-            c.execute(
-                """
-                INSERT INTO fornecedor (
-                    nome,
-                    email,
-                    telefone,
-                    morada,
-                    nif,
-                    necessita_pais_cliente_final
-                )
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    nome,
-                    email,
-                    telefone,
-                    morada,
-                    nif,
-                    1 if necessita_pais_cliente_final else 0,
-                ),
+            return int(resultado[0])
+
+        c.execute(
+            """
+            INSERT INTO fornecedor (
+                nome,
+                email,
+                telefone,
+                morada,
+                nif,
+                necessita_pais_cliente_final
             )
-            conn.commit()
-            listar_fornecedores.clear()
-            return c.lastrowid
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                nome_limpo,
+                email,
+                telefone,
+                morada,
+                nif,
+                1 if necessita_pais_cliente_final else 0,
+            ),
+        )
+        conn.commit()
+        listar_fornecedores.clear()
+        return c.lastrowid
     finally:
         conn.close()
 
@@ -6980,7 +6987,7 @@ elif menu_option == "⚙️ Configurações":
     else:
         st.title("⚙️ Configurações do Sistema")
         (
-            tab_fornecedores,
+            tab_gestao_fornecedores,
             tab_clientes,
             tab_users,
             tab_unidades,
@@ -6989,7 +6996,7 @@ elif menu_option == "⚙️ Configurações":
             tab_layout,
             tab_empresa,
         ) = st.tabs([
-            "Fornecedores",
+            "Gestão de Fornecedores",
             "Clientes",
             "Utilizadores",
             "Unidades",
@@ -7000,7 +7007,7 @@ elif menu_option == "⚙️ Configurações":
         ])
 
 
-        with tab_fornecedores:
+        with tab_gestao_fornecedores:
             sub_tab_fornecedores, sub_tab_marcas = st.tabs([
                 "Fornecedores",
                 "Marcas e Margens",
@@ -7025,18 +7032,32 @@ elif menu_option == "⚙️ Configurações":
                         )
 
                         if st.form_submit_button("➕ Adicionar"):
-                            if nome:
-                                forn_id = inserir_fornecedor(
-                                    nome,
-                                    email,
-                                    telefone,
-                                    morada,
-                                    nif,
-                                    requer_info,
+                            nome_limpo = (nome or "").strip()
+                            if nome_limpo:
+                                fornecedores_existentes = listar_fornecedores()
+                                nome_normalizado = nome_limpo.casefold()
+                                existe_fornecedor = any(
+                                    (fornecedor[1] or "").strip().casefold()
+                                    == nome_normalizado
+                                    for fornecedor in fornecedores_existentes
                                 )
-                                if forn_id:
-                                    st.success(f"Fornecedor {nome} adicionado!")
-                                    st.rerun()
+
+                                if existe_fornecedor:
+                                    st.warning("Este fornecedor já está registado.")
+                                else:
+                                    forn_id = inserir_fornecedor(
+                                        nome_limpo,
+                                        email,
+                                        telefone,
+                                        morada,
+                                        nif,
+                                        requer_info,
+                                    )
+                                    if forn_id:
+                                        st.success(f"Fornecedor {nome_limpo} adicionado!")
+                                        st.rerun()
+                                    else:
+                                        st.error("Não foi possível adicionar o fornecedor.")
                             else:
                                 st.error("Nome é obrigatório")
 
@@ -7404,13 +7425,27 @@ elif menu_option == "⚙️ Configurações":
                     adicionar_unidade = st.form_submit_button("➕ Adicionar")
 
                 if adicionar_unidade:
-                    if inserir_unidade(nome_unidade):
-                        st.success("Unidade adicionada com sucesso!")
-                        st.rerun()
+                    nome_unidade_limpo = (nome_unidade or "").strip()
+                    if not nome_unidade_limpo:
+                        st.error("Nome da unidade é obrigatório.")
                     else:
-                        st.error(
-                            "Não foi possível adicionar a unidade. Verifique se o nome já existe."
+                        unidades_existentes = listar_unidades()
+                        nome_unidade_normalizado = nome_unidade_limpo.casefold()
+                        existe_unidade = any(
+                            (unidade_nome or "").strip().casefold()
+                            == nome_unidade_normalizado
+                            for _, unidade_nome in unidades_existentes
                         )
+
+                        if existe_unidade:
+                            st.warning("Esta unidade já está registada.")
+                        else:
+                            unidade_id = inserir_unidade(nome_unidade_limpo)
+                            if unidade_id:
+                                st.success("Unidade adicionada com sucesso!")
+                                st.rerun()
+                            else:
+                                st.error("Não foi possível adicionar a unidade.")
 
             with col_list:
                 st.markdown("### Unidades Registadas")
