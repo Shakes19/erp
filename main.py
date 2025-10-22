@@ -36,6 +36,7 @@ from db import (
     ensure_unidade,
     get_marca_id,
     get_artigo_catalogo_id,
+    resolve_processo_id,
 )
 from services.pdf_service import (
     ensure_latin1,
@@ -1675,7 +1676,12 @@ def eliminar_cotacao(rfq_id):
         c.execute("DELETE FROM resposta_fornecedor WHERE rfq_id = ?", (rfq_id,))
         c.execute("DELETE FROM resposta_custos WHERE rfq_id = ?", (rfq_id,))
         c.execute("DELETE FROM artigo WHERE rfq_id = ?", (rfq_id,))
-        c.execute("DELETE FROM pdf_storage WHERE rfq_id = ?", (str(rfq_id),))
+        processo_id = resolve_processo_id(rfq_id, cursor=c)
+        if processo_id is not None:
+            c.execute(
+                "DELETE FROM pdf_storage WHERE processo_id = ?",
+                (str(processo_id),),
+            )
         c.execute("DELETE FROM rfq WHERE id = ?", (rfq_id,))
         conn.commit()
         invalidate_overview_caches()
@@ -2668,7 +2674,7 @@ Thank you in advance for your prompt response.
             pass
 
 def guardar_pdf_uploads(rfq_id, tipo_pdf_base, ficheiros):
-    """Guardar múltiplos PDFs carregados pelo utilizador na tabela ``pdf_storage``."""
+    """Guardar múltiplos PDFs na tabela ``pdf_storage`` associando-os ao processo."""
 
     if not ficheiros:
         return True
@@ -2677,24 +2683,30 @@ def guardar_pdf_uploads(rfq_id, tipo_pdf_base, ficheiros):
         conn = obter_conexao()
         c = conn.cursor()
 
+        processo_id = resolve_processo_id(rfq_id, cursor=c)
+        if processo_id is None:
+            st.error("Processo associado ao PDF não encontrado.")
+            conn.close()
+            return False
+
         c.execute(
             """
             DELETE FROM pdf_storage
-            WHERE rfq_id = ? AND (
+            WHERE processo_id = ? AND (
                 tipo_pdf = ? OR tipo_pdf LIKE ?
             )
             """,
-            (str(rfq_id), tipo_pdf_base, f"{tipo_pdf_base}_%"),
+            (str(processo_id), tipo_pdf_base, f"{tipo_pdf_base}_%"),
         )
 
         for idx, (nome_ficheiro, bytes_) in enumerate(ficheiros, start=1):
             tipo_pdf = tipo_pdf_base if len(ficheiros) == 1 else f"{tipo_pdf_base}_{idx}"
             c.execute(
                 """
-                INSERT INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes, nome_ficheiro)
+                INSERT INTO pdf_storage (processo_id, tipo_pdf, pdf_data, tamanho_bytes, nome_ficheiro)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (str(rfq_id), tipo_pdf, bytes_, len(bytes_), nome_ficheiro),
+                (str(processo_id), tipo_pdf, bytes_, len(bytes_), nome_ficheiro),
             )
 
         conn.commit()
@@ -3538,12 +3550,21 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
         }
 
         c.execute(
-            """SELECT processo.numero FROM rfq LEFT JOIN processo ON rfq.processo_id = processo.id
-                   WHERE rfq.id = ?""",
+            """
+            SELECT processo.numero, rfq.processo_id
+              FROM rfq
+              LEFT JOIN processo ON rfq.processo_id = processo.id
+             WHERE rfq.id = ?
+            """,
             (rfq_id,),
         )
         row = c.fetchone()
         numero_processo = row[0] if row else ""
+        processo_id = row[1] if row and len(row) > 1 else resolve_processo_id(rfq_id, cursor=c)
+        if processo_id is None:
+            st.error("Processo associado ao pedido não encontrado.")
+            conn.close()
+            return None
 
         pdf_generator = InquiryPDF(config)
         pdf_bytes = pdf_generator.gerar(
@@ -3557,13 +3578,13 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
 
         c.execute(
             """
-            INSERT INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes)
+            INSERT INTO pdf_storage (processo_id, tipo_pdf, pdf_data, tamanho_bytes)
             VALUES (?, ?, ?, ?)
-            ON CONFLICT (rfq_id, tipo_pdf) DO UPDATE SET
+            ON CONFLICT (processo_id, tipo_pdf) DO UPDATE SET
                 pdf_data = excluded.pdf_data,
                 tamanho_bytes = excluded.tamanho_bytes
         """,
-            (str(rfq_id), "pedido", pdf_bytes, len(pdf_bytes)),
+            (str(processo_id), "pedido", pdf_bytes, len(pdf_bytes)),
         )
         conn.commit()
         conn.close()
@@ -3755,14 +3776,19 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
         )
 
         # 4. Armazenar PDF
+        processo_id = rfq_data.get("processo_id") or resolve_processo_id(rfq_id, cursor=c)
+        if processo_id is None:
+            st.error("Processo associado ao PDF do cliente não encontrado.")
+            return False
+
         c.execute(
             """INSERT INTO pdf_storage
-                  (rfq_id, tipo_pdf, pdf_data, tamanho_bytes)
+                  (processo_id, tipo_pdf, pdf_data, tamanho_bytes)
                   VALUES (?, ?, ?, ?)
-                  ON CONFLICT (rfq_id, tipo_pdf) DO UPDATE SET
+                  ON CONFLICT (processo_id, tipo_pdf) DO UPDATE SET
                       pdf_data = excluded.pdf_data,
                       tamanho_bytes = excluded.tamanho_bytes""",
-            (str(rfq_id), "cliente", pdf_bytes, len(pdf_bytes)),
+            (str(processo_id), "cliente", pdf_bytes, len(pdf_bytes)),
         )
 
         conn.commit()
@@ -4770,8 +4796,7 @@ def obter_estatisticas_db(utilizador_id: int | None = None):
                 """
                 SELECT COUNT(*)
                   FROM pdf_storage ps
-                  JOIN rfq r ON CAST(ps.rfq_id AS INTEGER) = r.id
-                  JOIN processo p ON r.processo_id = p.id
+                  JOIN processo p ON CAST(ps.processo_id AS INTEGER) = p.id
                  WHERE ps.tipo_pdf = 'cliente'
                    AND p.utilizador_id = ?
                 """,
@@ -5853,20 +5878,26 @@ elif menu_option == "📩 Process Center":
                         # Mostrar anexos existentes
                         conn = obter_conexao()
                         c = conn.cursor()
-                        c.execute(
-                            """
-                            SELECT tipo_pdf, nome_ficheiro, pdf_data
-                            FROM pdf_storage
-                            WHERE rfq_id = ? AND (
-                                tipo_pdf = 'anexo_cliente' OR tipo_pdf LIKE 'anexo_cliente_%'
-                                OR tipo_pdf = 'anexo_fornecedor' OR tipo_pdf LIKE 'anexo_fornecedor_%'
-                            )
-                            ORDER BY data_criacao
-                            """,
-                            (cotacao["id"],),
+                        processo_id_pdf = (
+                            cotacao.get("processo_id")
+                            or resolve_processo_id(cotacao["id"], cursor=c)
                         )
+                        anexos = []
+                        if processo_id_pdf is not None:
+                            c.execute(
+                                """
+                                SELECT tipo_pdf, nome_ficheiro, pdf_data
+                                FROM pdf_storage
+                                WHERE processo_id = ? AND (
+                                    tipo_pdf = 'anexo_cliente' OR tipo_pdf LIKE 'anexo_cliente_%'
+                                    OR tipo_pdf = 'anexo_fornecedor' OR tipo_pdf LIKE 'anexo_fornecedor_%'
+                                )
+                                ORDER BY data_criacao
+                                """,
+                                (str(processo_id_pdf),),
+                            )
+                            anexos = c.fetchall()
 
-                        anexos = c.fetchall()
                         conn.close()
                         if anexos:
                             st.markdown("**Anexos:**")
@@ -6022,19 +6053,25 @@ elif menu_option == "📩 Process Center":
                         # Anexos
                         conn = obter_conexao()
                         c = conn.cursor()
-                        c.execute(
-                            """
-                            SELECT tipo_pdf, nome_ficheiro, pdf_data
-                            FROM pdf_storage
-                            WHERE rfq_id = ? AND (
-                                tipo_pdf = 'anexo_cliente' OR tipo_pdf LIKE 'anexo_cliente_%'
-                                OR tipo_pdf = 'anexo_fornecedor' OR tipo_pdf LIKE 'anexo_fornecedor_%'
-                            )
-                            ORDER BY data_criacao
-                            """,
-                            (str(cotacao['id']),),
+                        processo_id_pdf = (
+                            cotacao.get("processo_id")
+                            or resolve_processo_id(cotacao['id'], cursor=c)
                         )
-                        anexos = c.fetchall()
+                        anexos = []
+                        if processo_id_pdf is not None:
+                            c.execute(
+                                """
+                                SELECT tipo_pdf, nome_ficheiro, pdf_data
+                                FROM pdf_storage
+                                WHERE processo_id = ? AND (
+                                    tipo_pdf = 'anexo_cliente' OR tipo_pdf LIKE 'anexo_cliente_%'
+                                    OR tipo_pdf = 'anexo_fornecedor' OR tipo_pdf LIKE 'anexo_fornecedor_%'
+                                )
+                                ORDER BY data_criacao
+                                """,
+                                (str(processo_id_pdf),),
+                            )
+                            anexos = c.fetchall()
                         conn.close()
                         if anexos:
                             st.markdown("**Anexos:**")
