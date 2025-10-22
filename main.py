@@ -6931,11 +6931,45 @@ elif menu_option == "📄 PDFs":
 
     cotacoes = obter_todas_cotacoes()
     if cotacoes:
-        cot_sel = st.selectbox(
-            "Selecionar Cotação",
-            options=cotacoes,
-            format_func=lambda c: f"{c['processo']} - {c['referencia']}"
-        )
+        processos_map: OrderedDict[int, dict] = OrderedDict()
+        for cotacao in cotacoes:
+            processo_id = cotacao.get("processo_id")
+            if processo_id is None:
+                continue
+
+            processo_entry = processos_map.get(processo_id)
+            if not processo_entry:
+                processo_entry = {
+                    "processo_id": processo_id,
+                    "processo": cotacao.get("processo"),
+                    "referencia": cotacao.get("referencia"),
+                    "rfqs": [],
+                }
+                processos_map[processo_id] = processo_entry
+
+            processo_entry["rfqs"].append(cotacao)
+
+        processos = list(processos_map.values())
+
+        def _format_processo_option(processo: dict) -> str:
+            numero = (processo.get("processo") or "").strip()
+            referencia = (processo.get("referencia") or "").strip()
+            if numero and referencia:
+                return f"{numero} - {referencia}"
+            if numero:
+                return numero
+            if referencia:
+                return referencia
+            return f"Processo {processo.get('processo_id', '')}"
+
+        if processos:
+            cot_sel = st.selectbox(
+                "Selecionar Cotação",
+                options=processos,
+                format_func=_format_processo_option,
+            )
+        else:
+            cot_sel = None
 
         pdf_types = [
             ("Pedido Cliente", "anexo_cliente", "📥"),
@@ -6947,40 +6981,46 @@ elif menu_option == "📄 PDFs":
         tab_view, tab_replace = st.tabs(["Visualizar PDFs", "Substituir PDFs"])
 
         with tab_view:
-            for label, tipo, emoji in pdf_types:
-                if tipo == "pedido":
+            if not cot_sel:
+                st.info("Nenhuma cotação disponível")
+            else:
+                for label, tipo, emoji in pdf_types:
                     pdf_entries = obter_pdf_da_db(
-                        cot_sel["id"],
+                        cot_sel["processo_id"],
                         tipo,
                         return_all=True,
                     )
-                    if pdf_entries:
-                        multiplo = len(pdf_entries) > 1
-                        for idx, entry in enumerate(pdf_entries, start=1):
-                            pdf_bytes = entry.get("pdf_data")
-                            if not pdf_bytes:
-                                continue
 
-                            nome_ficheiro = entry.get("nome_ficheiro")
+                    exibidos = []
+                    total = len(pdf_entries) if pdf_entries else 0
+                    for idx, entry in enumerate(pdf_entries or [], start=1):
+                        pdf_bytes = entry.get("pdf_data") if entry else None
+                        if not pdf_bytes:
+                            continue
+
+                        nome_ficheiro = (entry or {}).get("nome_ficheiro")
+                        if total > 1:
+                            descricao_fornecedor = f"{label} - Fornecedor {idx}"
                             if nome_ficheiro:
-                                pdf_label = f"{emoji} {label} – {nome_ficheiro}"
-                            elif multiplo:
-                                pdf_label = f"{emoji} {label} #{idx}"
-                            else:
-                                pdf_label = f"{emoji} {label}"
+                                descricao_fornecedor += f" ({nome_ficheiro})"
+                            pdf_label = f"{emoji} {descricao_fornecedor}"
+                        elif nome_ficheiro:
+                            pdf_label = f"{emoji} {label} – {nome_ficheiro}"
+                        else:
+                            pdf_label = f"{emoji} {label}"
 
+                        exibidos.append((pdf_label, pdf_bytes))
+
+                    if exibidos:
+                        for pdf_label, pdf_bytes in exibidos:
                             exibir_pdf(pdf_label, pdf_bytes)
-                    else:
-                        st.info(f"{label} não encontrado")
-                else:
-                    pdf_bytes = obter_pdf_da_db(cot_sel["id"], tipo)
-                    if pdf_bytes:
-                        exibir_pdf(f"{emoji} {label}", pdf_bytes)
                     else:
                         st.info(f"{label} não encontrado")
 
         with tab_replace:
-            if st.session_state.get("role") == "admin":
+            if not cot_sel:
+                st.info("Selecione uma cotação para substituir o PDF.")
+            elif st.session_state.get("role") == "admin":
                 label_selec = st.selectbox(
                     "Tipo de PDF a substituir",
                     [lbl for lbl, _, _ in pdf_types],
@@ -6996,7 +7036,7 @@ elif menu_option == "📄 PDFs":
                     anexos_novos = processar_upload_pdf(novo_pdf)
                     if anexos_novos:
                         nome_pdf, bytes_pdf = anexos_novos[0]
-                        if guardar_pdf_upload(cot_sel["id"], tipo_pdf, nome_pdf, bytes_pdf):
+                        if guardar_pdf_upload(cot_sel["processo_id"], tipo_pdf, nome_pdf, bytes_pdf):
                             st.success("PDF atualizado com sucesso!")
             else:
                 st.info("Apenas administradores podem atualizar o PDF.")
