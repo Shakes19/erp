@@ -6911,11 +6911,36 @@ elif menu_option == "📄 PDFs":
 
         with tab_view:
             for label, tipo, emoji in pdf_types:
-                pdf_bytes = obter_pdf_da_db(cot_sel["id"], tipo)
-                if pdf_bytes:
-                    exibir_pdf(f"{emoji} {label}", pdf_bytes)
+                if tipo == "pedido":
+                    pdf_entries = obter_pdf_da_db(
+                        cot_sel["id"],
+                        tipo,
+                        return_all=True,
+                    )
+                    if pdf_entries:
+                        multiplo = len(pdf_entries) > 1
+                        for idx, entry in enumerate(pdf_entries, start=1):
+                            pdf_bytes = entry.get("pdf_data")
+                            if not pdf_bytes:
+                                continue
+
+                            nome_ficheiro = entry.get("nome_ficheiro")
+                            if nome_ficheiro:
+                                pdf_label = f"{emoji} {label} – {nome_ficheiro}"
+                            elif multiplo:
+                                pdf_label = f"{emoji} {label} #{idx}"
+                            else:
+                                pdf_label = f"{emoji} {label}"
+
+                            exibir_pdf(pdf_label, pdf_bytes)
+                    else:
+                        st.info(f"{label} não encontrado")
                 else:
-                    st.info(f"{label} não encontrado")
+                    pdf_bytes = obter_pdf_da_db(cot_sel["id"], tipo)
+                    if pdf_bytes:
+                        exibir_pdf(f"{emoji} {label}", pdf_bytes)
+                    else:
+                        st.info(f"{label} não encontrado")
 
         with tab_replace:
             if st.session_state.get("role") == "admin":
