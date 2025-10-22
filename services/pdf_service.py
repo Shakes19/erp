@@ -7,7 +7,7 @@ from email.parser import BytesParser
 import streamlit as st
 from fpdf import FPDF
 
-from db import fetch_one
+from db import fetch_all, fetch_one
 import extract_msg
 
 
@@ -72,13 +72,41 @@ def obter_config_empresa():
     return None
 
 
-def obter_pdf_da_db(rfq_id, tipo_pdf="pedido"):
-    """Retrieve stored PDF bytes from the database."""
-    result = fetch_one(
-        "SELECT pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf = ?",
-        (str(rfq_id), tipo_pdf),
+def obter_pdf_da_db(rfq_id, tipo_pdf="pedido", *, return_all: bool = False):
+    """Retrieve stored PDF bytes for a RFQ.
+
+    When ``return_all`` is ``True`` every PDF that matches ``tipo_pdf`` or the
+    ``tipo_pdf`` prefix (e.g. ``pedido_1``) is returned ordered with the base
+    name first.  Otherwise the function mirrors the legacy behaviour by
+    returning only the first match, providing compatibility with callers that
+    expect a single ``bytes`` object even when multiple versions exist.
+    """
+
+    rows = fetch_all(
+        """
+        SELECT tipo_pdf, pdf_data, nome_ficheiro
+          FROM pdf_storage
+         WHERE rfq_id = ? AND (tipo_pdf = ? OR tipo_pdf LIKE ?)
+         ORDER BY CASE WHEN tipo_pdf = ? THEN 0 ELSE 1 END, tipo_pdf
+        """,
+        (str(rfq_id), tipo_pdf, f"{tipo_pdf}_%", tipo_pdf),
     )
-    return result[0] if result else None
+
+    if return_all:
+        return [
+            {
+                "tipo_pdf": row[0],
+                "pdf_data": row[1],
+                "nome_ficheiro": row[2],
+            }
+            for row in rows
+        ]
+
+    if rows:
+        # Maintain backwards compatibility returning only the PDF bytes.
+        return rows[0][1]
+
+    return None
 
 
 def converter_eml_para_pdf(eml_bytes: bytes) -> bytes:
