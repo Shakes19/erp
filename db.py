@@ -112,45 +112,6 @@ def get_connection():
     return conn
 
 
-def resolve_processo_id(
-    identifier: Any,
-    cursor: sqlite3.Cursor | None = None,
-):
-    """Return the processo ID associated with ``identifier``.
-
-    ``identifier`` may already be a ``processo`` ID or an ``rfq`` ID.  The
-    function first attempts to map RFQ identifiers to their parent process.  If
-    no mapping exists the original value is returned, allowing callers to
-    handle legacy values gracefully.
-    """
-
-    if identifier is None:
-        return None
-
-    close_conn = False
-    conn: sqlite3.Connection | None = None
-    if cursor is None:
-        conn = get_connection()
-        cursor = conn.cursor()
-        close_conn = True
-
-    try:
-        cursor.execute("SELECT processo_id FROM rfq WHERE id = ?", (identifier,))
-        row = cursor.fetchone()
-        if row and row[0] is not None:
-            return row[0]
-
-        cursor.execute("SELECT id FROM processo WHERE id = ?", (identifier,))
-        row = cursor.fetchone()
-        if row:
-            return row[0]
-
-        return identifier
-    finally:
-        if close_conn and conn is not None:
-            conn.close()
-
-
 def hash_password(password: str) -> str:
     """Hash a plaintext password using bcrypt."""
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
@@ -1376,21 +1337,16 @@ def criar_base_dados_completa():
         """
         CREATE TABLE IF NOT EXISTS pdf_storage (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            processo_id TEXT NOT NULL,
+            rfq_id TEXT NOT NULL,
             tipo_pdf TEXT NOT NULL,
             pdf_data BLOB NOT NULL,
             data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
             tamanho_bytes INTEGER,
             nome_ficheiro TEXT,
-            UNIQUE(processo_id, tipo_pdf)
+            UNIQUE(rfq_id, tipo_pdf)
         )
         """
     )
-
-    c.execute("PRAGMA table_info(pdf_storage)")
-    pdf_cols = [row[1] for row in c.fetchall()]
-    if "processo_id" not in pdf_cols and "rfq_id" in pdf_cols:
-        c.execute("ALTER TABLE pdf_storage RENAME COLUMN rfq_id TO processo_id")
 
     # Tabela de configurações de email (sem password)
     c.execute(
