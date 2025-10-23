@@ -72,11 +72,29 @@ def obter_config_empresa():
     return None
 
 
-def obter_pdf_da_db(rfq_id, tipo_pdf="pedido"):
+def obter_pdf_da_db(rfq_id, tipo_pdf="pedido", *, processo_id=None):
     """Retrieve stored PDF bytes from the database."""
+    alvo_processo = processo_id
+    if alvo_processo is None:
+        if rfq_id is None:
+            return None
+        try:
+            rfq_int = int(rfq_id)
+        except (TypeError, ValueError):
+            return None
+
+        row = fetch_one(
+            "SELECT processo_id FROM rfq WHERE id = ?",
+            (rfq_int,),
+        )
+        alvo_processo = row[0] if row else None
+
+    if alvo_processo is None:
+        return None
+
     result = fetch_one(
-        "SELECT pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf = ?",
-        (str(rfq_id), tipo_pdf),
+        "SELECT pdf_data FROM pdf_storage WHERE processo_id = ? AND tipo_pdf = ?",
+        (alvo_processo, tipo_pdf),
     )
     return result[0] if result else None
 

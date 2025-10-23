@@ -53,7 +53,10 @@ def test_gerar_pdf_cliente(tmp_path, monkeypatch):
 
     conn = db_module.get_connection()
     c = conn.cursor()
-    c.execute("SELECT pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf = 'cliente'", (str(rfq_id),))
+    c.execute(
+        "SELECT pdf_data FROM pdf_storage WHERE processo_id = ? AND tipo_pdf = 'cliente'",
+        (processo_id,),
+    )
     assert c.fetchone() is not None
     conn.close()
 

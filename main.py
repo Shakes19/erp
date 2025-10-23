@@ -36,6 +36,7 @@ from db import (
     ensure_unidade,
     get_marca_id,
     get_artigo_catalogo_id,
+    obter_processo_id_por_rfq,
 )
 from services.pdf_service import (
     ensure_latin1,
@@ -640,6 +641,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
                     rfq_id,
                     anexo_tipo,
                     anexos,
+                    processo_id=processo_id,
                 )
 
     if rfqs_criados:
@@ -652,7 +654,11 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
 
         pdf_resultados: list[dict[str, object]] = []
         for rfq_id, fornecedor, _ in rfqs_criados:
-            pdf_bytes = obter_pdf_da_db(rfq_id, "pedido")
+            pdf_bytes = obter_pdf_da_db(
+                rfq_id,
+                "pedido",
+                processo_id=processo_id,
+            )
             if not pdf_bytes:
                 continue
             pdf_info = {
@@ -1675,7 +1681,9 @@ def eliminar_cotacao(rfq_id):
         c.execute("DELETE FROM resposta_fornecedor WHERE rfq_id = ?", (rfq_id,))
         c.execute("DELETE FROM resposta_custos WHERE rfq_id = ?", (rfq_id,))
         c.execute("DELETE FROM artigo WHERE rfq_id = ?", (rfq_id,))
-        c.execute("DELETE FROM pdf_storage WHERE rfq_id = ?", (str(rfq_id),))
+        processo_id = obter_processo_id_por_rfq(rfq_id, cursor=c)
+        if processo_id is not None:
+            c.execute("DELETE FROM pdf_storage WHERE processo_id = ?", (processo_id,))
         c.execute("DELETE FROM rfq WHERE id = ?", (rfq_id,))
         conn.commit()
         invalidate_overview_caches()
@@ -2667,7 +2675,7 @@ Thank you in advance for your prompt response.
         except (AttributeError, NameError):
             pass
 
-def guardar_pdf_uploads(rfq_id, tipo_pdf_base, ficheiros):
+def guardar_pdf_uploads(rfq_id, tipo_pdf_base, ficheiros, *, processo_id=None):
     """Guardar múltiplos PDFs carregados pelo utilizador na tabela ``pdf_storage``."""
 
     if not ficheiros:
@@ -2677,24 +2685,30 @@ def guardar_pdf_uploads(rfq_id, tipo_pdf_base, ficheiros):
         conn = obter_conexao()
         c = conn.cursor()
 
+        processo_alvo = processo_id or obter_processo_id_por_rfq(rfq_id, cursor=c)
+        if processo_alvo is None:
+            conn.close()
+            st.error("Processo associado à cotação não encontrado para guardar PDF.")
+            return False
+
         c.execute(
             """
             DELETE FROM pdf_storage
-            WHERE rfq_id = ? AND (
+            WHERE processo_id = ? AND (
                 tipo_pdf = ? OR tipo_pdf LIKE ?
             )
             """,
-            (str(rfq_id), tipo_pdf_base, f"{tipo_pdf_base}_%"),
+            (processo_alvo, tipo_pdf_base, f"{tipo_pdf_base}_%"),
         )
 
         for idx, (nome_ficheiro, bytes_) in enumerate(ficheiros, start=1):
             tipo_pdf = tipo_pdf_base if len(ficheiros) == 1 else f"{tipo_pdf_base}_{idx}"
             c.execute(
                 """
-                INSERT INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes, nome_ficheiro)
+                INSERT INTO pdf_storage (processo_id, tipo_pdf, pdf_data, tamanho_bytes, nome_ficheiro)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (str(rfq_id), tipo_pdf, bytes_, len(bytes_), nome_ficheiro),
+                (processo_alvo, tipo_pdf, bytes_, len(bytes_), nome_ficheiro),
             )
 
         conn.commit()
@@ -2705,10 +2719,15 @@ def guardar_pdf_uploads(rfq_id, tipo_pdf_base, ficheiros):
         return False
 
 
-def guardar_pdf_upload(rfq_id, tipo_pdf, nome_ficheiro, bytes_):
+def guardar_pdf_upload(rfq_id, tipo_pdf, nome_ficheiro, bytes_, *, processo_id=None):
     """Compatibilidade retroativa para guardar um único PDF."""
 
-    return guardar_pdf_uploads(rfq_id, tipo_pdf, [(nome_ficheiro, bytes_)])
+    return guardar_pdf_uploads(
+        rfq_id,
+        tipo_pdf,
+        [(nome_ficheiro, bytes_)],
+        processo_id=processo_id,
+    )
 
 # ========================== CLASSES PDF ==========================
 
@@ -3538,12 +3557,15 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
         }
 
         c.execute(
-            """SELECT processo.numero FROM rfq LEFT JOIN processo ON rfq.processo_id = processo.id
-                   WHERE rfq.id = ?""",
+            """SELECT processo.numero, rfq.processo_id
+                   FROM rfq
+                   LEFT JOIN processo ON rfq.processo_id = processo.id
+                  WHERE rfq.id = ?""",
             (rfq_id,),
         )
         row = c.fetchone()
         numero_processo = row[0] if row else ""
+        processo_id = row[1] if row and len(row) > 1 else None
 
         pdf_generator = InquiryPDF(config)
         pdf_bytes = pdf_generator.gerar(
@@ -3555,15 +3577,18 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
             cliente_final_pais=cliente_final_pais,
         )
 
+        if processo_id is None:
+            raise ValueError("Processo associado à RFQ não encontrado")
+
         c.execute(
             """
-            INSERT INTO pdf_storage (rfq_id, tipo_pdf, pdf_data, tamanho_bytes)
+            INSERT INTO pdf_storage (processo_id, tipo_pdf, pdf_data, tamanho_bytes)
             VALUES (?, ?, ?, ?)
-            ON CONFLICT (rfq_id, tipo_pdf) DO UPDATE SET
+            ON CONFLICT (processo_id, tipo_pdf) DO UPDATE SET
                 pdf_data = excluded.pdf_data,
                 tamanho_bytes = excluded.tamanho_bytes
         """,
-            (str(rfq_id), "pedido", pdf_bytes, len(pdf_bytes)),
+            (processo_id, "pedido", pdf_bytes, len(pdf_bytes)),
         )
         conn.commit()
         conn.close()
@@ -3755,14 +3780,18 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
         )
 
         # 4. Armazenar PDF
+        processo_id = rfq_data.get("processo_id")
+        if processo_id is None:
+            raise ValueError("Processo associado à RFQ não encontrado")
+
         c.execute(
             """INSERT INTO pdf_storage
-                  (rfq_id, tipo_pdf, pdf_data, tamanho_bytes)
+                  (processo_id, tipo_pdf, pdf_data, tamanho_bytes)
                   VALUES (?, ?, ?, ?)
-                  ON CONFLICT (rfq_id, tipo_pdf) DO UPDATE SET
+                  ON CONFLICT (processo_id, tipo_pdf) DO UPDATE SET
                       pdf_data = excluded.pdf_data,
                       tamanho_bytes = excluded.tamanho_bytes""",
-            (str(rfq_id), "cliente", pdf_bytes, len(pdf_bytes)),
+            (processo_id, "cliente", pdf_bytes, len(pdf_bytes)),
         )
 
         conn.commit()
@@ -4171,6 +4200,7 @@ def responder_cotacao_dialog(cotacao):
                         cotacao['id'],
                         'anexo_fornecedor',
                         anexos_resposta,
+                        processo_id=cotacao.get('processo_id'),
                     )
                     st.session_state[anexos_resposta_key] = []
 
@@ -4770,8 +4800,7 @@ def obter_estatisticas_db(utilizador_id: int | None = None):
                 """
                 SELECT COUNT(*)
                   FROM pdf_storage ps
-                  JOIN rfq r ON CAST(ps.rfq_id AS INTEGER) = r.id
-                  JOIN processo p ON r.processo_id = p.id
+                  JOIN processo p ON ps.processo_id = p.id
                  WHERE ps.tipo_pdf = 'cliente'
                    AND p.utilizador_id = ?
                 """,
@@ -5853,18 +5882,34 @@ elif menu_option == "📩 Process Center":
                         # Mostrar anexos existentes
                         conn = obter_conexao()
                         c = conn.cursor()
-                        c.execute(
-                            """
-                            SELECT tipo_pdf, nome_ficheiro, pdf_data
-                            FROM pdf_storage
-                            WHERE rfq_id = ? AND (
-                                tipo_pdf = 'anexo_cliente' OR tipo_pdf LIKE 'anexo_cliente_%'
-                                OR tipo_pdf = 'anexo_fornecedor' OR tipo_pdf LIKE 'anexo_fornecedor_%'
+                        processo_id = cotacao.get("processo_id")
+                        if processo_id:
+                            c.execute(
+                                """
+                                SELECT tipo_pdf, nome_ficheiro, pdf_data
+                                  FROM pdf_storage
+                                 WHERE processo_id = ? AND (
+                                     tipo_pdf = 'anexo_cliente' OR tipo_pdf LIKE 'anexo_cliente_%'
+                                     OR tipo_pdf = 'anexo_fornecedor' OR tipo_pdf LIKE 'anexo_fornecedor_%'
+                                 )
+                                 ORDER BY data_criacao
+                                """,
+                                (processo_id,),
                             )
-                            ORDER BY data_criacao
-                            """,
-                            (cotacao["id"],),
-                        )
+                        else:
+                            c.execute(
+                                """
+                                SELECT ps.tipo_pdf, ps.nome_ficheiro, ps.pdf_data
+                                  FROM pdf_storage ps
+                                  JOIN rfq r ON ps.processo_id = r.processo_id
+                                 WHERE r.id = ? AND (
+                                     ps.tipo_pdf = 'anexo_cliente' OR ps.tipo_pdf LIKE 'anexo_cliente_%'
+                                     OR ps.tipo_pdf = 'anexo_fornecedor' OR ps.tipo_pdf LIKE 'anexo_fornecedor_%'
+                                 )
+                                 ORDER BY ps.data_criacao
+                                """,
+                                (cotacao["id"],),
+                            )
 
                         anexos = c.fetchall()
                         conn.close()
@@ -5886,7 +5931,11 @@ elif menu_option == "📩 Process Center":
 
                     with col2:
                         # Botões de ação
-                        pdf_pedido = obter_pdf_da_db(cotacao['id'], "pedido")
+                        pdf_pedido = obter_pdf_da_db(
+                            cotacao['id'],
+                            "pedido",
+                            processo_id=cotacao.get('processo_id'),
+                        )
                         if pdf_pedido:
                             st.download_button(
                                 "📄 PDF",
@@ -6022,18 +6071,34 @@ elif menu_option == "📩 Process Center":
                         # Anexos
                         conn = obter_conexao()
                         c = conn.cursor()
-                        c.execute(
-                            """
-                            SELECT tipo_pdf, nome_ficheiro, pdf_data
-                            FROM pdf_storage
-                            WHERE rfq_id = ? AND (
-                                tipo_pdf = 'anexo_cliente' OR tipo_pdf LIKE 'anexo_cliente_%'
-                                OR tipo_pdf = 'anexo_fornecedor' OR tipo_pdf LIKE 'anexo_fornecedor_%'
+                        processo_id = cotacao.get("processo_id")
+                        if processo_id:
+                            c.execute(
+                                """
+                                SELECT tipo_pdf, nome_ficheiro, pdf_data
+                                  FROM pdf_storage
+                                 WHERE processo_id = ? AND (
+                                     tipo_pdf = 'anexo_cliente' OR tipo_pdf LIKE 'anexo_cliente_%'
+                                     OR tipo_pdf = 'anexo_fornecedor' OR tipo_pdf LIKE 'anexo_fornecedor_%'
+                                 )
+                                 ORDER BY data_criacao
+                                """,
+                                (processo_id,),
                             )
-                            ORDER BY data_criacao
-                            """,
-                            (str(cotacao['id']),),
-                        )
+                        else:
+                            c.execute(
+                                """
+                                SELECT ps.tipo_pdf, ps.nome_ficheiro, ps.pdf_data
+                                  FROM pdf_storage ps
+                                  JOIN rfq r ON ps.processo_id = r.processo_id
+                                 WHERE r.id = ? AND (
+                                     ps.tipo_pdf = 'anexo_cliente' OR ps.tipo_pdf LIKE 'anexo_cliente_%'
+                                     OR ps.tipo_pdf = 'anexo_fornecedor' OR ps.tipo_pdf LIKE 'anexo_fornecedor_%'
+                                 )
+                                 ORDER BY ps.data_criacao
+                                """,
+                                (cotacao['id'],),
+                            )
                         anexos = c.fetchall()
                         conn.close()
                         if anexos:
@@ -6048,8 +6113,16 @@ elif menu_option == "📩 Process Center":
                                     key=f"anexo_resp_{cotacao['id']}_{tipo}"
                                 )
 
-                        pdf_interno = obter_pdf_da_db(cotacao['id'], "pedido")
-                        pdf_cliente = obter_pdf_da_db(cotacao['id'], "cliente")
+                        pdf_interno = obter_pdf_da_db(
+                            cotacao['id'],
+                            "pedido",
+                            processo_id=cotacao.get('processo_id'),
+                        )
+                        pdf_cliente = obter_pdf_da_db(
+                            cotacao['id'],
+                            "cliente",
+                            processo_id=cotacao.get('processo_id'),
+                        )
 
                         col_pdf_int, col_info = st.columns(2)
 
@@ -6160,7 +6233,11 @@ elif menu_option == "📩 Process Center":
                         st.write(f"**Artigos:** {cotacao['num_artigos']}")
 
                     with col2:
-                        pdf_pedido = obter_pdf_da_db(cotacao['id'], "pedido")
+                        pdf_pedido = obter_pdf_da_db(
+                            cotacao['id'],
+                            "pedido",
+                            processo_id=cotacao.get('processo_id'),
+                        )
                         if pdf_pedido:
                             st.download_button(
                                 "📄 PDF",
@@ -6365,7 +6442,11 @@ elif menu_option == "📩 Process Center":
                                     responder_cotacao_dialog(cotacao_contexto)
 
                             with botoes_acoes[1]:
-                                pdf_pedido = obter_pdf_da_db(pedido.get("id"), "pedido")
+                                pdf_pedido = obter_pdf_da_db(
+                                    pedido.get("id"),
+                                    "pedido",
+                                    processo_id=pedido.get("processo_id"),
+                                )
                                 if pdf_pedido:
                                     st.download_button(
                                         "📄 PDF Pedido",
@@ -6911,7 +6992,11 @@ elif menu_option == "📄 PDFs":
 
         with tab_view:
             for label, tipo, emoji in pdf_types:
-                pdf_bytes = obter_pdf_da_db(cot_sel["id"], tipo)
+                pdf_bytes = obter_pdf_da_db(
+                    cot_sel["id"],
+                    tipo,
+                    processo_id=cot_sel.get("processo_id"),
+                )
                 if pdf_bytes:
                     exibir_pdf(f"{emoji} {label}", pdf_bytes)
                 else:
@@ -6934,7 +7019,13 @@ elif menu_option == "📄 PDFs":
                     anexos_novos = processar_upload_pdf(novo_pdf)
                     if anexos_novos:
                         nome_pdf, bytes_pdf = anexos_novos[0]
-                        if guardar_pdf_upload(cot_sel["id"], tipo_pdf, nome_pdf, bytes_pdf):
+                        if guardar_pdf_upload(
+                            cot_sel["id"],
+                            tipo_pdf,
+                            nome_pdf,
+                            bytes_pdf,
+                            processo_id=cot_sel.get("processo_id"),
+                        ):
                             st.success("PDF atualizado com sucesso!")
             else:
                 st.info("Apenas administradores podem atualizar o PDF.")
