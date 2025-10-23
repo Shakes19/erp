@@ -81,31 +81,17 @@ def obter_pdf_da_db(rfq_id, tipo_pdf="pedido"):
     return result[0] if result else None
 
 
-def converter_eml_para_pdf(eml_bytes: bytes) -> bytes:
-    """Convert raw EML bytes to PDF bytes."""
-    message = BytesParser(policy=policy.default).parsebytes(eml_bytes)
+def _render_pdf(header_lines: list[str], body: str) -> bytes:
+    """Render a PDF from pre-formatted headers and body text."""
+
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.set_font("Arial", size=12)
 
-    header_lines = [
-        f"From: {message.get('From', '')}",
-        f"To: {message.get('To', '')}",
-        f"Subject: {message.get('Subject', '')}",
-        f"Date: {message.get('Date', '')}",
-        "",
-    ]
     for line in header_lines:
         pdf.multi_cell(0, 10, ensure_latin1(line))
 
-    body = ""
-    if message.is_multipart():
-        for part in message.walk():
-            if part.get_content_type() == "text/plain" and not part.get_content_disposition():
-                body += part.get_content()
-    else:
-        body = message.get_content()
     pdf.multi_cell(0, 10, ensure_latin1(body.strip()))
     # ``fpdf`` produz saída em texto Latin-1. Alguns emails podem conter
     # caracteres fora desse intervalo (por exemplo, travessões “–”). Ao
@@ -115,6 +101,29 @@ def converter_eml_para_pdf(eml_bytes: bytes) -> bytes:
     return pdf.output(dest="S").encode("latin-1", errors="replace")
 
 
+def converter_eml_para_pdf(eml_bytes: bytes) -> bytes:
+    """Convert raw EML bytes to PDF bytes."""
+    message = BytesParser(policy=policy.default).parsebytes(eml_bytes)
+
+    header_lines = [
+        f"From: {message.get('From', '')}",
+        f"To: {message.get('To', '')}",
+        f"Subject: {message.get('Subject', '')}",
+        f"Date: {message.get('Date', '')}",
+        "",
+    ]
+
+    body = ""
+    if message.is_multipart():
+        for part in message.walk():
+            if part.get_content_type() == "text/plain" and not part.get_content_disposition():
+                body += part.get_content()
+    else:
+        body = message.get_content()
+
+    return _render_pdf(header_lines, body)
+
+
 def converter_msg_para_pdf(msg_bytes: bytes) -> bytes:
     """Convert Outlook ``.msg`` files to PDF bytes."""
     with tempfile.NamedTemporaryFile(suffix=".msg", delete=False) as tmp:
@@ -122,10 +131,6 @@ def converter_msg_para_pdf(msg_bytes: bytes) -> bytes:
         tmp_path = tmp.name
     try:
         message = extract_msg.Message(tmp_path)
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_auto_page_break(auto=True, margin=15)
-        pdf.set_font("Arial", size=12)
 
         header_lines = [
             f"From: {message.sender or ''}",
@@ -134,12 +139,10 @@ def converter_msg_para_pdf(msg_bytes: bytes) -> bytes:
             f"Date: {message.date or ''}",
             "",
         ]
-        for line in header_lines:
-            pdf.multi_cell(0, 10, ensure_latin1(line))
 
         body = message.body or ""
-        pdf.multi_cell(0, 10, ensure_latin1(body.strip()))
-        return pdf.output(dest="S").encode("latin-1", errors="replace")
+
+        return _render_pdf(header_lines, body)
     finally:
         try:
             os.remove(tmp_path)
