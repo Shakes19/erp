@@ -1,5 +1,6 @@
 import json
 import os
+import sqlite3
 import tempfile
 from email import policy
 from email.parser import BytesParser
@@ -7,7 +8,7 @@ from email.parser import BytesParser
 import streamlit as st
 from fpdf import FPDF
 
-from db import fetch_one
+from db import criar_base_dados_completa, fetch_one
 import extract_msg
 
 
@@ -74,10 +75,16 @@ def obter_config_empresa():
 
 def obter_pdf_da_db(rfq_id, tipo_pdf="pedido"):
     """Retrieve stored PDF bytes from the database."""
-    result = fetch_one(
-        "SELECT pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf = ?",
-        (str(rfq_id), tipo_pdf),
-    )
+    query = "SELECT pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf = ?"
+    params = (str(rfq_id), tipo_pdf)
+    try:
+        result = fetch_one(query, params)
+    except sqlite3.OperationalError as exc:
+        if "no such column" in str(exc).lower() and "rfq_id" in str(exc):
+            criar_base_dados_completa()
+            result = fetch_one(query, params)
+        else:
+            raise
     return result[0] if result else None
 
 
