@@ -23,6 +23,7 @@ from db import (
     criar_processo,
     criar_base_dados_completa,
     get_connection as obter_conexao,
+    managed_cursor,
     backup_database,
     hash_password,
     verify_password,
@@ -183,10 +184,7 @@ def inserir_fornecedor(
     if not nome_limpo:
         return None
 
-    conn = obter_conexao()
-    c = conn.cursor()
-
-    try:
+    with managed_cursor() as (conn, c):
         # Verificar se o fornecedor já existe
         c.execute(
             "SELECT id FROM fornecedor WHERE PYCASEFOLD(nome) = PYCASEFOLD(?)",
@@ -221,8 +219,6 @@ def inserir_fornecedor(
         conn.commit()
         listar_fornecedores.clear()
         return c.lastrowid
-    finally:
-        conn.close()
 
 
 def atualizar_fornecedor(
@@ -235,44 +231,39 @@ def atualizar_fornecedor(
     necessita_pais_cliente_final: bool = False,
 ):
     """Atualizar dados de um fornecedor existente"""
-    conn = obter_conexao()
-    c = conn.cursor()
     try:
-        c.execute(
-            """
-            UPDATE fornecedor
-            SET nome = ?, email = ?, telefone = ?, morada = ?, nif = ?, necessita_pais_cliente_final = ?
-            WHERE id = ?
-            """,
-            (
-                nome,
-                email,
-                telefone,
-                morada,
-                nif,
-                1 if necessita_pais_cliente_final else 0,
-                fornecedor_id,
-            ),
-        )
-        conn.commit()
-        listar_fornecedores.clear()
-        return True
+        with managed_cursor() as (conn, c):
+            c.execute(
+                """
+                UPDATE fornecedor
+                SET nome = ?, email = ?, telefone = ?, morada = ?, nif = ?, necessita_pais_cliente_final = ?
+                WHERE id = ?
+                """,
+                (
+                    nome,
+                    email,
+                    telefone,
+                    morada,
+                    nif,
+                    1 if necessita_pais_cliente_final else 0,
+                    fornecedor_id,
+                ),
+            )
+            conn.commit()
+            listar_fornecedores.clear()
+            return True
     except Exception:
         return False
-    finally:
-        conn.close()
 
 
 def eliminar_fornecedor_db(fornecedor_id):
     """Eliminar fornecedor"""
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute("DELETE FROM fornecedor WHERE id = ?", (fornecedor_id,))
-    conn.commit()
-    listar_fornecedores.clear()
-    removidos = c.rowcount
-    conn.close()
-    return removidos > 0
+    with managed_cursor() as (conn, c):
+        c.execute("DELETE FROM fornecedor WHERE id = ?", (fornecedor_id,))
+        conn.commit()
+        listar_fornecedores.clear()
+        removidos = c.rowcount
+        return removidos > 0
 
 def obter_marcas_fornecedor(fornecedor_id):
     """Obter marcas associadas a um fornecedor."""
@@ -951,60 +942,49 @@ def inserir_empresa(nome, morada="", condicoes_pagamento=""):
     if not nome_limpo:
         raise ValueError("Nome da empresa é obrigatório")
 
-    conn = obter_conexao()
-    c = conn.cursor()
     try:
-        c.execute(
-            "SELECT id FROM cliente_empresa WHERE PYCASEFOLD(nome) = PYCASEFOLD(?)",
-            (nome_limpo,),
-        )
-        existente = c.fetchone()
-        if existente:
-            return existente[0]
+        with managed_cursor() as (conn, c):
+            c.execute(
+                "SELECT id FROM cliente_empresa WHERE PYCASEFOLD(nome) = PYCASEFOLD(?)",
+                (nome_limpo,),
+            )
+            existente = c.fetchone()
+            if existente:
+                return existente[0]
 
-        c.execute(
-            "INSERT INTO cliente_empresa (nome, morada, condicoes_pagamento) VALUES (?, ?, ?)",
-            (nome_limpo, morada, condicoes_pagamento),
-        )
-        conn.commit()
-        listar_empresas.clear()
-        return c.lastrowid
+            c.execute(
+                "INSERT INTO cliente_empresa (nome, morada, condicoes_pagamento) VALUES (?, ?, ?)",
+                (nome_limpo, morada, condicoes_pagamento),
+            )
+            conn.commit()
+            listar_empresas.clear()
+            return c.lastrowid
     except sqlite3.OperationalError as e:
-        conn.close()
         if "no such table" in str(e).lower():
             criar_base_dados_completa()
             return inserir_empresa(nome_limpo, morada, condicoes_pagamento)
         raise
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
 
 
 def atualizar_empresa(empresa_id, nome, morada="", condicoes_pagamento=""):
     """Atualizar dados de uma empresa"""
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute(
-        "UPDATE cliente_empresa SET nome = ?, morada = ?, condicoes_pagamento = ? WHERE id = ?",
-        (nome, morada, condicoes_pagamento, empresa_id),
-    )
-    conn.commit()
-    conn.close()
-    listar_empresas.clear()
-    return True
+    with managed_cursor() as (conn, c):
+        c.execute(
+            "UPDATE cliente_empresa SET nome = ?, morada = ?, condicoes_pagamento = ? WHERE id = ?",
+            (nome, morada, condicoes_pagamento, empresa_id),
+        )
+        conn.commit()
+        listar_empresas.clear()
+        return True
 
 
 def eliminar_empresa_db(empresa_id):
     """Eliminar empresa"""
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute("DELETE FROM cliente_empresa WHERE id = ?", (empresa_id,))
-    conn.commit()
-    conn.close()
-    listar_empresas.clear()
-    return True
+    with managed_cursor() as (conn, c):
+        c.execute("DELETE FROM cliente_empresa WHERE id = ?", (empresa_id,))
+        conn.commit()
+        listar_empresas.clear()
+        return True
 
 
 def inserir_cliente(nome, email="", empresa_id=None):
@@ -1016,9 +996,7 @@ def inserir_cliente(nome, email="", empresa_id=None):
 
     email_limpo = (email or "").strip()
 
-    conn = obter_conexao()
-    c = conn.cursor()
-    try:
+    with managed_cursor() as (conn, c):
         # Evitar duplicados pelo nome (ignorando maiúsculas/minúsculas) para a mesma empresa
         c.execute(
             """
@@ -1047,33 +1025,27 @@ def inserir_cliente(nome, email="", empresa_id=None):
         conn.commit()
         listar_clientes.clear()
         return c.lastrowid
-    finally:
-        conn.close()
 
 
 def atualizar_cliente(cliente_id, nome, email="", empresa_id=None):
     """Atualizar dados de um cliente"""
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute(
-        "UPDATE cliente SET nome = ?, email = ?, empresa_id = ? WHERE id = ?",
-        (nome, email, empresa_id, cliente_id),
-    )
-    conn.commit()
-    conn.close()
-    listar_clientes.clear()
-    return True
+    with managed_cursor() as (conn, c):
+        c.execute(
+            "UPDATE cliente SET nome = ?, email = ?, empresa_id = ? WHERE id = ?",
+            (nome, email, empresa_id, cliente_id),
+        )
+        conn.commit()
+        listar_clientes.clear()
+        return True
 
 
 def eliminar_cliente_db(cliente_id):
     """Eliminar cliente"""
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute("DELETE FROM cliente WHERE id = ?", (cliente_id,))
-    conn.commit()
-    conn.close()
-    listar_clientes.clear()
-    return True
+    with managed_cursor() as (conn, c):
+        c.execute("DELETE FROM cliente WHERE id = ?", (cliente_id,))
+        conn.commit()
+        listar_clientes.clear()
+        return True
 
 
 # ========================== FUNÇÕES DE GESTÃO DE UTILIZADORES ==========================
@@ -1109,47 +1081,42 @@ def inserir_utilizador(username, password, nome="", email="", role="user", email
     if not username_limpo or not password:
         raise ValueError("Username e palavra-passe são obrigatórios")
 
-    conn = obter_conexao()
-    c = conn.cursor()
     try:
-        c.execute(
-            "SELECT id FROM utilizador WHERE PYCASEFOLD(username) = PYCASEFOLD(?)",
-            (username_limpo,),
-        )
-        existente = c.fetchone()
-        if existente:
-            return existente[0]
+        with managed_cursor() as (conn, c):
+            c.execute(
+                "SELECT id FROM utilizador WHERE PYCASEFOLD(username) = PYCASEFOLD(?)",
+                (username_limpo,),
+            )
+            existente = c.fetchone()
+            if existente:
+                return existente[0]
 
-        c.execute(
-            """
-            INSERT INTO utilizador (username, password, nome, email, role, email_password)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                username_limpo,
-                hash_password(password),
-                nome,
-                email,
-                role,
-                email_password,
-            ),
-        )
-        conn.commit()
-        listar_utilizadores.clear()
-        return c.lastrowid
+            c.execute(
+                """
+                INSERT INTO utilizador (username, password, nome, email, role, email_password)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    username_limpo,
+                    hash_password(password),
+                    nome,
+                    email,
+                    role,
+                    email_password,
+                ),
+            )
+            conn.commit()
+            listar_utilizadores.clear()
+            return c.lastrowid
     except Exception:
         return None
-    finally:
-        conn.close()
 
 
 def atualizar_utilizador(
     user_id, username, nome, email, role, password=None, email_password=None
 ):
     """Atualizar dados de um utilizador"""
-    conn = obter_conexao()
-    c = conn.cursor()
-    try:
+    with managed_cursor() as (conn, c):
         fields = ["username = ?", "nome = ?", "email = ?", "role = ?"]
         params = [username, nome, email, role]
         if password:
@@ -1166,21 +1133,17 @@ def atualizar_utilizador(
         conn.commit()
         listar_utilizadores.clear()
         return True
-    finally:
-        conn.close()
 
 
 def eliminar_utilizador(user_id):
     """Eliminar utilizador"""
-    conn = obter_conexao()
-    c = conn.cursor()
-    c.execute("DELETE FROM utilizador WHERE id = ?", (user_id,))
-    conn.commit()
-    removed = c.rowcount
-    conn.close()
-    if removed:
-        listar_utilizadores.clear()
-    return removed > 0
+    with managed_cursor() as (conn, c):
+        c.execute("DELETE FROM utilizador WHERE id = ?", (user_id,))
+        conn.commit()
+        removed = c.rowcount
+        if removed:
+            listar_utilizadores.clear()
+        return removed > 0
 
 # ========================== FUNÇÕES DE GESTÃO DE RFQs ==========================
 
