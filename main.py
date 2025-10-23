@@ -1983,12 +1983,13 @@ def obter_respostas_por_processo(processo_id):
                rf.fornecedor_id,
                f.nome as fornecedor_nome,
                r.id as rfq_id,
-               r.estado,
+               COALESCE(e.nome, 'pendente') AS estado_nome,
                rf.validade_preco
         FROM processo_artigo pa
         LEFT JOIN unidade u ON pa.unidade_id = u.id
         LEFT JOIN artigo a ON a.processo_artigo_id = pa.id
         LEFT JOIN rfq r ON a.rfq_id = r.id
+        LEFT JOIN estado e ON r.estado_id = e.id
         LEFT JOIN resposta_fornecedor rf ON rf.artigo_id = a.id AND rf.rfq_id = r.id
         LEFT JOIN fornecedor f ON rf.fornecedor_id = f.id
         WHERE pa.processo_id = ?
@@ -6888,7 +6889,15 @@ elif menu_option == "📊 Relatórios":
         conn = obter_conexao()
         c = conn.cursor()
 
-        c.execute("SELECT data, COUNT(*) FROM rfq GROUP BY data ORDER BY data")
+        c.execute(
+            """
+            SELECT DATE(data_atualizacao) AS data,
+                   COUNT(*)
+              FROM rfq
+             GROUP BY DATE(data_atualizacao)
+             ORDER BY DATE(data_atualizacao)
+            """
+        )
         rows = c.fetchall()
         if rows:
             df = pd.DataFrame(rows, columns=["data", "total"])
@@ -6905,12 +6914,12 @@ elif menu_option == "📊 Relatórios":
 
         c.execute(
             """
-            SELECT r.data,
-                   SUM(rf.preco_venda * rf.quantidade_final) as total
-            FROM rfq r
-            JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
-            GROUP BY r.data
-            ORDER BY r.data
+            SELECT DATE(r.data_atualizacao) AS data,
+                   SUM(rf.preco_venda * rf.quantidade_final) AS total
+              FROM rfq r
+              JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
+             GROUP BY DATE(r.data_atualizacao)
+             ORDER BY DATE(r.data_atualizacao)
             """
         )
         rows = c.fetchall()
@@ -6927,7 +6936,15 @@ elif menu_option == "📊 Relatórios":
         else:
             st.info("Sem dados de preço de venda diário")
 
-        c.execute("SELECT strftime('%Y-%m', data) as mes, COUNT(*) FROM rfq GROUP BY mes ORDER BY mes")
+        c.execute(
+            """
+            SELECT strftime('%Y-%m', data_atualizacao) AS mes,
+                   COUNT(*)
+              FROM rfq
+             GROUP BY mes
+             ORDER BY mes
+            """
+        )
         rows = c.fetchall()
         if rows:
             df_mes = pd.DataFrame(rows, columns=["mes", "total"])
@@ -6939,12 +6956,12 @@ elif menu_option == "📊 Relatórios":
 
         c.execute(
             """
-            SELECT strftime('%Y-%m', r.data) as mes,
-                   SUM(rf.preco_venda * rf.quantidade_final) as total
-            FROM rfq r
-            JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
-            GROUP BY mes
-            ORDER BY mes
+            SELECT strftime('%Y-%m', r.data_atualizacao) AS mes,
+                   SUM(rf.preco_venda * rf.quantidade_final) AS total
+              FROM rfq r
+              JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
+             GROUP BY mes
+             ORDER BY mes
             """
         )
         rows = c.fetchall()
