@@ -45,6 +45,12 @@ def listar_processos(page: int = 0, page_size: int = 10):
         return processos, total
 
 
+def contar_processos() -> int:
+    """Devolve o número total de processos existentes."""
+    with obter_sessao() as session:
+        return session.execute(text("SELECT COUNT(*) FROM processo")).scalar()
+
+
 # Obter fornecedores
 def listar_fornecedores():
     with obter_sessao() as session:
@@ -110,19 +116,18 @@ PAGE_SIZE = 10
 if "processos_page" not in st.session_state:
     st.session_state.processos_page = 0
 
-processos, total_processos = listar_processos(
-    st.session_state.processos_page, PAGE_SIZE
-)
+total_processos = contar_processos()
 total_paginas = max(1, (total_processos + PAGE_SIZE - 1) // PAGE_SIZE)
 
 # Garantir que a página atual está dentro dos limites válidos
 if st.session_state.processos_page > total_paginas - 1:
     st.session_state.processos_page = max(0, total_paginas - 1)
-    processos, total_processos = listar_processos(
-        st.session_state.processos_page, PAGE_SIZE
-    )
 
 fornecedores = listar_fornecedores()
+
+processos, _ = listar_processos(
+    st.session_state.processos_page, PAGE_SIZE
+)
 
 if total_processos and fornecedores:
     if processos:

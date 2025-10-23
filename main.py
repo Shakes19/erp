@@ -23,7 +23,6 @@ from db import (
     criar_processo,
     criar_base_dados_completa,
     get_connection as obter_conexao,
-    managed_cursor,
     backup_database,
     hash_password,
     verify_password,
@@ -184,7 +183,10 @@ def inserir_fornecedor(
     if not nome_limpo:
         return None
 
-    with managed_cursor() as (conn, c):
+    conn = obter_conexao()
+    c = conn.cursor()
+
+    try:
         # Verificar se o fornecedor já existe
         c.execute(
             "SELECT id FROM fornecedor WHERE PYCASEFOLD(nome) = PYCASEFOLD(?)",
@@ -219,6 +221,8 @@ def inserir_fornecedor(
         conn.commit()
         listar_fornecedores.clear()
         return c.lastrowid
+    finally:
+        conn.close()
 
 
 def atualizar_fornecedor(
@@ -231,39 +235,44 @@ def atualizar_fornecedor(
     necessita_pais_cliente_final: bool = False,
 ):
     """Atualizar dados de um fornecedor existente"""
+    conn = obter_conexao()
+    c = conn.cursor()
     try:
-        with managed_cursor() as (conn, c):
-            c.execute(
-                """
-                UPDATE fornecedor
-                SET nome = ?, email = ?, telefone = ?, morada = ?, nif = ?, necessita_pais_cliente_final = ?
-                WHERE id = ?
-                """,
-                (
-                    nome,
-                    email,
-                    telefone,
-                    morada,
-                    nif,
-                    1 if necessita_pais_cliente_final else 0,
-                    fornecedor_id,
-                ),
-            )
-            conn.commit()
-            listar_fornecedores.clear()
-            return True
+        c.execute(
+            """
+            UPDATE fornecedor
+            SET nome = ?, email = ?, telefone = ?, morada = ?, nif = ?, necessita_pais_cliente_final = ?
+            WHERE id = ?
+            """,
+            (
+                nome,
+                email,
+                telefone,
+                morada,
+                nif,
+                1 if necessita_pais_cliente_final else 0,
+                fornecedor_id,
+            ),
+        )
+        conn.commit()
+        listar_fornecedores.clear()
+        return True
     except Exception:
         return False
+    finally:
+        conn.close()
 
 
 def eliminar_fornecedor_db(fornecedor_id):
     """Eliminar fornecedor"""
-    with managed_cursor() as (conn, c):
-        c.execute("DELETE FROM fornecedor WHERE id = ?", (fornecedor_id,))
-        conn.commit()
-        listar_fornecedores.clear()
-        removidos = c.rowcount
-        return removidos > 0
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute("DELETE FROM fornecedor WHERE id = ?", (fornecedor_id,))
+    conn.commit()
+    listar_fornecedores.clear()
+    removidos = c.rowcount
+    conn.close()
+    return removidos > 0
 
 def obter_marcas_fornecedor(fornecedor_id):
     """Obter marcas associadas a um fornecedor."""
@@ -942,49 +951,60 @@ def inserir_empresa(nome, morada="", condicoes_pagamento=""):
     if not nome_limpo:
         raise ValueError("Nome da empresa é obrigatório")
 
+    conn = obter_conexao()
+    c = conn.cursor()
     try:
-        with managed_cursor() as (conn, c):
-            c.execute(
-                "SELECT id FROM cliente_empresa WHERE PYCASEFOLD(nome) = PYCASEFOLD(?)",
-                (nome_limpo,),
-            )
-            existente = c.fetchone()
-            if existente:
-                return existente[0]
+        c.execute(
+            "SELECT id FROM cliente_empresa WHERE PYCASEFOLD(nome) = PYCASEFOLD(?)",
+            (nome_limpo,),
+        )
+        existente = c.fetchone()
+        if existente:
+            return existente[0]
 
-            c.execute(
-                "INSERT INTO cliente_empresa (nome, morada, condicoes_pagamento) VALUES (?, ?, ?)",
-                (nome_limpo, morada, condicoes_pagamento),
-            )
-            conn.commit()
-            listar_empresas.clear()
-            return c.lastrowid
+        c.execute(
+            "INSERT INTO cliente_empresa (nome, morada, condicoes_pagamento) VALUES (?, ?, ?)",
+            (nome_limpo, morada, condicoes_pagamento),
+        )
+        conn.commit()
+        listar_empresas.clear()
+        return c.lastrowid
     except sqlite3.OperationalError as e:
+        conn.close()
         if "no such table" in str(e).lower():
             criar_base_dados_completa()
             return inserir_empresa(nome_limpo, morada, condicoes_pagamento)
         raise
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def atualizar_empresa(empresa_id, nome, morada="", condicoes_pagamento=""):
     """Atualizar dados de uma empresa"""
-    with managed_cursor() as (conn, c):
-        c.execute(
-            "UPDATE cliente_empresa SET nome = ?, morada = ?, condicoes_pagamento = ? WHERE id = ?",
-            (nome, morada, condicoes_pagamento, empresa_id),
-        )
-        conn.commit()
-        listar_empresas.clear()
-        return True
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE cliente_empresa SET nome = ?, morada = ?, condicoes_pagamento = ? WHERE id = ?",
+        (nome, morada, condicoes_pagamento, empresa_id),
+    )
+    conn.commit()
+    conn.close()
+    listar_empresas.clear()
+    return True
 
 
 def eliminar_empresa_db(empresa_id):
     """Eliminar empresa"""
-    with managed_cursor() as (conn, c):
-        c.execute("DELETE FROM cliente_empresa WHERE id = ?", (empresa_id,))
-        conn.commit()
-        listar_empresas.clear()
-        return True
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute("DELETE FROM cliente_empresa WHERE id = ?", (empresa_id,))
+    conn.commit()
+    conn.close()
+    listar_empresas.clear()
+    return True
 
 
 def inserir_cliente(nome, email="", empresa_id=None):
@@ -996,7 +1016,9 @@ def inserir_cliente(nome, email="", empresa_id=None):
 
     email_limpo = (email or "").strip()
 
-    with managed_cursor() as (conn, c):
+    conn = obter_conexao()
+    c = conn.cursor()
+    try:
         # Evitar duplicados pelo nome (ignorando maiúsculas/minúsculas) para a mesma empresa
         c.execute(
             """
@@ -1025,27 +1047,33 @@ def inserir_cliente(nome, email="", empresa_id=None):
         conn.commit()
         listar_clientes.clear()
         return c.lastrowid
+    finally:
+        conn.close()
 
 
 def atualizar_cliente(cliente_id, nome, email="", empresa_id=None):
     """Atualizar dados de um cliente"""
-    with managed_cursor() as (conn, c):
-        c.execute(
-            "UPDATE cliente SET nome = ?, email = ?, empresa_id = ? WHERE id = ?",
-            (nome, email, empresa_id, cliente_id),
-        )
-        conn.commit()
-        listar_clientes.clear()
-        return True
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE cliente SET nome = ?, email = ?, empresa_id = ? WHERE id = ?",
+        (nome, email, empresa_id, cliente_id),
+    )
+    conn.commit()
+    conn.close()
+    listar_clientes.clear()
+    return True
 
 
 def eliminar_cliente_db(cliente_id):
     """Eliminar cliente"""
-    with managed_cursor() as (conn, c):
-        c.execute("DELETE FROM cliente WHERE id = ?", (cliente_id,))
-        conn.commit()
-        listar_clientes.clear()
-        return True
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute("DELETE FROM cliente WHERE id = ?", (cliente_id,))
+    conn.commit()
+    conn.close()
+    listar_clientes.clear()
+    return True
 
 
 # ========================== FUNÇÕES DE GESTÃO DE UTILIZADORES ==========================
@@ -1081,42 +1109,47 @@ def inserir_utilizador(username, password, nome="", email="", role="user", email
     if not username_limpo or not password:
         raise ValueError("Username e palavra-passe são obrigatórios")
 
+    conn = obter_conexao()
+    c = conn.cursor()
     try:
-        with managed_cursor() as (conn, c):
-            c.execute(
-                "SELECT id FROM utilizador WHERE PYCASEFOLD(username) = PYCASEFOLD(?)",
-                (username_limpo,),
-            )
-            existente = c.fetchone()
-            if existente:
-                return existente[0]
+        c.execute(
+            "SELECT id FROM utilizador WHERE PYCASEFOLD(username) = PYCASEFOLD(?)",
+            (username_limpo,),
+        )
+        existente = c.fetchone()
+        if existente:
+            return existente[0]
 
-            c.execute(
-                """
-                INSERT INTO utilizador (username, password, nome, email, role, email_password)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    username_limpo,
-                    hash_password(password),
-                    nome,
-                    email,
-                    role,
-                    email_password,
-                ),
-            )
-            conn.commit()
-            listar_utilizadores.clear()
-            return c.lastrowid
+        c.execute(
+            """
+            INSERT INTO utilizador (username, password, nome, email, role, email_password)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                username_limpo,
+                hash_password(password),
+                nome,
+                email,
+                role,
+                email_password,
+            ),
+        )
+        conn.commit()
+        listar_utilizadores.clear()
+        return c.lastrowid
     except Exception:
         return None
+    finally:
+        conn.close()
 
 
 def atualizar_utilizador(
     user_id, username, nome, email, role, password=None, email_password=None
 ):
     """Atualizar dados de um utilizador"""
-    with managed_cursor() as (conn, c):
+    conn = obter_conexao()
+    c = conn.cursor()
+    try:
         fields = ["username = ?", "nome = ?", "email = ?", "role = ?"]
         params = [username, nome, email, role]
         if password:
@@ -1133,17 +1166,21 @@ def atualizar_utilizador(
         conn.commit()
         listar_utilizadores.clear()
         return True
+    finally:
+        conn.close()
 
 
 def eliminar_utilizador(user_id):
     """Eliminar utilizador"""
-    with managed_cursor() as (conn, c):
-        c.execute("DELETE FROM utilizador WHERE id = ?", (user_id,))
-        conn.commit()
-        removed = c.rowcount
-        if removed:
-            listar_utilizadores.clear()
-        return removed > 0
+    conn = obter_conexao()
+    c = conn.cursor()
+    c.execute("DELETE FROM utilizador WHERE id = ?", (user_id,))
+    conn.commit()
+    removed = c.rowcount
+    conn.close()
+    if removed:
+        listar_utilizadores.clear()
+    return removed > 0
 
 # ========================== FUNÇÕES DE GESTÃO DE RFQs ==========================
 
@@ -3320,20 +3357,8 @@ class ClientQuotationPDF(InquiryPDF):
         row_size = table_cfg.get("row_font_size", 8)
         self.set_font(row_font, "", row_size)
 
-        preco_venda_val = item.get("preco_venda")
-        try:
-            preco_venda = float(preco_venda_val)
-        except (TypeError, ValueError):
-            preco_venda = 0.0
-
-        quantidade_val = item.get("quantidade_final")
-        if quantidade_val in (None, ""):
-            quantidade_val = item.get("quantidade")
-        try:
-            quantidade = float(quantidade_val)
-        except (TypeError, ValueError):
-            quantidade = 0.0
-
+        preco_venda = float(item["preco_venda"])
+        quantidade = int(item["quantidade_final"])
         total = preco_venda * quantidade
 
         desc = item.get("descricao") or ""
@@ -3361,16 +3386,10 @@ class ClientQuotationPDF(InquiryPDF):
             self.cell(widths[1], 6, (item.get("artigo_num") or "")[:10] if i == 0 else "", border=border)
             self.cell(widths[2], 6, line, border=border)
             if i == 0:
-                if quantidade.is_integer():
-                    quantidade_txt = str(int(quantidade))
-                else:
-                    quantidade_txt = f"{quantidade:g}"
-                self.cell(widths[3], 6, quantidade_txt, border=border, align="C")
+                self.cell(widths[3], 6, str(quantidade), border=border, align="C")
                 self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=border, align="R")
                 self.cell(widths[5], 6, f"EUR {total:.2f}", border=border, align="R")
-                prazo = item.get('prazo_entrega')
-                prazo_txt = f"{prazo}d" if prazo not in (None, "") else ""
-                self.cell(widths[6], 6, prazo_txt, border=border, align="C")
+                self.cell(widths[6], 6, f"{item.get('prazo_entrega', 0)}d", border=border, align="C")
                 self.cell(widths[7], 6, f"{(item.get('peso') or 0):.1f}kg", border=border, align="C")
             else:
                 for w in widths[3:]:
