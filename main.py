@@ -3320,8 +3320,20 @@ class ClientQuotationPDF(InquiryPDF):
         row_size = table_cfg.get("row_font_size", 8)
         self.set_font(row_font, "", row_size)
 
-        preco_venda = float(item["preco_venda"])
-        quantidade = int(item["quantidade_final"])
+        preco_venda_val = item.get("preco_venda")
+        try:
+            preco_venda = float(preco_venda_val)
+        except (TypeError, ValueError):
+            preco_venda = 0.0
+
+        quantidade_val = item.get("quantidade_final")
+        if quantidade_val in (None, ""):
+            quantidade_val = item.get("quantidade")
+        try:
+            quantidade = float(quantidade_val)
+        except (TypeError, ValueError):
+            quantidade = 0.0
+
         total = preco_venda * quantidade
 
         desc = item.get("descricao") or ""
@@ -3349,10 +3361,16 @@ class ClientQuotationPDF(InquiryPDF):
             self.cell(widths[1], 6, (item.get("artigo_num") or "")[:10] if i == 0 else "", border=border)
             self.cell(widths[2], 6, line, border=border)
             if i == 0:
-                self.cell(widths[3], 6, str(quantidade), border=border, align="C")
+                if quantidade.is_integer():
+                    quantidade_txt = str(int(quantidade))
+                else:
+                    quantidade_txt = f"{quantidade:g}"
+                self.cell(widths[3], 6, quantidade_txt, border=border, align="C")
                 self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=border, align="R")
                 self.cell(widths[5], 6, f"EUR {total:.2f}", border=border, align="R")
-                self.cell(widths[6], 6, f"{item.get('prazo_entrega', 0)}d", border=border, align="C")
+                prazo = item.get('prazo_entrega')
+                prazo_txt = f"{prazo}d" if prazo not in (None, "") else ""
+                self.cell(widths[6], 6, prazo_txt, border=border, align="C")
                 self.cell(widths[7], 6, f"{(item.get('peso') or 0):.1f}kg", border=border, align="C")
             else:
                 for w in widths[3:]:
