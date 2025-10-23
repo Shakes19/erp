@@ -1983,13 +1983,12 @@ def obter_respostas_por_processo(processo_id):
                rf.fornecedor_id,
                f.nome as fornecedor_nome,
                r.id as rfq_id,
-               COALESCE(e.nome, 'pendente') as estado_rfq,
+               r.estado,
                rf.validade_preco
         FROM processo_artigo pa
         LEFT JOIN unidade u ON pa.unidade_id = u.id
         LEFT JOIN artigo a ON a.processo_artigo_id = pa.id
         LEFT JOIN rfq r ON a.rfq_id = r.id
-        LEFT JOIN estado e ON r.estado_id = e.id
         LEFT JOIN resposta_fornecedor rf ON rf.artigo_id = a.id AND rf.rfq_id = r.id
         LEFT JOIN fornecedor f ON rf.fornecedor_id = f.id
         WHERE pa.processo_id = ?
@@ -6889,21 +6888,15 @@ elif menu_option == "📊 Relatórios":
         conn = obter_conexao()
         c = conn.cursor()
 
-        c.execute(
-            "SELECT data_atualizacao, COUNT(*) FROM rfq GROUP BY data_atualizacao ORDER BY data_atualizacao"
-        )
+        c.execute("SELECT data, COUNT(*) FROM rfq GROUP BY data ORDER BY data")
         rows = c.fetchall()
         if rows:
-            df = pd.DataFrame(rows, columns=["data_atualizacao", "total"])
-            df["data_atualizacao"] = pd.to_datetime(
-                df["data_atualizacao"].astype(str).str.replace("T", " ", regex=False),
+            df = pd.DataFrame(rows, columns=["data", "total"])
+            df["data"] = pd.to_datetime(
+                df["data"].astype(str).str.replace("T", " ", regex=False),
                 errors="coerce",
             )
-            df = (
-                df.dropna(subset=["data_atualizacao"])
-                .set_index("data_atualizacao")
-                .sort_index()
-            )
+            df = df.dropna(subset=["data"]).set_index("data").sort_index()
             df["cumulativo"] = df["total"].cumsum()
             st.markdown("**Cotações por Dia (Cumulativo)**")
             st.line_chart(df["cumulativo"], height=300)
@@ -6912,35 +6905,29 @@ elif menu_option == "📊 Relatórios":
 
         c.execute(
             """
-            SELECT r.data_atualizacao,
+            SELECT r.data,
                    SUM(rf.preco_venda * rf.quantidade_final) as total
             FROM rfq r
             JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
-            GROUP BY r.data_atualizacao
-            ORDER BY r.data_atualizacao
+            GROUP BY r.data
+            ORDER BY r.data
             """
         )
         rows = c.fetchall()
         if rows:
-            df_val = pd.DataFrame(rows, columns=["data_atualizacao", "total"])
-            df_val["data_atualizacao"] = pd.to_datetime(
-                df_val["data_atualizacao"].astype(str).str.replace("T", " ", regex=False),
+            df_val = pd.DataFrame(rows, columns=["data", "total"])
+            df_val["data"] = pd.to_datetime(
+                df_val["data"].astype(str).str.replace("T", " ", regex=False),
                 errors="coerce",
             )
-            df_val = (
-                df_val.dropna(subset=["data_atualizacao"])
-                .set_index("data_atualizacao")
-                .sort_index()
-            )
+            df_val = df_val.dropna(subset=["data"]).set_index("data").sort_index()
             df_val["cumulativo"] = df_val["total"].cumsum()
             st.markdown("**Preço de Venda por Dia (Cumulativo)**")
             st.line_chart(df_val["cumulativo"], height=300)
         else:
             st.info("Sem dados de preço de venda diário")
 
-        c.execute(
-            "SELECT strftime('%Y-%m', data_atualizacao) as mes, COUNT(*) FROM rfq GROUP BY mes ORDER BY mes"
-        )
+        c.execute("SELECT strftime('%Y-%m', data) as mes, COUNT(*) FROM rfq GROUP BY mes ORDER BY mes")
         rows = c.fetchall()
         if rows:
             df_mes = pd.DataFrame(rows, columns=["mes", "total"])
@@ -6952,7 +6939,7 @@ elif menu_option == "📊 Relatórios":
 
         c.execute(
             """
-            SELECT strftime('%Y-%m', r.data_atualizacao) as mes,
+            SELECT strftime('%Y-%m', r.data) as mes,
                    SUM(rf.preco_venda * rf.quantidade_final) as total
             FROM rfq r
             JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
