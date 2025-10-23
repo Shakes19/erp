@@ -1348,6 +1348,31 @@ def criar_base_dados_completa():
         """
     )
 
+    c.execute("PRAGMA table_info(pdf_storage)")
+    pdf_cols = [row[1] for row in c.fetchall()]
+    if "rfq_id" not in pdf_cols:
+        c.execute("ALTER TABLE pdf_storage ADD COLUMN rfq_id TEXT")
+    if "tipo_pdf" not in pdf_cols:
+        c.execute("ALTER TABLE pdf_storage ADD COLUMN tipo_pdf TEXT")
+    if "pdf_data" not in pdf_cols:
+        c.execute("ALTER TABLE pdf_storage ADD COLUMN pdf_data BLOB")
+    if "data_criacao" not in pdf_cols:
+        c.execute(
+            "ALTER TABLE pdf_storage ADD COLUMN data_criacao TEXT DEFAULT CURRENT_TIMESTAMP"
+        )
+    if "tamanho_bytes" not in pdf_cols:
+        c.execute("ALTER TABLE pdf_storage ADD COLUMN tamanho_bytes INTEGER")
+    if "nome_ficheiro" not in pdf_cols:
+        c.execute("ALTER TABLE pdf_storage ADD COLUMN nome_ficheiro TEXT")
+
+    c.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_pdf_storage_rfq_tipo
+        ON pdf_storage(rfq_id, tipo_pdf)
+        WHERE rfq_id IS NOT NULL AND tipo_pdf IS NOT NULL
+        """
+    )
+
     # Tabela de configurações de email (sem password)
     c.execute(
         """
