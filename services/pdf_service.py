@@ -74,29 +74,71 @@ def obter_config_empresa():
 
 def obter_pdf_da_db(rfq_id, tipo_pdf="pedido", *, processo_id=None):
     """Retrieve stored PDF bytes from the database."""
+
     alvo_processo = processo_id
-    if alvo_processo is None:
-        if rfq_id is None:
-            return None
+    fornecedor_id = None
+    rfq_int: int | None = None
+
+    if rfq_id is not None:
         try:
             rfq_int = int(rfq_id)
         except (TypeError, ValueError):
-            return None
+            rfq_int = None
 
-        row = fetch_one(
-            "SELECT processo_id FROM rfq WHERE id = ?",
-            (rfq_int,),
-        )
-        alvo_processo = row[0] if row else None
+    if alvo_processo is None or (tipo_pdf == "pedido" and fornecedor_id is None):
+        if rfq_int is None:
+            if alvo_processo is None:
+                return None
+        else:
+            row = fetch_one(
+                "SELECT processo_id, fornecedor_id FROM rfq WHERE id = ?",
+                (rfq_int,),
+            )
+            if row:
+                if alvo_processo is None:
+                    alvo_processo = row[0]
+                fornecedor_id = row[1] if len(row) > 1 else None
+            elif alvo_processo is None:
+                return None
 
     if alvo_processo is None:
         return None
 
-    result = fetch_one(
-        "SELECT pdf_data FROM pdf_storage WHERE processo_id = ? AND tipo_pdf = ?",
-        (alvo_processo, tipo_pdf),
-    )
-    return result[0] if result else None
+    candidatos: list[str] = [tipo_pdf]
+    if tipo_pdf == "pedido":
+        if rfq_int is not None:
+            candidatos.insert(0, f"pedido_fornecedor_rfq_{rfq_int}")
+            candidatos.append(f"pedido_{rfq_int}")
+        if fornecedor_id:
+            candidatos.append(f"pedido_fornecedor_{fornecedor_id}")
+
+    vistos: set[str] = set()
+    for tipo in candidatos:
+        if tipo in vistos:
+            continue
+        vistos.add(tipo)
+        result = fetch_one(
+            "SELECT pdf_data FROM pdf_storage WHERE processo_id = ? AND tipo_pdf = ?",
+            (alvo_processo, tipo),
+        )
+        if result:
+            return result[0]
+
+    if tipo_pdf == "pedido":
+        result = fetch_one(
+            """
+            SELECT pdf_data
+              FROM pdf_storage
+             WHERE processo_id = ? AND tipo_pdf LIKE ?
+             ORDER BY data_criacao DESC, id DESC
+             LIMIT 1
+            """,
+            (alvo_processo, "pedido_%"),
+        )
+        if result:
+            return result[0]
+
+    return None
 
 
 def converter_eml_para_pdf(eml_bytes: bytes) -> bytes:
