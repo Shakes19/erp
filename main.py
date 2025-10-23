@@ -5955,34 +5955,98 @@ elif menu_option == "📩 Process Center":
         fornecedor_id_pend = fornecedor_options[fornecedor_sel_pend]
         utilizador_id_pend = utilizador_options[utilizador_sel_pend]
 
-        cotacoes_pendentes, total_pend = obter_todas_cotacoes(
+        cotacoes_pendentes = obter_todas_cotacoes(
             filtro_ref_pend,
             "pendente",
             fornecedor_id_pend,
             utilizador_id_pend,
-            page=st.session_state.cotacoes_pend_page,
+            page=None,
             page_size=PAGE_SIZE,
-            return_total=True,
         )
-        total_paginas_pend = max(1, (total_pend + PAGE_SIZE - 1) // PAGE_SIZE)
 
-        # Garantir que a página atual está dentro dos limites
-        if st.session_state.cotacoes_pend_page > total_paginas_pend - 1:
-            st.session_state.cotacoes_pend_page = max(0, total_paginas_pend - 1)
-            st.rerun()
+        processos_dict = {}
+        for cotacao in cotacoes_pendentes:
+            processo_id = cotacao.get("processo_id")
+            group_key = processo_id if processo_id is not None else f"rfq_{cotacao['id']}"
+            grupo = processos_dict.setdefault(
+                group_key,
+                {
+                    "processo_id": processo_id,
+                    "processo": cotacao.get("processo"),
+                    "referencia": cotacao.get("referencia"),
+                    "nome_solicitante": cotacao.get("nome_solicitante"),
+                    "email_solicitante": cotacao.get("email_solicitante"),
+                    "criador": cotacao.get("criador"),
+                    "cotacoes": [],
+                    "group_key": str(group_key),
+                },
+            )
 
-        if cotacoes_pendentes:
-            for cotacao in cotacoes_pendentes:
-                with st.expander(f"{cotacao['processo']} - {cotacao['fornecedor']} - Ref: {cotacao['referencia']}", expanded=False):
-                    # Mostrar informações da cotação
+            for campo in ("processo", "referencia", "nome_solicitante", "email_solicitante", "criador"):
+                if not grupo.get(campo) and cotacao.get(campo):
+                    grupo[campo] = cotacao.get(campo)
+
+            grupo["cotacoes"].append(cotacao)
+
+        processos_ordenados = sorted(
+            processos_dict.values(),
+            key=lambda item: (
+                item["processo_id"] if item.get("processo_id") is not None else -1,
+                item["cotacoes"][0]["id"],
+            ),
+            reverse=True,
+        )
+
+        total_processos = len(processos_ordenados)
+        total_paginas_pend = max(1, (total_processos + PAGE_SIZE - 1) // PAGE_SIZE)
+
+        if total_processos == 0:
+            st.session_state.cotacoes_pend_page = 0
+            processos_pagina = []
+        else:
+            if st.session_state.cotacoes_pend_page > total_paginas_pend - 1:
+                st.session_state.cotacoes_pend_page = max(0, total_paginas_pend - 1)
+                st.rerun()
+
+            inicio = st.session_state.cotacoes_pend_page * PAGE_SIZE
+            fim = inicio + PAGE_SIZE
+            processos_pagina = processos_ordenados[inicio:fim]
+
+        if processos_pagina:
+            for processo in processos_pagina:
+                cotacoes_processo = sorted(
+                    processo["cotacoes"],
+                    key=lambda c: (c.get("fornecedor") or "").lower(),
+                )
+
+                processo_label = processo.get("processo") or "Processo"
+                referencia = processo.get("referencia")
+                if referencia:
+                    expander_label = f"{processo_label} - Ref: {referencia}"
+                else:
+                    expander_label = processo_label
+
+                with st.expander(expander_label, expanded=False):
+                    resumo = cotacoes_processo[0]
                     col1, col2 = st.columns([3, 1])
 
                     with col1:
-                        st.write(f"**Data:** {cotacao['data']}")
-                        # Mostrar anexos existentes
+                        st.write(
+                            f"**Solicitante:** {resumo['nome_solicitante'] if resumo['nome_solicitante'] else 'N/A'}"
+                        )
+                        st.write(
+                            f"**Email:** {resumo['email_solicitante'] if resumo['email_solicitante'] else 'N/A'}"
+                        )
+                        st.write(
+                            f"**Criado por:** {resumo['criador'] if resumo['criador'] else 'N/A'}"
+                        )
+                        st.write(f"**Artigos:** {resumo['num_artigos']}")
+                        st.write(f"**Total de cotações:** {len(cotacoes_processo)}")
+
+                    with col2:
                         conn = obter_conexao()
                         c = conn.cursor()
-                        processo_id = cotacao.get("processo_id")
+                        processo_id = processo.get("processo_id")
                         if processo_id:
                             c.execute(
                                 """
@@ -6008,56 +6072,51 @@ elif menu_option == "📩 Process Center":
                                  )
                                  ORDER BY ps.data_criacao
                                 """,
-                                (cotacao["id"],),
+                                (resumo["id"],),
                             )
 
                         anexos = c.fetchall()
                         conn.close()
                         if anexos:
                             st.markdown("**Anexos:**")
-                            for tipo, nome, data_pdf in anexos:
+                            base_nome = resumo.get("processo") or "processo"
+                            for idx_anexo, (tipo, nome, data_pdf) in enumerate(anexos):
                                 rotulo = f"{tipo} - {nome if nome else 'ficheiro.pdf'}"
                                 st.download_button(
                                     label=f"⬇️ {rotulo}",
                                     data=data_pdf,
-                                    file_name=nome if nome else f"{tipo}_{cotacao['processo']}.pdf",
+                                    file_name=nome if nome else f"{tipo}_{base_nome}.pdf",
                                     mime="application/pdf",
-                                    key=f"anexo_{cotacao['id']}_{tipo}"
+                                    key=f"anexo_proc_{processo['group_key']}_{idx_anexo}_{tipo}"
                                 )
-                        st.write(f"**Solicitante:** {cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else 'N/A'}")
-                        st.write(f"**Email:** {cotacao['email_solicitante'] if cotacao['email_solicitante'] else 'N/A'}")
-                        st.write(f"**Criado por:** {cotacao['criador'] if cotacao['criador'] else 'N/A'}")
-                        st.write(f"**Artigos:** {cotacao['num_artigos']}")
 
-                    with col2:
-                        # Botões de ação
-                        pdf_pedido = obter_pdf_da_db(
-                            cotacao['id'],
-                            "pedido",
-                            processo_id=cotacao.get('processo_id'),
-                        )
-                        if pdf_pedido:
-                            st.download_button(
-                                "📄 PDF",
-                                data=pdf_pedido,
-                                file_name=f"pedido_{cotacao['processo']}.pdf",
-                                mime="application/pdf",
-                                key=f"pdf_pend_{cotacao['id']}"
+                    st.markdown("---")
+                    st.markdown("**Cotações pendentes:**")
+
+                    for idx_cot, cotacao in enumerate(cotacoes_processo):
+                        st.markdown(f"**{cotacao['fornecedor']}**")
+                        info_col, action_col = st.columns([4, 1])
+
+                        with info_col:
+                            st.write(f"Data: {cotacao['data']}")
+                            st.write(
+                                f"Referência: {cotacao['referencia'] if cotacao['referencia'] else 'N/A'}"
                             )
+                            st.write(f"Artigos: {cotacao['num_artigos']}")
 
-                        st.caption(
-                            "Responder à cotação disponível apenas no Process Center."
-                        )
+                        with action_col:
+                            col_arc, col_del = st.columns(2)
 
-                        col_arc, col_del = st.columns(2)
+                            with col_arc:
+                                if st.button("📦 Arquivar", key=f"arc_pend_{cotacao['id']}"):
+                                    st.session_state.confirmacao = ("arquivar", cotacao['id'])
 
-                        with col_arc:
-                            if st.button("📦 Arquivar", key=f"arc_pend_{cotacao['id']}"):
-                                st.session_state.confirmacao = ("arquivar", cotacao['id'])
+                            with col_del:
+                                if st.button("🗑️ Eliminar", key=f"del_pend_{cotacao['id']}"):
+                                    st.session_state.confirmacao = ("eliminar", cotacao['id'])
 
-                        with col_del:
-                            if st.button("🗑️ Eliminar", key=f"del_pend_{cotacao['id']}"):
-                                st.session_state.confirmacao = ("eliminar", cotacao['id'])
+                        if idx_cot < len(cotacoes_processo) - 1:
+                            st.markdown("---")
         else:
             st.info("Não há cotações pendentes")
 
