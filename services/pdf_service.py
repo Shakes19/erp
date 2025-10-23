@@ -1,6 +1,5 @@
 import json
 import os
-import sqlite3
 import tempfile
 from email import policy
 from email.parser import BytesParser
@@ -8,7 +7,7 @@ from email.parser import BytesParser
 import streamlit as st
 from fpdf import FPDF
 
-from db import criar_base_dados_completa, fetch_one
+from db import fetch_one
 import extract_msg
 
 
@@ -75,30 +74,38 @@ def obter_config_empresa():
 
 def obter_pdf_da_db(rfq_id, tipo_pdf="pedido"):
     """Retrieve stored PDF bytes from the database."""
-    query = "SELECT pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf = ?"
-    params = (str(rfq_id), tipo_pdf)
-    try:
-        result = fetch_one(query, params)
-    except sqlite3.OperationalError as exc:
-        if "no such column" in str(exc).lower() and "rfq_id" in str(exc):
-            criar_base_dados_completa()
-            result = fetch_one(query, params)
-        else:
-            raise
+    result = fetch_one(
+        "SELECT pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf = ?",
+        (str(rfq_id), tipo_pdf),
+    )
     return result[0] if result else None
 
 
-def _render_pdf(header_lines: list[str], body: str) -> bytes:
-    """Render a PDF from pre-formatted headers and body text."""
-
+def converter_eml_para_pdf(eml_bytes: bytes) -> bytes:
+    """Convert raw EML bytes to PDF bytes."""
+    message = BytesParser(policy=policy.default).parsebytes(eml_bytes)
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.set_font("Arial", size=12)
 
+    header_lines = [
+        f"From: {message.get('From', '')}",
+        f"To: {message.get('To', '')}",
+        f"Subject: {message.get('Subject', '')}",
+        f"Date: {message.get('Date', '')}",
+        "",
+    ]
     for line in header_lines:
         pdf.multi_cell(0, 10, ensure_latin1(line))
 
+    body = ""
+    if message.is_multipart():
+        for part in message.walk():
+            if part.get_content_type() == "text/plain" and not part.get_content_disposition():
+                body += part.get_content()
+    else:
+        body = message.get_content()
     pdf.multi_cell(0, 10, ensure_latin1(body.strip()))
     # ``fpdf`` produz saída em texto Latin-1. Alguns emails podem conter
     # caracteres fora desse intervalo (por exemplo, travessões “–”). Ao
@@ -108,29 +115,6 @@ def _render_pdf(header_lines: list[str], body: str) -> bytes:
     return pdf.output(dest="S").encode("latin-1", errors="replace")
 
 
-def converter_eml_para_pdf(eml_bytes: bytes) -> bytes:
-    """Convert raw EML bytes to PDF bytes."""
-    message = BytesParser(policy=policy.default).parsebytes(eml_bytes)
-
-    header_lines = [
-        f"From: {message.get('From', '')}",
-        f"To: {message.get('To', '')}",
-        f"Subject: {message.get('Subject', '')}",
-        f"Date: {message.get('Date', '')}",
-        "",
-    ]
-
-    body = ""
-    if message.is_multipart():
-        for part in message.walk():
-            if part.get_content_type() == "text/plain" and not part.get_content_disposition():
-                body += part.get_content()
-    else:
-        body = message.get_content()
-
-    return _render_pdf(header_lines, body)
-
-
 def converter_msg_para_pdf(msg_bytes: bytes) -> bytes:
     """Convert Outlook ``.msg`` files to PDF bytes."""
     with tempfile.NamedTemporaryFile(suffix=".msg", delete=False) as tmp:
@@ -138,6 +122,10 @@ def converter_msg_para_pdf(msg_bytes: bytes) -> bytes:
         tmp_path = tmp.name
     try:
         message = extract_msg.Message(tmp_path)
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.set_font("Arial", size=12)
 
         header_lines = [
             f"From: {message.sender or ''}",
@@ -146,10 +134,12 @@ def converter_msg_para_pdf(msg_bytes: bytes) -> bytes:
             f"Date: {message.date or ''}",
             "",
         ]
+        for line in header_lines:
+            pdf.multi_cell(0, 10, ensure_latin1(line))
 
         body = message.body or ""
-
-        return _render_pdf(header_lines, body)
+        pdf.multi_cell(0, 10, ensure_latin1(body.strip()))
+        return pdf.output(dest="S").encode("latin-1", errors="replace")
     finally:
         try:
             os.remove(tmp_path)
