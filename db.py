@@ -7,12 +7,14 @@ database dependencies.
 """
 
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any, Iterable, Sequence
 
 import bcrypt
+from functools import lru_cache
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
@@ -36,6 +38,22 @@ engine = create_engine(
 )
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
+
+@lru_cache(maxsize=None)
+def get_table_columns(table: str) -> set[str]:
+    """Return the column names of ``table`` using PRAGMA table_info."""
+
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", table):
+        raise ValueError("Nome de tabela inválido")
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"PRAGMA table_info({table})")
+        return {row[1] for row in cursor.fetchall()}
+    finally:
+        conn.close()
 
 
 def _py_casefold(value: object) -> str | None:

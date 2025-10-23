@@ -5,6 +5,7 @@ from fpdf import FPDF
 import base64
 import json
 from collections import defaultdict, OrderedDict
+from functools import lru_cache
 from io import BytesIO
 import os
 import shutil
@@ -37,6 +38,7 @@ from db import (
     get_marca_id,
     get_artigo_catalogo_id,
     obter_processo_id_por_rfq,
+    get_table_columns,
 )
 from services.pdf_service import (
     ensure_latin1,
@@ -72,6 +74,75 @@ def _format_iso_date(value):
             return ""
 
     return dt.strftime("%d/%m/%Y")
+
+
+@lru_cache(maxsize=1)
+def _rfq_schema_info():
+    """Return cached metadata about the ``rfq`` table.
+
+    Older installations of the application stored the RFQ status and date in
+    different column names.  To remain compatible with these databases we
+    inspect the available columns once and reuse that information throughout
+    the application.
+    """
+
+    try:
+        columns = get_table_columns("rfq")
+    except sqlite3.OperationalError:
+        return {
+            "data_column": None,
+            "estado_column": None,
+            "estado_requires_join": False,
+        }
+
+    data_column = None
+    for candidate in ("data_atualizacao", "data", "data_criacao"):
+        if candidate in columns:
+            data_column = candidate
+            break
+
+    if "estado_id" in columns:
+        estado_column = "estado_id"
+        estado_requires_join = True
+    elif "estado" in columns:
+        estado_column = "estado"
+        estado_requires_join = False
+    else:
+        estado_column = None
+        estado_requires_join = False
+
+    return {
+        "data_column": data_column,
+        "estado_column": estado_column,
+        "estado_requires_join": estado_requires_join,
+    }
+
+
+def _rfq_data_expression(alias: str | None = None) -> str | None:
+    """Return the fully-qualified expression for the RFQ date column."""
+
+    column = _rfq_schema_info()["data_column"]
+    if column is None:
+        return None
+    return f"{alias}.{column}" if alias else column
+
+
+def _rfq_estado_clause(
+    rfq_alias: str = "rfq",
+    estado_alias: str = "estado",
+) -> tuple[str, str]:
+    """Return the JOIN clause and expression for the RFQ state."""
+
+    info = _rfq_schema_info()
+    column = info["estado_column"]
+    if column is None:
+        return "", "'pendente'"
+    if info["estado_requires_join"]:
+        return (
+            f"LEFT JOIN estado {estado_alias} ON {rfq_alias}.{column} = {estado_alias}.id",
+            f"COALESCE({estado_alias}.nome, 'pendente')",
+        )
+    return "", f"COALESCE({rfq_alias}.{column}, 'pendente')"
 
 
 def limitar_descricao_artigo(texto: str, max_linhas: int = 2) -> str:
@@ -1490,12 +1561,17 @@ def obter_todas_cotacoes(
         conn = obter_conexao()
         c = conn.cursor()
 
-        base_query = """
+        data_expr = _rfq_data_expression("rfq")
+        data_select = data_expr or "NULL"
+        estado_join, estado_expr = _rfq_estado_clause("rfq", "estado")
+        estado_join_clause = f"            {estado_join}\n" if estado_join else ""
+
+        base_query = f"""
             SELECT rfq.id,
                    rfq.processo_id,
-                   rfq.data_atualizacao,
+                   {data_select} AS data_atualizacao,
                    COALESCE(fornecedor.nome, 'Fornecedor desconhecido'),
-                   COALESCE(estado.nome, 'pendente'),
+                   {estado_expr} AS estado_nome,
                    COALESCE(processo.numero, 'Sem processo'),
                    COALESCE(processo.ref_cliente, ''),
                    COUNT(artigo.id) as num_artigos,
@@ -1507,8 +1583,7 @@ def obter_todas_cotacoes(
             LEFT JOIN processo ON rfq.processo_id = processo.id
             LEFT JOIN cliente ON processo.cliente_id = cliente.id
             LEFT JOIN utilizador u ON processo.utilizador_id = u.id
-            LEFT JOIN estado ON rfq.estado_id = estado.id
-            LEFT JOIN artigo ON rfq.id = artigo.rfq_id
+{estado_join_clause}            LEFT JOIN artigo ON rfq.id = artigo.rfq_id
         """
 
         conditions: list[str] = []
@@ -1519,7 +1594,7 @@ def obter_todas_cotacoes(
             params.append(f"%{filtro_referencia}%")
 
         if estado:
-            conditions.append("COALESCE(estado.nome, 'pendente') = ?")
+            conditions.append(f"{estado_expr} = ?")
             params.append(estado)
 
         if fornecedor_id:
@@ -1533,7 +1608,10 @@ def obter_todas_cotacoes(
         if conditions:
             base_query += " WHERE " + " AND ".join(conditions)
 
-        base_query += " GROUP BY rfq.id ORDER BY rfq.data_atualizacao DESC"
+        if data_expr:
+            base_query += f" GROUP BY rfq.id ORDER BY {data_expr} DESC"
+        else:
+            base_query += " GROUP BY rfq.id ORDER BY rfq.id DESC"
 
         query = base_query
         query_params = list(params)
@@ -1569,8 +1647,9 @@ def obter_todas_cotacoes(
                 SELECT COUNT(*)
                   FROM rfq
                   LEFT JOIN processo ON rfq.processo_id = processo.id
-                  LEFT JOIN estado ON rfq.estado_id = estado.id
             """
+            if estado_join:
+                count_query += f"\n                  {estado_join}"
             if conditions:
                 count_query += " WHERE " + " AND ".join(conditions)
             c.execute(count_query, params)
@@ -1591,12 +1670,16 @@ def obter_detalhes_cotacao(rfq_id):
         conn = obter_conexao()
         c = conn.cursor()
         
+        data_expr = _rfq_data_expression("rfq") or "NULL"
+        estado_join, estado_expr = _rfq_estado_clause("rfq", "estado")
+        estado_join_clause = f"              {estado_join}\n" if estado_join else ""
+
         c.execute(
-            """
+            f"""
             SELECT rfq.id,
                    rfq.fornecedor_id,
-                   rfq.data_atualizacao,
-                   COALESCE(estado.nome, 'pendente'),
+                   {data_expr} AS data_atualizacao,
+                   {estado_expr} AS estado_nome,
                    COALESCE(processo.ref_cliente, ''),
                    COALESCE(processo.numero, ''),
                    COALESCE(cliente.nome, ''),
@@ -1609,8 +1692,7 @@ def obter_detalhes_cotacao(rfq_id):
               LEFT JOIN fornecedor ON rfq.fornecedor_id = fornecedor.id
               LEFT JOIN processo ON rfq.processo_id = processo.id
               LEFT JOIN cliente ON processo.cliente_id = cliente.id
-              LEFT JOIN estado ON rfq.estado_id = estado.id
-             WHERE rfq.id = ?
+{estado_join_clause}             WHERE rfq.id = ?
         """,
             (rfq_id,)
         )
@@ -1965,8 +2047,11 @@ def obter_respostas_por_processo(processo_id):
     conn = obter_conexao()
     c = conn.cursor()
 
+    estado_join, estado_expr = _rfq_estado_clause("r", "e")
+    estado_join_clause = f"        {estado_join}\n" if estado_join else ""
+
     c.execute(
-        """
+        f"""
         SELECT pa.id,
                pa.artigo_num,
                pa.descricao,
@@ -1983,14 +2068,13 @@ def obter_respostas_por_processo(processo_id):
                rf.fornecedor_id,
                f.nome as fornecedor_nome,
                r.id as rfq_id,
-               COALESCE(e.nome, 'pendente') AS estado_nome,
+               {estado_expr} AS estado_nome,
                rf.validade_preco
         FROM processo_artigo pa
         LEFT JOIN unidade u ON pa.unidade_id = u.id
         LEFT JOIN artigo a ON a.processo_artigo_id = pa.id
         LEFT JOIN rfq r ON a.rfq_id = r.id
-        LEFT JOIN estado e ON r.estado_id = e.id
-        LEFT JOIN resposta_fornecedor rf ON rf.artigo_id = a.id AND rf.rfq_id = r.id
+{estado_join_clause}        LEFT JOIN resposta_fornecedor rf ON rf.artigo_id = a.id AND rf.rfq_id = r.id
         LEFT JOIN fornecedor f ON rf.fornecedor_id = f.id
         WHERE pa.processo_id = ?
         ORDER BY pa.ordem, fornecedor_nome
@@ -2065,13 +2149,17 @@ def obter_respostas_por_processo(processo_id):
                 }
             )
 
+    estado_join_fornecedor, estado_expr_fornecedor = _rfq_estado_clause("rfq", "e")
+    estado_join_fornecedor_clause = (
+        f"          {estado_join_fornecedor}\n" if estado_join_fornecedor else ""
+    )
+
     c.execute(
-        """
-        SELECT rfq.fornecedor_id, fornecedor.nome, COALESCE(estado.nome, 'pendente')
+        f"""
+        SELECT rfq.fornecedor_id, fornecedor.nome, {estado_expr_fornecedor}
           FROM rfq
           LEFT JOIN fornecedor ON fornecedor.id = rfq.fornecedor_id
-          LEFT JOIN estado ON rfq.estado_id = estado.id
-         WHERE rfq.processo_id = ?
+{estado_join_fornecedor_clause}         WHERE rfq.processo_id = ?
         """,
         (processo_id,),
     )
@@ -2193,12 +2281,17 @@ def obter_detalhes_processo(processo_id: int):
         for artigo_row in c.fetchall()
     ]
 
+    data_expr = _rfq_data_expression("rfq") or "NULL"
+    estado_join, estado_expr = _rfq_estado_clause("rfq", "estado")
+    estado_join_clause = f"          {estado_join}\n" if estado_join else ""
+    order_expr = data_expr if data_expr else "rfq.id"
+
     c.execute(
-        """
+        f"""
         SELECT rfq.id,
                COALESCE(processo.ref_cliente, ''),
-               COALESCE(estado.nome, 'pendente'),
-               rfq.data_atualizacao,
+               {estado_expr},
+               {data_expr} AS data_atualizacao,
                COALESCE(fornecedor.nome, 'Fornecedor desconhecido') AS fornecedor_nome,
                '' AS observacoes,
                COALESCE(cliente.nome, ''),
@@ -2208,9 +2301,8 @@ def obter_detalhes_processo(processo_id: int):
           LEFT JOIN fornecedor ON fornecedor.id = rfq.fornecedor_id
           LEFT JOIN processo ON processo.id = rfq.processo_id
           LEFT JOIN cliente ON cliente.id = processo.cliente_id
-          LEFT JOIN estado ON rfq.estado_id = estado.id
-         WHERE rfq.processo_id = ?
-         ORDER BY fornecedor_nome COLLATE NOCASE, rfq.data_atualizacao
+{estado_join_clause}         WHERE rfq.processo_id = ?
+         ORDER BY fornecedor_nome COLLATE NOCASE, {order_expr}
         """,
         (processo_id,),
     )
@@ -2491,8 +2583,9 @@ def enviar_email_pedido_fornecedor(rfq_id):
         # Buscar fornecedor (nome+email), referência e número de processo
         conn = obter_conexao()
         c = conn.cursor()
+        data_expr = _rfq_data_expression("r") or "NULL"
         c.execute(
-            """
+            f"""
             SELECT f.nome,
                    f.email,
                    COALESCE(p.ref_cliente, ''),
@@ -2500,7 +2593,7 @@ def enviar_email_pedido_fornecedor(rfq_id):
                    r.cliente_final_nome,
                    r.cliente_final_pais,
                    r.fornecedor_id,
-                   r.data_atualizacao
+                   {data_expr} AS data_atualizacao
             FROM rfq r
             JOIN fornecedor f ON r.fornecedor_id = f.id
             LEFT JOIN processo p ON r.processo_id = p.id
@@ -3609,10 +3702,11 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
         c = conn.cursor()
 
         # 1. Obter dados da RFQ e do cliente
+        data_expr = _rfq_data_expression("rfq") or "NULL"
         c.execute(
-            """
+            f"""
             SELECT COALESCE(p.ref_cliente, ''),
-                   rfq.data_atualizacao,
+                   {data_expr} AS data_atualizacao,
                    COALESCE(c.nome, ''),
                    COALESCE(c.email, ''),
                    ce.nome AS empresa_nome,
@@ -4745,24 +4839,33 @@ def obter_estatisticas_db(utilizador_id: int | None = None):
             )
             stats["artigo"] = c.fetchone()[0]
 
+        estado_join_stats, estado_expr_stats = _rfq_estado_clause("r", "e")
+        from_clause_base = "FROM rfq r"
+        from_clause_with_estado = (
+            from_clause_base
+            + (f"\n                  {estado_join_stats}" if estado_join_stats else "")
+        )
+        from_clause_with_processo = (
+            "FROM rfq r\n                  JOIN processo p ON r.processo_id = p.id"
+        )
+        if estado_join_stats:
+            from_clause_with_processo += f"\n                  {estado_join_stats}"
+
         if utilizador_id is None:
             c.execute(
-                """
+                f"""
                 SELECT COUNT(*)
-                FROM rfq r
-                LEFT JOIN estado e ON r.estado_id = e.id
-                WHERE COALESCE(e.nome, 'pendente') = 'pendente'
+                  {from_clause_with_estado}
+                 WHERE {estado_expr_stats} = 'pendente'
                 """
             )
             stats["rfq_pendentes"] = c.fetchone()[0]
         else:
             c.execute(
-                """
+                f"""
                 SELECT COUNT(*)
-                  FROM rfq r
-                  JOIN processo p ON r.processo_id = p.id
-                  LEFT JOIN estado e ON r.estado_id = e.id
-                 WHERE COALESCE(e.nome, 'pendente') = 'pendente'
+                  {from_clause_with_processo}
+                 WHERE {estado_expr_stats} = 'pendente'
                    AND p.utilizador_id = ?
                 """,
                 (utilizador_id,),
@@ -4771,22 +4874,19 @@ def obter_estatisticas_db(utilizador_id: int | None = None):
 
         if utilizador_id is None:
             c.execute(
-                """
+                f"""
                 SELECT COUNT(*)
-                FROM rfq r
-                LEFT JOIN estado e ON r.estado_id = e.id
-                WHERE COALESCE(e.nome, 'pendente') = 'respondido'
+                  {from_clause_with_estado}
+                 WHERE {estado_expr_stats} = 'respondido'
                 """
             )
             stats["rfq_respondidas"] = c.fetchone()[0]
         else:
             c.execute(
-                """
+                f"""
                 SELECT COUNT(*)
-                  FROM rfq r
-                  JOIN processo p ON r.processo_id = p.id
-                  LEFT JOIN estado e ON r.estado_id = e.id
-                 WHERE COALESCE(e.nome, 'pendente') = 'respondido'
+                  {from_clause_with_processo}
+                 WHERE {estado_expr_stats} = 'respondido'
                    AND p.utilizador_id = ?
                 """,
                 (utilizador_id,),
@@ -6762,14 +6862,19 @@ elif menu_option == "📊 Relatórios":
                 conn = obter_conexao()
                 c = conn.cursor()
                 
+                estado_join_dashboard, estado_expr_dashboard = _rfq_estado_clause("r", "e")
+                estado_join_dashboard_clause = (
+                    f"                    {estado_join_dashboard}\n"
+                    if estado_join_dashboard
+                    else ""
+                )
                 c.execute(
-                    """
+                    f"""
                     SELECT COUNT(*) as total,
-                           SUM(CASE WHEN COALESCE(e.nome, 'pendente') = 'respondido' THEN 1 ELSE 0 END) as respondidas,
-                           SUM(CASE WHEN COALESCE(e.nome, 'pendente') = 'pendente' THEN 1 ELSE 0 END) as pendentes
+                           SUM(CASE WHEN {estado_expr_dashboard} = 'respondido' THEN 1 ELSE 0 END) as respondidas,
+                           SUM(CASE WHEN {estado_expr_dashboard} = 'pendente' THEN 1 ELSE 0 END) as pendentes
                     FROM rfq r
-                    LEFT JOIN estado e ON r.estado_id = e.id
-                    WHERE r.fornecedor_id = ?
+{estado_join_dashboard_clause}                    WHERE r.fornecedor_id = ?
                     """,
                     (fornecedor_sel[0],),
                 )
@@ -6835,15 +6940,18 @@ elif menu_option == "📊 Relatórios":
                 conn = obter_conexao()
                 c = conn.cursor()
 
+                estado_join_user, estado_expr_user = _rfq_estado_clause("r", "e")
+                estado_join_user_clause = (
+                    f"                      {estado_join_user}\n" if estado_join_user else ""
+                )
                 c.execute(
-                    """
+                    f"""
                     SELECT COUNT(*) as total,
-                           SUM(CASE WHEN COALESCE(e.nome, 'pendente') = 'respondido' THEN 1 ELSE 0 END) as respondidas,
-                           SUM(CASE WHEN COALESCE(e.nome, 'pendente') = 'pendente' THEN 1 ELSE 0 END) as pendentes
+                           SUM(CASE WHEN {estado_expr_user} = 'respondido' THEN 1 ELSE 0 END) as respondidas,
+                           SUM(CASE WHEN {estado_expr_user} = 'pendente' THEN 1 ELSE 0 END) as pendentes
                       FROM rfq r
                       JOIN processo p ON r.processo_id = p.id
-                      LEFT JOIN estado e ON r.estado_id = e.id
-                     WHERE p.utilizador_id = ?
+{estado_join_user_clause}                     WHERE p.utilizador_id = ?
                     """,
                     (user_sel[0],),
                 )
@@ -6889,82 +6997,97 @@ elif menu_option == "📊 Relatórios":
         conn = obter_conexao()
         c = conn.cursor()
 
-        c.execute(
-            """
-            SELECT DATE(data_atualizacao) AS data,
-                   COUNT(*)
-              FROM rfq
-             GROUP BY DATE(data_atualizacao)
-             ORDER BY DATE(data_atualizacao)
-            """
-        )
-        rows = c.fetchall()
-        if rows:
-            df = pd.DataFrame(rows, columns=["data", "total"])
-            df["data"] = pd.to_datetime(
-                df["data"].astype(str).str.replace("T", " ", regex=False),
-                errors="coerce",
+        data_column_plain = _rfq_data_expression()  # coluna sem alias
+        data_column_alias = _rfq_data_expression("r")
+
+        if data_column_plain:
+            c.execute(
+                f"""
+                SELECT DATE({data_column_plain}) AS data,
+                       COUNT(*)
+                  FROM rfq
+                 GROUP BY DATE({data_column_plain})
+                 ORDER BY DATE({data_column_plain})
+                """
             )
-            df = df.dropna(subset=["data"]).set_index("data").sort_index()
-            df["cumulativo"] = df["total"].cumsum()
-            st.markdown("**Cotações por Dia (Cumulativo)**")
-            st.line_chart(df["cumulativo"], height=300)
+            rows = c.fetchall()
+            if rows:
+                df = pd.DataFrame(rows, columns=["data", "total"])
+                df["data"] = pd.to_datetime(
+                    df["data"].astype(str).str.replace("T", " ", regex=False),
+                    errors="coerce",
+                )
+                df = df.dropna(subset=["data"]).set_index("data").sort_index()
+                df["cumulativo"] = df["total"].cumsum()
+                st.markdown("**Cotações por Dia (Cumulativo)**")
+                st.line_chart(df["cumulativo"], height=300)
+            else:
+                st.info("Sem dados diários")
         else:
-            st.info("Sem dados diários")
+            st.info("Sem coluna de data disponível para estatísticas diárias")
 
-        c.execute(
-            """
-            SELECT DATE(r.data_atualizacao) AS data,
-                   SUM(rf.preco_venda * rf.quantidade_final) AS total
-              FROM rfq r
-              JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
-             GROUP BY DATE(r.data_atualizacao)
-             ORDER BY DATE(r.data_atualizacao)
-            """
-        )
-        rows = c.fetchall()
-        if rows:
-            df_val = pd.DataFrame(rows, columns=["data", "total"])
-            df_val["data"] = pd.to_datetime(
-                df_val["data"].astype(str).str.replace("T", " ", regex=False),
-                errors="coerce",
+        if data_column_alias:
+            c.execute(
+                f"""
+                SELECT DATE({data_column_alias}) AS data,
+                       SUM(rf.preco_venda * rf.quantidade_final) AS total
+                  FROM rfq r
+                  JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
+                 GROUP BY DATE({data_column_alias})
+                 ORDER BY DATE({data_column_alias})
+                """
             )
-            df_val = df_val.dropna(subset=["data"]).set_index("data").sort_index()
-            df_val["cumulativo"] = df_val["total"].cumsum()
-            st.markdown("**Preço de Venda por Dia (Cumulativo)**")
-            st.line_chart(df_val["cumulativo"], height=300)
+            rows = c.fetchall()
+            if rows:
+                df_val = pd.DataFrame(rows, columns=["data", "total"])
+                df_val["data"] = pd.to_datetime(
+                    df_val["data"].astype(str).str.replace("T", " ", regex=False),
+                    errors="coerce",
+                )
+                df_val = df_val.dropna(subset=["data"]).set_index("data").sort_index()
+                df_val["cumulativo"] = df_val["total"].cumsum()
+                st.markdown("**Preço de Venda por Dia (Cumulativo)**")
+                st.line_chart(df_val["cumulativo"], height=300)
+            else:
+                st.info("Sem dados de preço de venda diário")
         else:
-            st.info("Sem dados de preço de venda diário")
+            st.info("Sem coluna de data para preço de venda diário")
 
-        c.execute(
-            """
-            SELECT strftime('%Y-%m', data_atualizacao) AS mes,
-                   COUNT(*)
-              FROM rfq
-             GROUP BY mes
-             ORDER BY mes
-            """
-        )
-        rows = c.fetchall()
-        if rows:
-            df_mes = pd.DataFrame(rows, columns=["mes", "total"])
-            df_mes["cumulativo"] = df_mes["total"].cumsum()
-            st.markdown("**Cotações por Mês (Cumulativo)**")
-            st.line_chart(df_mes.set_index("mes")["cumulativo"], height=300)
+        if data_column_plain:
+            c.execute(
+                f"""
+                SELECT strftime('%Y-%m', {data_column_plain}) AS mes,
+                       COUNT(*)
+                  FROM rfq
+                 GROUP BY mes
+                 ORDER BY mes
+                """
+            )
+            rows = c.fetchall()
+            if rows:
+                df_mes = pd.DataFrame(rows, columns=["mes", "total"])
+                df_mes["cumulativo"] = df_mes["total"].cumsum()
+                st.markdown("**Cotações por Mês (Cumulativo)**")
+                st.line_chart(df_mes.set_index("mes")["cumulativo"], height=300)
+            else:
+                st.info("Sem dados mensais")
         else:
-            st.info("Sem dados mensais")
+            st.info("Sem coluna de data disponível para estatísticas mensais")
 
-        c.execute(
-            """
-            SELECT strftime('%Y-%m', r.data_atualizacao) AS mes,
-                   SUM(rf.preco_venda * rf.quantidade_final) AS total
-              FROM rfq r
-              JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
-             GROUP BY mes
-             ORDER BY mes
-            """
-        )
-        rows = c.fetchall()
+        if data_column_alias:
+            c.execute(
+                f"""
+                SELECT strftime('%Y-%m', {data_column_alias}) AS mes,
+                       SUM(rf.preco_venda * rf.quantidade_final) AS total
+                  FROM rfq r
+                  JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
+                 GROUP BY mes
+                 ORDER BY mes
+                """
+            )
+            rows = c.fetchall()
+        else:
+            rows = []
         conn.close()
         if rows:
             df_val_mes = pd.DataFrame(rows, columns=["mes", "total"])
