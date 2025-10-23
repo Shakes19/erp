@@ -42,7 +42,10 @@ def test_gerar_e_armazenar_pdf_salva_pdf(tmp_path, monkeypatch):
 
     conn = db_module.get_connection()
     c = conn.cursor()
-    c.execute("SELECT pdf_data FROM pdf_storage WHERE rfq_id = ? AND tipo_pdf = 'pedido'", (str(rfq_id),))
+    c.execute(
+        "SELECT pdf_data FROM pdf_storage WHERE processo_id = ? AND tipo_pdf = 'pedido'",
+        (processo_id,),
+    )
     row = c.fetchone()
     conn.close()
 

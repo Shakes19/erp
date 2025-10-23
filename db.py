@@ -223,6 +223,37 @@ def ensure_unidade(nome: str, cursor: sqlite3.Cursor | None = None) -> int:
             conn.close()
 
 
+def obter_processo_id_por_rfq(
+    rfq_id: int | str | None, *, cursor: sqlite3.Cursor | None = None
+) -> int | None:
+    """Return the ``processo_id`` associado a ``rfq_id`` se existir."""
+
+    if rfq_id is None:
+        return None
+
+    try:
+        rfq_int = int(rfq_id)
+    except (TypeError, ValueError):
+        return None
+
+    own_connection = cursor is None
+    conn: sqlite3.Connection | None = None
+
+    if own_connection:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+    assert cursor is not None
+
+    try:
+        cursor.execute("SELECT processo_id FROM rfq WHERE id = ?", (rfq_int,))
+        row = cursor.fetchone()
+        return row[0] if row else None
+    finally:
+        if own_connection and conn is not None:
+            conn.close()
+
+
 def get_marca_id(marca: str, cursor: sqlite3.Cursor | None = None) -> int | None:
     """Return the ``marca`` identifier by normalized name."""
 
@@ -1332,18 +1363,65 @@ def criar_base_dados_completa():
         """
     )
 
-    # Tabela para armazenamento de PDFs
+    # Tabela para armazenamento de PDFs (associada ao processo)
+    c.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='pdf_storage'"
+    )
+    if c.fetchone():
+        c.execute("PRAGMA table_info(pdf_storage)")
+        pdf_cols = [row[1] for row in c.fetchall()]
+        if pdf_cols and "processo_id" not in pdf_cols:
+            c.execute("ALTER TABLE pdf_storage RENAME TO pdf_storage_legacy")
+            c.execute(
+                """
+                CREATE TABLE pdf_storage (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    processo_id INTEGER NOT NULL,
+                    tipo_pdf TEXT NOT NULL,
+                    pdf_data BLOB NOT NULL,
+                    data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
+                    tamanho_bytes INTEGER,
+                    nome_ficheiro TEXT,
+                    UNIQUE(processo_id, tipo_pdf),
+                    FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE CASCADE
+                )
+                """
+            )
+            c.execute(
+                """
+                INSERT OR REPLACE INTO pdf_storage (
+                    processo_id,
+                    tipo_pdf,
+                    pdf_data,
+                    data_criacao,
+                    tamanho_bytes,
+                    nome_ficheiro
+                )
+                SELECT rfq.processo_id,
+                       legacy.tipo_pdf,
+                       legacy.pdf_data,
+                       legacy.data_criacao,
+                       legacy.tamanho_bytes,
+                       legacy.nome_ficheiro
+                  FROM pdf_storage_legacy AS legacy
+                  JOIN rfq ON CAST(legacy.rfq_id AS INTEGER) = rfq.id
+                 WHERE rfq.processo_id IS NOT NULL
+                """
+            )
+            c.execute("DROP TABLE pdf_storage_legacy")
+
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS pdf_storage (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            rfq_id TEXT NOT NULL,
+            processo_id INTEGER NOT NULL,
             tipo_pdf TEXT NOT NULL,
             pdf_data BLOB NOT NULL,
             data_criacao TEXT DEFAULT CURRENT_TIMESTAMP,
             tamanho_bytes INTEGER,
             nome_ficheiro TEXT,
-            UNIQUE(rfq_id, tipo_pdf)
+            UNIQUE(processo_id, tipo_pdf),
+            FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE CASCADE
         )
         """
     )
