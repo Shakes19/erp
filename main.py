@@ -51,6 +51,8 @@ from services.pdf_service import (
 from services.email_service import (
     clear_email_cache,
     get_system_email_config,
+    load_email_layout,
+    save_email_layout,
     send_email,
 )
 
@@ -799,7 +801,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
             }
             st.session_state["show_smart_success_dialog"] = True
             reset_smart_quotation_state()
-            st.session_state.pop("smart_pdf", None)
+            st.session_state["smart_pdf"] = None
             st.rerun()
 
         return True
@@ -976,6 +978,7 @@ def mostrar_dialogo_sucesso_smart() -> None:
         if st.button("Fechar"):
             st.session_state.pop("smart_success_data", None)
             st.session_state["show_smart_success_dialog"] = False
+            st.session_state["smart_pdf"] = None
             st.rerun()
 
     _dialog()
@@ -2626,22 +2629,43 @@ def enviar_email_orcamento(
             if row:
                 observacoes = row[0]
 
-        corpo = f"""
-        Dear {nome_cliente},
+        layout_email = load_email_layout("cotacao_cliente")
+        subject_template = layout_email.get("subject", "Quotation {numero_cotacao}{referencia_cliente_sufixo}")
+        body_template = layout_email.get("body", "")
 
-        Please find attached our offer No {numero_cotacao}
-        """
-        if observacoes:
-            corpo += f"{observacoes}\n\n"
-        corpo += """We remain at your disposal for any further clarification.
+        referencia_sufixo = f" ({referencia_cliente})" if referencia_cliente else ""
+        observacoes_bloco = f"{observacoes}\n\n" if observacoes else ""
 
-        Best regards,
-                {nome_utilizador}
-        """
+        class _SafeDict(dict):
+            def __missing__(self, key):  # type: ignore[override]
+                return ""
 
-        assunto = f"Quotation {numero_cotacao}"
-        if referencia_cliente:
-            assunto += f" ({referencia_cliente})"
+        contexto_email = _SafeDict(
+            {
+                "nome_cliente": nome_cliente or "",
+                "numero_cotacao": numero_cotacao or "",
+                "referencia_cliente": referencia_cliente or "",
+                "referencia_cliente_sufixo": referencia_sufixo,
+                "nome_utilizador": nome_utilizador or "",
+                "observacoes": observacoes or "",
+                "observacoes_bloco": observacoes_bloco,
+            }
+        )
+
+        corpo = body_template.format_map(contexto_email) if body_template else ""
+        if not corpo.strip():
+            corpo = (
+                "Dear {nome_cliente},\n\n"
+                "Please find attached our offer No {numero_cotacao}.\n\n"
+                "{observacoes_bloco}"
+                "We remain at your disposal for any further clarification.\n\n"
+                "Best regards,\n"
+                "{nome_utilizador}"
+            ).format_map(contexto_email)
+
+        assunto = subject_template.format_map(contexto_email) if subject_template else ""
+        if not assunto.strip():
+            assunto = f"Quotation {numero_cotacao}{referencia_sufixo}"
 
         print(f"🚀 Tentando enviar email para {email_destino}...")
         send_email(
@@ -2805,37 +2829,61 @@ def enviar_email_pedido_fornecedor(rfq_id):
         referencia_interna = numero_processo or referencia
         referencia_texto = referencia if referencia else "—"
         processo_texto = numero_processo if numero_processo else "—"
-        corpo = f"""Request for Quotation – {referencia_interna}
-
-Dear {fornecedor_nome} Team,
-
-Please find attached our Request for Quotation (RFQ) for internal process {processo_texto} (Reference: {referencia_texto}).
-
-Kindly provide us with the following details:
-- Unit price
-- Delivery time
-- HS Code
-- Country of origin
-- Weight
-"""
-
         detalhes_extra: list[str] = []
         if cliente_final_nome:
             detalhes_extra.append(f"- Final client: {cliente_final_nome}")
         if cliente_final_pais:
             detalhes_extra.append(f"- Final client country: {cliente_final_pais}")
 
-        if detalhes_extra:
-            corpo += "\nAdditional information provided:\n" + "\n".join(detalhes_extra) + "\n"
+        detalhes_extra_texto = "\n".join(detalhes_extra)
+        if detalhes_extra_texto:
+            detalhes_extra_texto = (
+                "Additional information provided:\n"
+                f"{detalhes_extra_texto}\n"
+            )
 
-        corpo += """
+        layout_email = load_email_layout("pedido_fornecedor")
+        subject_template = layout_email.get("subject", "Request for Quotation – {referencia_interna}")
+        body_template = layout_email.get("body", "")
 
-We look forward to receiving your quotation.
-Thank you in advance for your prompt response.
+        class _SafeDict(dict):
+            def __missing__(self, key):  # type: ignore[override]
+                return ""
 
-{nome_utilizador}
-"""
-        assunto = f"Request for Quotation – {referencia_interna}"
+        contexto_email = _SafeDict(
+            {
+                "fornecedor_nome": fornecedor_nome or "",
+                "referencia_interna": referencia_interna or "",
+                "processo_texto": processo_texto or "",
+                "referencia_texto": referencia_texto or "",
+                "nome_utilizador": nome_utilizador or "",
+                "detalhes_extra": detalhes_extra_texto,
+                "detalhes_extra_bloco": detalhes_extra_texto + "\n" if detalhes_extra_texto else "",
+            }
+        )
+
+        corpo = body_template.format_map(contexto_email) if body_template else ""
+        if not corpo.strip():
+            corpo = (
+                "Request for Quotation – {referencia_interna}\n\n"
+                "Dear {fornecedor_nome} Team,\n\n"
+                "Please find attached our Request for Quotation (RFQ) for internal process {processo_texto}"
+                " (Reference: {referencia_texto}).\n\n"
+                "Kindly provide us with the following details:\n"
+                "- Unit price\n"
+                "- Delivery time\n"
+                "- HS Code\n"
+                "- Country of origin\n"
+                "- Weight\n\n"
+                "{detalhes_extra_bloco}"
+                "We look forward to receiving your quotation.\n"
+                "Thank you in advance for your prompt response.\n\n"
+                "{nome_utilizador}"
+            ).format_map(contexto_email)
+
+        assunto = subject_template.format_map(contexto_email) if subject_template else ""
+        if not assunto.strip():
+            assunto = f"Request for Quotation – {referencia_interna}"
         pdf_nome = referencia_interna.replace('/', '-') if referencia_interna else referencia_texto
         pdf_filename = f"pedido_{pdf_nome}.pdf" if pdf_nome else "pedido.pdf"
 
@@ -5623,6 +5671,9 @@ elif menu_option == "🤖 Smart Quotation":
         accept_multiple_files=False,
         key="smart_pdf",
     )
+    if upload_pdf and st.session_state.get("show_smart_success_dialog"):
+        st.session_state.pop("smart_success_data", None)
+        st.session_state["show_smart_success_dialog"] = False
     if upload_pdf:
         anexos_processados = processar_upload_pdf(upload_pdf)
         if anexos_processados:
@@ -7581,6 +7632,7 @@ elif menu_option == "⚙️ Configurações":
             tab_unidades,
             tab_email,
             tab_backup,
+            tab_layout_email,
             tab_layout,
             tab_empresa,
         ) = st.tabs([
@@ -7590,6 +7642,7 @@ elif menu_option == "⚙️ Configurações":
             "Unidades",
             "Email",
             "Backup",
+            "Layout Email",
             "Layout PDF",
             "Dados da Empresa",
         ])
@@ -8302,7 +8355,70 @@ elif menu_option == "⚙️ Configurações":
             st.caption(
                 "Altere textos, tamanhos de letra e posições editando o JSON acima."
             )
-    
+
+        with tab_layout_email:
+            st.subheader("Layout dos Emails")
+            opcoes_email = {
+                "cotacao_cliente": "Envio de cotação ao cliente",
+                "pedido_fornecedor": "Pedido de cotação ao fornecedor",
+            }
+            tipo_email = st.selectbox(
+                "Tipo de email",
+                list(opcoes_email.keys()),
+                format_func=lambda key: opcoes_email.get(key, key),
+                key="layout_email_tipo",
+            )
+            configuracao_email = load_email_layout(tipo_email)
+            assunto_atual = configuracao_email.get("subject", "")
+            corpo_atual = configuracao_email.get("body", "")
+            placeholders = {
+                "cotacao_cliente": [
+                    "{nome_cliente}",
+                    "{numero_cotacao}",
+                    "{referencia_cliente}",
+                    "{referencia_cliente_sufixo}",
+                    "{observacoes}",
+                    "{observacoes_bloco}",
+                    "{nome_utilizador}",
+                ],
+                "pedido_fornecedor": [
+                    "{fornecedor_nome}",
+                    "{referencia_interna}",
+                    "{processo_texto}",
+                    "{referencia_texto}",
+                    "{detalhes_extra}",
+                    "{detalhes_extra_bloco}",
+                    "{nome_utilizador}",
+                ],
+            }
+
+            with st.form(f"email_layout_form_{tipo_email}"):
+                assunto_input = st.text_input(
+                    "Assunto (pode utilizar variáveis entre chavetas)",
+                    assunto_atual,
+                )
+                corpo_input = st.text_area(
+                    "Corpo do email",
+                    corpo_atual,
+                    height=360,
+                )
+                variaveis_disponiveis = ", ".join(placeholders.get(tipo_email, []))
+                st.caption(
+                    "Variáveis disponíveis: "
+                    + (variaveis_disponiveis or "—")
+                )
+                submit_email_layout = st.form_submit_button("💾 Guardar Layout de Email")
+
+            if submit_email_layout:
+                save_email_layout(
+                    tipo_email,
+                    {
+                        "subject": assunto_input,
+                        "body": corpo_input,
+                    },
+                )
+                st.success("Layout de email atualizado com sucesso!")
+
         with tab_empresa:
             st.subheader("Dados da Empresa")
             conn = obter_conexao()

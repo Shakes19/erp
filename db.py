@@ -125,7 +125,8 @@ def get_connection():
 
     conn = engine.raw_connection()
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 15000")
     conn.create_function("PYCASEFOLD", 1, _py_casefold)
     return conn
 

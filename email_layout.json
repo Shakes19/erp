@@ -1,0 +1,10 @@
+{
+  "cotacao_cliente": {
+    "subject": "Quotation {numero_cotacao}{referencia_cliente_sufixo}",
+    "body": "Dear {nome_cliente},\n\nPlease find attached our offer No {numero_cotacao}.\n\n{observacoes_bloco}We remain at your disposal for any further clarification.\n\nBest regards,\n{nome_utilizador}"
+  },
+  "pedido_fornecedor": {
+    "subject": "Request for Quotation – {referencia_interna}",
+    "body": "Request for Quotation – {referencia_interna}\n\nDear {fornecedor_nome} Team,\n\nPlease find attached our Request for Quotation (RFQ) for internal process {processo_texto} (Reference: {referencia_texto}).\n\nKindly provide us with the following details:\n- Unit price\n- Delivery time\n- HS Code\n- Country of origin\n- Weight\n\n{detalhes_extra_bloco}We look forward to receiving your quotation.\nThank you in advance for your prompt response.\n\n{nome_utilizador}"
+  }
+}
