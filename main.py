@@ -5849,6 +5849,8 @@ elif menu_option == "🤖 Smart Quotation":
                     marca_extraida = extrair_primeira_palavra(descricao_guardada)
                     if not marca_extraida:
                         marca_extraida = artigo.get("marca", "") or ""
+                    if marca_extraida and marca_extraida not in marcas_disponiveis:
+                        marca_extraida = ""
                     st.session_state[f"smart_artigos_{idx}_marca"] = marca_extraida
 
 
@@ -5944,16 +5946,17 @@ elif menu_option == "🤖 Smart Quotation":
                         opcao_sentinel = "Selecione uma marca"
                         opcoes_marca = [opcao_sentinel, *marcas_disponiveis]
                         marca_atual = st.session_state.get(marca_key, "").strip()
-                        if marca_atual and marca_atual not in opcoes_marca:
-                            opcoes_marca.append(marca_atual)
+                        if marca_atual and marca_atual not in marcas_disponiveis:
+                            marca_atual = ""
+                            st.session_state[marca_key] = ""
 
-                        if (
-                            marca_widget_key not in st.session_state
-                            or st.session_state[marca_widget_key] not in opcoes_marca
-                        ):
-                            st.session_state[marca_widget_key] = (
-                                marca_atual if marca_atual in opcoes_marca else opcao_sentinel
-                            )
+                        valor_widget_atual = st.session_state.get(marca_widget_key)
+                        if marca_atual and marca_atual in marcas_disponiveis:
+                            if valor_widget_atual != marca_atual:
+                                st.session_state[marca_widget_key] = marca_atual
+                        else:
+                            if valor_widget_atual != opcao_sentinel:
+                                st.session_state[marca_widget_key] = opcao_sentinel
 
                         selecao_marca = st.selectbox(
                             "Marca *",
@@ -7738,14 +7741,14 @@ elif menu_option == "⚙️ Configurações":
 
 
         with tab_gestao_fornecedores:
+            st.subheader("Gestão de Fornecedores")
+
             sub_tab_fornecedores, sub_tab_marcas = st.tabs([
                 "Fornecedores",
                 "Marcas e Margens",
             ])
 
             with sub_tab_fornecedores:
-                st.subheader("Gestão de Fornecedores")
-
                 col1, col2 = st.columns(2)
 
                 with col1:
