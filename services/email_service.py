@@ -6,12 +6,14 @@ dados para evitar duplicação de lógica noutros pontos da aplicação.
 
 from __future__ import annotations
 
+import json
 import smtplib
 import sqlite3
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 from typing import Optional
 
 import streamlit as st
@@ -25,6 +27,79 @@ DEFAULT_SMTP_CONFIG = {
     "use_tls": True,
     "use_ssl": False,
 }
+
+EMAIL_LAYOUT_FILE = Path("email_layout.json")
+
+DEFAULT_EMAIL_LAYOUT = {
+    "cotacao_cliente": {
+        "subject": "Quotation {numero_cotacao}{referencia_cliente_sufixo}",
+        "body": (
+            "Dear {nome_cliente},\n\n"
+            "Please find attached our offer No {numero_cotacao}.\n\n"
+            "{observacoes_bloco}"
+            "We remain at your disposal for any further clarification.\n\n"
+            "Best regards,\n"
+            "{nome_utilizador}"
+        ),
+    },
+    "pedido_fornecedor": {
+        "subject": "Request for Quotation – {referencia_interna}",
+        "body": (
+            "Request for Quotation – {referencia_interna}\n\n"
+            "Dear {fornecedor_nome} Team,\n\n"
+            "Please find attached our Request for Quotation (RFQ) for internal process {processo_texto} "
+            "(Reference: {referencia_texto}).\n\n"
+            "Kindly provide us with the following details:\n"
+            "- Unit price\n"
+            "- Delivery time\n"
+            "- HS Code\n"
+            "- Country of origin\n"
+            "- Weight\n\n"
+            "{detalhes_extra_bloco}"
+            "We look forward to receiving your quotation.\n"
+            "Thank you in advance for your prompt response.\n\n"
+            "{nome_utilizador}"
+        ),
+    },
+}
+
+
+def _load_email_layout_file() -> dict:
+    if not EMAIL_LAYOUT_FILE.exists():
+        return {}
+    try:
+        with EMAIL_LAYOUT_FILE.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+@st.cache_data(show_spinner=False)
+def load_email_layout(tipo: str) -> dict[str, str]:
+    """Load the layout configuration for email ``tipo`` with defaults."""
+
+    defaults = DEFAULT_EMAIL_LAYOUT.get(tipo, {}).copy()
+    stored = _load_email_layout_file().get(tipo, {})
+    if isinstance(stored, dict):
+        defaults.update({k: v for k, v in stored.items() if isinstance(v, str)})
+    return defaults
+
+
+def save_email_layout(tipo: str, config: dict[str, str]) -> None:
+    """Persist updated email layout configuration for ``tipo``."""
+
+    data = _load_email_layout_file()
+    data[tipo] = {
+        "subject": config.get("subject", DEFAULT_EMAIL_LAYOUT.get(tipo, {}).get("subject", "")),
+        "body": config.get("body", DEFAULT_EMAIL_LAYOUT.get(tipo, {}).get("body", "")),
+    }
+    with EMAIL_LAYOUT_FILE.open("w", encoding="utf-8") as handle:
+        json.dump(data, handle, ensure_ascii=False, indent=2)
+    try:
+        load_email_layout.clear()
+    except AttributeError:
+        pass
 
 
 @st.cache_data(show_spinner=False, ttl=60)
