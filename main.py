@@ -538,7 +538,13 @@ def obter_nomes_unidades() -> list[str]:
     nomes = [nome for _, nome in listar_unidades()]
     if not nomes:
         nomes = ["Peças", "Metros", "KG", "Litros", "Caixas", "Paletes"]
-    return nomes
+
+    # Garantir que "Peças" existe e surge como primeira opção,
+    # independentemente da ordem guardada na base de dados.
+    restantes = [nome for nome in nomes if nome != "Peças"]
+    if "Peças" in nomes:
+        return ["Peças", *restantes]
+    return ["Peças", *restantes]
 
 
 def obter_fornecedores_por_marca(marca):
@@ -718,12 +724,9 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
                 )
 
     if rfqs_criados:
-        st.success(
-            f"✅ Cotação {numero_processo} (Ref: {referencia}) criada para {len(rfqs_criados)} fornecedor(es)!"
-        )
-        st.markdown("**Fornecedores notificados:**")
-        for _, fornecedor, _ in rfqs_criados:
-            st.write(f"• {fornecedor[1]}")
+        fornecedores_notificados = [
+            fornecedor[1] for _, fornecedor, _ in rfqs_criados
+        ]
 
         pdf_resultados: list[dict[str, object]] = []
         for rfq_id, fornecedor, _ in rfqs_criados:
@@ -734,20 +737,23 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
             )
             if not pdf_bytes:
                 continue
-            pdf_info = {
-                "rfq_id": rfq_id,
-                "fornecedor": fornecedor[1],
-                "pdf_bytes": pdf_bytes,
+            pdf_resultados.append(
+                {
+                    "rfq_id": rfq_id,
+                    "fornecedor": fornecedor[1],
+                    "pdf_bytes": pdf_bytes,
+                }
+            )
+
+        emails_info = [
+            {
+                "fornecedor": status.get("fornecedor") or fornecedor[1],
+                "sucesso": bool(status.get("sucesso")),
+                "mensagem": status.get("mensagem")
+                or f"Email para {fornecedor[1]} não enviado.",
             }
-            pdf_resultados.append(pdf_info)
-            if origem == "manual":
-                st.download_button(
-                    f"📄 PDF - {fornecedor[1]}",
-                    data=pdf_bytes,
-                    file_name=f"cotacao_{numero_processo}_{fornecedor[1].replace(' ', '_')}.pdf",
-                    mime="application/pdf",
-                    key=f"download_pdf_{rfq_id}",
-                )
+            for _, fornecedor, status in rfqs_criados
+        ]
 
         st.session_state.pop("duplicated_ref_context", None)
         st.session_state.pop("duplicated_ref_force", None)
@@ -764,6 +770,15 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
             st.session_state.pop(key, None)
 
         if origem == "manual":
+            st.session_state["nova_cotacao_success_data"] = {
+                "numero_processo": numero_processo,
+                "referencia": referencia,
+                "fornecedores": fornecedores_notificados,
+                "pdfs": pdf_resultados,
+                "emails": emails_info,
+            }
+            st.session_state["show_nova_cotacao_success_dialog"] = True
+
             st.session_state.artigos = [
                 {
                     "artigo_num": "",
@@ -787,17 +802,9 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
             st.session_state["smart_success_data"] = {
                 "numero_processo": numero_processo,
                 "referencia": referencia,
-                "fornecedores": [fornecedor[1] for _, fornecedor, _ in rfqs_criados],
+                "fornecedores": fornecedores_notificados,
                 "pdfs": pdf_resultados,
-                "emails": [
-                    {
-                        "fornecedor": status.get("fornecedor") or fornecedor[1],
-                        "sucesso": bool(status.get("sucesso")),
-                        "mensagem": status.get("mensagem")
-                        or f"Email para {fornecedor[1]} não enviado.",
-                    }
-                    for _, fornecedor, status in rfqs_criados
-                ],
+                "emails": emails_info,
             }
             st.session_state["show_smart_success_dialog"] = True
             reset_smart_quotation_state()
@@ -926,6 +933,66 @@ def mostrar_dialogo_requisitos_fornecedor(origem: str) -> None:
             st.rerun()
 
     _dialogo()
+
+
+def mostrar_dialogo_sucesso_manual() -> None:
+    """Mostra um resumo em pop-up após criar uma cotação manualmente."""
+
+    if not st.session_state.get("show_nova_cotacao_success_dialog"):
+        return
+
+    payload = st.session_state.get("nova_cotacao_success_data") or {}
+    numero_processo = payload.get("numero_processo") or ""
+    referencia = payload.get("referencia") or ""
+    fornecedores = payload.get("fornecedores") or []
+    pdfs = payload.get("pdfs") or []
+    emails = payload.get("emails") or []
+
+    titulo = "Cotação criada"
+
+    @st.dialog(titulo, width="large")
+    def _dialog():
+        if numero_processo:
+            st.success(f"Cotação {numero_processo} criada com sucesso!")
+        else:
+            st.success("Cotação criada com sucesso!")
+
+        if referencia:
+            st.write(f"**Referência do cliente:** {referencia}")
+
+        if fornecedores:
+            st.markdown("**Fornecedores notificados:**")
+            for nome in fornecedores:
+                st.write(f"• {nome}")
+
+        if emails:
+            st.markdown("**Estado do envio de emails:**")
+            for info in emails:
+                mensagem = info.get("mensagem") or "Estado de envio indisponível."
+                if info.get("sucesso"):
+                    st.success(mensagem)
+                else:
+                    st.error(mensagem)
+
+        for idx, info in enumerate(pdfs, 1):
+            nome_pdf = info.get("fornecedor") or f"Fornecedor {idx}"
+            pdf_bytes = info.get("pdf_bytes")
+            if not pdf_bytes:
+                continue
+            st.download_button(
+                f"Download PDF - {nome_pdf}",
+                data=pdf_bytes,
+                file_name=f"cotacao_{numero_processo or 'pedido'}_{nome_pdf.replace(' ', '_')}.pdf",
+                mime="application/pdf",
+                key=f"manual_dialog_pdf_{idx}",
+            )
+
+        if st.button("Fechar"):
+            st.session_state.pop("nova_cotacao_success_data", None)
+            st.session_state["show_nova_cotacao_success_dialog"] = False
+            st.rerun()
+
+    _dialog()
 
 
 def mostrar_dialogo_sucesso_smart() -> None:
@@ -5383,6 +5450,8 @@ if menu_option == "🏠 Dashboard":
 elif menu_option == "📝 Nova Cotação":
     st.title("📝 Criar Nova Cotação")
 
+    mostrar_dialogo_sucesso_manual()
+
     marcas = listar_todas_marcas()
 
     st.markdown(
@@ -5665,6 +5734,7 @@ elif menu_option == "🤖 Smart Quotation":
 
     unidades_padrao = obter_nomes_unidades()
     unidade_padrao = unidades_padrao[0] if unidades_padrao else "Peças"
+    marcas_disponiveis = [marca for marca in listar_todas_marcas() if marca]
     upload_pdf = st.file_uploader(
         "📎 Pedido do cliente (PDF ou email)",
         type=["pdf", "eml", "msg"],
@@ -5870,13 +5940,32 @@ elif menu_option == "🤖 Smart Quotation":
                             key=unidade_key,
                         )
                     with col_marca:
-                        st.text_input(
-                            "Marca",
-                            key=marca_key,
+                        marca_widget_key = f"{marca_key}_select"
+                        opcao_sentinel = "Selecione uma marca"
+                        opcoes_marca = [opcao_sentinel, *marcas_disponiveis]
+                        marca_atual = st.session_state.get(marca_key, "").strip()
+                        if marca_atual and marca_atual not in opcoes_marca:
+                            opcoes_marca.append(marca_atual)
+
+                        if (
+                            marca_widget_key not in st.session_state
+                            or st.session_state[marca_widget_key] not in opcoes_marca
+                        ):
+                            st.session_state[marca_widget_key] = (
+                                marca_atual if marca_atual in opcoes_marca else opcao_sentinel
+                            )
+
+                        selecao_marca = st.selectbox(
+                            "Marca *",
+                            options=opcoes_marca,
+                            key=marca_widget_key,
                             help=(
                                 "A marca é sugerida automaticamente com base na descrição,"
                                 " mas pode ser editada."
                             ),
+                        )
+                        st.session_state[marca_key] = (
+                            "" if selecao_marca == opcao_sentinel else selecao_marca
                         )
 
                     st.text_area(
