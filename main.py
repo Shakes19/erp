@@ -1920,7 +1920,10 @@ def obter_detalhes_cotacao(rfq_id):
                    COALESCE(ra.quantidade, 1),
                    COALESCE(u.nome, ''),
                    COALESCE(a.especificacoes, ''),
-                   COALESCE(m.marca, '')
+                   COALESCE(m.marca, ''),
+                   a.peso,
+                   a.hs_code,
+                   a.pais_origem
               FROM rfq_artigo ra
               JOIN artigo a ON ra.artigo_id = a.id
               LEFT JOIN unidade u ON a.unidade_id = u.id
@@ -1939,6 +1942,9 @@ def obter_detalhes_cotacao(rfq_id):
                 "unidade": row[4],
                 "especificacoes": row[5],
                 "marca": row[6],
+                "peso": row[7],
+                "hs_code": row[8] or "",
+                "pais_origem": row[9] or "",
             }
             for row in c.fetchall()
         ]
@@ -2083,9 +2089,9 @@ def guardar_respostas(
                 """
                 INSERT OR REPLACE INTO resposta_fornecedor
                 (fornecedor_id, rfq_id, artigo_id, descricao, custo, prazo_entrega,
-                 peso, hs_code, pais_origem, moeda, preco_venda,
-                 quantidade_final, observacoes, validade_preco)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 quantidade_final, moeda, preco_venda,
+                 observacoes, validade_preco)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     fornecedor_id,
@@ -2094,20 +2100,32 @@ def guardar_respostas(
                     descricao_editada,
                     custo_total,
                     prazo,
-                    peso,
-                    hs_code,
-                    pais_origem,
+                    quantidade_final,
                     moeda_codigo,
                     preco_venda,
-                    quantidade_final,
                     observacoes,
                     validade_preco,
                 ),
             )
 
             c.execute(
-                "UPDATE artigo SET preco_historico = ?, validade_historico = ? WHERE id = ?",
-                (custo_total, validade_preco or None, artigo_id),
+                """
+                UPDATE artigo
+                   SET preco_historico = ?,
+                       validade_historico = ?,
+                       peso = ?,
+                       hs_code = ?,
+                       pais_origem = ?
+                 WHERE id = ?
+                """,
+                (
+                    custo_total,
+                    validade_preco or None,
+                    float(peso) if peso is not None else None,
+                    hs_code or None,
+                    pais_origem or None,
+                    artigo_id,
+                ),
             )
 
         # Guardar custos adicionais
@@ -2180,9 +2198,9 @@ def obter_respostas_cotacao(rfq_id):
                rf.custo,
                rf.prazo_entrega,
                rf.quantidade_final,
-               rf.peso,
-               rf.hs_code,
-               rf.pais_origem,
+               a.peso,
+               a.hs_code,
+               a.pais_origem,
                rf.moeda,
                rf.preco_venda,
                rf.observacoes,
@@ -4074,12 +4092,12 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
                    COALESCE(u.nome, ''),
                    rf.preco_venda,
                    rf.prazo_entrega,
-                   rf.peso,
-                   rf.hs_code,
-                   rf.pais_origem,
+                   COALESCE(a.peso, 0),
+                   COALESCE(a.hs_code, ''),
+                   COALESCE(a.pais_origem, ''),
                    COALESCE(ra.ordem, rf.id) AS ordem
-            FROM resposta_fornecedor rf
-            JOIN artigo a ON rf.artigo_id = a.id
+        FROM resposta_fornecedor rf
+        JOIN artigo a ON rf.artigo_id = a.id
             LEFT JOIN rfq_artigo ra ON ra.artigo_id = a.id AND ra.rfq_id = rf.rfq_id
             LEFT JOIN unidade u ON a.unidade_id = u.id
         """
@@ -4505,6 +4523,7 @@ def responder_cotacao_dialog(cotacao):
                     "Peso Unitário(kg)",
                     min_value=0.0,
                     step=0.1,
+                    value=float(artigo.get('peso') or 0.0),
                     key=f"peso_{artigo['id']}"
                 )
                 prazo = st.number_input(
@@ -4517,10 +4536,12 @@ def responder_cotacao_dialog(cotacao):
             with col3:
                 hs_code = st.text_input(
                     "HS Code",
+                    value=artigo.get("hs_code") or "",
                     key=f"hs_{artigo['id']}"
                 )
                 pais_origem = st.text_input(
                     "País Origem",
+                    value=artigo.get("pais_origem") or "",
                     key=f"pais_{artigo['id']}"
                 )
 

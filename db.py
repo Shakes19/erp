@@ -865,6 +865,9 @@ def criar_base_dados_completa():
             marca_id INTEGER,
             preco_historico REAL,
             validade_historico TEXT,
+            peso REAL,
+            hs_code TEXT,
+            pais_origem TEXT,
             FOREIGN KEY (unidade_id) REFERENCES unidade(id) ON DELETE RESTRICT,
             FOREIGN KEY (marca_id) REFERENCES marca(id) ON DELETE SET NULL
         )
@@ -881,6 +884,12 @@ def criar_base_dados_completa():
         c.execute("ALTER TABLE artigo ADD COLUMN preco_historico REAL")
     if "validade_historico" not in artigo_cols:
         c.execute("ALTER TABLE artigo ADD COLUMN validade_historico TEXT")
+    if "peso" not in artigo_cols:
+        c.execute("ALTER TABLE artigo ADD COLUMN peso REAL")
+    if "hs_code" not in artigo_cols:
+        c.execute("ALTER TABLE artigo ADD COLUMN hs_code TEXT")
+    if "pais_origem" not in artigo_cols:
+        c.execute("ALTER TABLE artigo ADD COLUMN pais_origem TEXT")
 
     c.execute(
         """
@@ -962,9 +971,6 @@ def criar_base_dados_completa():
             custo REAL NOT NULL DEFAULT 0.0,
             prazo_entrega INTEGER NOT NULL DEFAULT 1,
             quantidade_final INTEGER,
-            peso REAL DEFAULT 0.0,
-            hs_code TEXT,
-            pais_origem TEXT,
             moeda TEXT DEFAULT 'EUR',
             preco_venda REAL,
             observacoes TEXT,
@@ -980,10 +986,12 @@ def criar_base_dados_completa():
 
     c.execute("PRAGMA table_info(resposta_fornecedor)")
     resposta_cols = [row[1] for row in c.fetchall()]
-    if "pais_origem_id" in resposta_cols or "moeda_id" in resposta_cols:
+
+    colunas_resposta_antigas = {"peso", "hs_code", "pais_origem"}
+    if colunas_resposta_antigas.intersection(resposta_cols):
         c.execute("PRAGMA foreign_keys = OFF")
         try:
-            c.execute("ALTER TABLE resposta_fornecedor RENAME TO resposta_fornecedor_legacy")
+            c.execute("DROP TABLE resposta_fornecedor")
             c.execute(
                 """
                 CREATE TABLE resposta_fornecedor (
@@ -995,9 +1003,6 @@ def criar_base_dados_completa():
                     custo REAL NOT NULL DEFAULT 0.0,
                     prazo_entrega INTEGER NOT NULL DEFAULT 1,
                     quantidade_final INTEGER,
-                    peso REAL DEFAULT 0.0,
-                    hs_code TEXT,
-                    pais_origem TEXT,
                     moeda TEXT DEFAULT 'EUR',
                     preco_venda REAL,
                     observacoes TEXT,
@@ -1010,82 +1015,6 @@ def criar_base_dados_completa():
                 )
                 """
             )
-
-            c.execute("PRAGMA table_info(resposta_fornecedor_legacy)")
-            legacy_cols = [row[1] for row in c.fetchall()]
-            column_order = [
-                "id",
-                "fornecedor_id",
-                "rfq_id",
-                "artigo_id",
-                "descricao",
-                "custo",
-                "prazo_entrega",
-                "quantidade_final",
-                "peso",
-                "hs_code",
-                "pais_origem",
-                "moeda",
-                "preco_venda",
-                "observacoes",
-                "data_resposta",
-                "validade_preco",
-            ]
-            common_cols = [col for col in column_order if col in legacy_cols]
-            if common_cols:
-                cols_csv = ", ".join(common_cols)
-                c.execute(
-                    f"INSERT INTO resposta_fornecedor ({cols_csv}) SELECT {cols_csv} FROM resposta_fornecedor_legacy"
-                )
-
-            c.execute("DROP TABLE resposta_fornecedor_legacy")
-        finally:
-            c.execute("PRAGMA foreign_keys = ON")
-
-        c.execute("PRAGMA table_info(resposta_fornecedor)")
-        resposta_cols = [row[1] for row in c.fetchall()]
-
-    if "margem_utilizada" in resposta_cols:
-        c.execute("PRAGMA foreign_keys = OFF")
-        try:
-            c.execute("ALTER TABLE resposta_fornecedor RENAME TO resposta_fornecedor_legacy")
-            c.execute(
-                """
-                CREATE TABLE resposta_fornecedor (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    fornecedor_id INTEGER NOT NULL,
-                    rfq_id INTEGER NOT NULL,
-                    artigo_id INTEGER NOT NULL,
-                    descricao TEXT,
-                    custo REAL NOT NULL DEFAULT 0.0,
-                    prazo_entrega INTEGER NOT NULL DEFAULT 1,
-                    quantidade_final INTEGER,
-                    peso REAL DEFAULT 0.0,
-                    hs_code TEXT,
-                    pais_origem TEXT,
-                    moeda TEXT DEFAULT 'EUR',
-                    preco_venda REAL,
-                    observacoes TEXT,
-                    data_resposta TEXT DEFAULT CURRENT_TIMESTAMP,
-                    validade_preco TEXT,
-                    FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
-                    FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE,
-                    FOREIGN KEY (artigo_id) REFERENCES artigo(id) ON DELETE CASCADE,
-                    UNIQUE (fornecedor_id, rfq_id, artigo_id)
-                )
-                """
-            )
-
-            c.execute("PRAGMA table_info(resposta_fornecedor_legacy)")
-            legacy_cols = [row[1] for row in c.fetchall()]
-            cols_sem_margem = [col for col in legacy_cols if col != "margem_utilizada"]
-            if cols_sem_margem:
-                cols_csv = ", ".join(cols_sem_margem)
-                c.execute(
-                    f"INSERT INTO resposta_fornecedor ({cols_csv}) SELECT {cols_csv} FROM resposta_fornecedor_legacy"
-                )
-
-            c.execute("DROP TABLE resposta_fornecedor_legacy")
         finally:
             c.execute("PRAGMA foreign_keys = ON")
 
