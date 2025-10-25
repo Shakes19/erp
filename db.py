@@ -296,68 +296,6 @@ def get_marca_id(marca: str, cursor: sqlite3.Cursor | None = None) -> int | None
     finally:
         if own_connection and conn is not None:
             conn.close()
-
-
-def get_artigo_catalogo_id(
-    artigo_num: str | None, cursor: sqlite3.Cursor | None = None
-) -> int | None:
-    """Return the catalogue identifier for ``artigo_num`` if it exists."""
-
-    codigo = (artigo_num or "").strip()
-    if not codigo:
-        return None
-
-    own_connection = cursor is None
-    conn = None
-    if own_connection:
-        conn = get_connection()
-        cursor = conn.cursor()
-
-    try:
-        cursor.execute(
-            "SELECT id FROM artigo_catalogo WHERE artigo_num = ?",
-            (codigo,),
-        )
-        row = cursor.fetchone()
-        return row[0] if row else None
-    finally:
-        if own_connection and conn is not None:
-            conn.close()
-
-
-def ensure_artigo_catalogo_schema(conn: sqlite3.Connection) -> None:
-    """Ensure the ``artigo_catalogo`` table exists with ``validade_preco`` column.
-
-    Older databases may lack this column, which leads to ``OperationalError``
-    when queries reference it. This helper performs a light-weight migration
-    by creating the table if missing and adding the column when required.
-    """
-
-    cur = conn.cursor()
-    cur.execute("PRAGMA table_info(artigo_catalogo)")
-    cols = [row[1] for row in cur.fetchall()]
-
-    if not cols:
-        # Table missing entirely – create it with the expected structure.
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS artigo_catalogo (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                artigo_num TEXT NOT NULL UNIQUE,
-                descricao TEXT NOT NULL,
-                fabricante TEXT,
-                preco_venda REAL NOT NULL DEFAULT 0.0,
-                validade_preco TEXT
-            )
-            """
-        )
-        conn.commit()
-    elif "validade_preco" not in cols:
-        # Column missing – add it so future queries succeed.
-        cur.execute("ALTER TABLE artigo_catalogo ADD COLUMN validade_preco TEXT")
-        conn.commit()
-
-
 def criar_base_dados_completa():
     """Create all database tables and apply basic PRAGMAs for SQLite.
 
@@ -373,9 +311,6 @@ def criar_base_dados_completa():
 
     conn = get_connection()
     c = conn.cursor()
-
-    # Garantir que a tabela de catálogo existe antes de referências posteriores
-    ensure_artigo_catalogo_schema(conn)
 
     # Limpeza defensiva: versões anteriores podiam deixar a tabela temporária
     # ``rfq_old`` para trás caso a migração fosse interrompida.  Isto fazia com
@@ -932,11 +867,9 @@ def criar_base_dados_completa():
             marca TEXT,
             ordem INTEGER DEFAULT 1,
             marca_id INTEGER,
-            artigo_catalogo_id INTEGER,
             FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE CASCADE,
             FOREIGN KEY (unidade_id) REFERENCES unidade(id) ON DELETE RESTRICT,
-            FOREIGN KEY (marca_id) REFERENCES marca(id) ON DELETE SET NULL,
-            FOREIGN KEY (artigo_catalogo_id) REFERENCES artigo_catalogo(id) ON DELETE SET NULL
+            FOREIGN KEY (marca_id) REFERENCES marca(id) ON DELETE SET NULL
         )
         """
     )
@@ -959,11 +892,9 @@ def criar_base_dados_completa():
                     marca TEXT,
                     ordem INTEGER DEFAULT 1,
                     marca_id INTEGER,
-                    artigo_catalogo_id INTEGER,
                     FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE CASCADE,
                     FOREIGN KEY (unidade_id) REFERENCES unidade(id) ON DELETE RESTRICT,
-                    FOREIGN KEY (marca_id) REFERENCES marca(id) ON DELETE SET NULL,
-                    FOREIGN KEY (artigo_catalogo_id) REFERENCES artigo_catalogo(id) ON DELETE SET NULL
+                    FOREIGN KEY (marca_id) REFERENCES marca(id) ON DELETE SET NULL
                 )
                 """
             )
@@ -994,10 +925,9 @@ def criar_base_dados_completa():
                             unidade_id,
                             marca,
                             ordem,
-                            marca_id,
-                            artigo_catalogo_id
+                            marca_id
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             dados.get("id"),
@@ -1009,7 +939,6 @@ def criar_base_dados_completa():
                             dados.get("marca"),
                             dados.get("ordem"),
                             dados.get("marca_id"),
-                            dados.get("artigo_catalogo_id"),
                         ),
                     )
 
@@ -1024,18 +953,64 @@ def criar_base_dados_completa():
         c.execute(
             "ALTER TABLE processo_artigo ADD COLUMN marca_id INTEGER REFERENCES marca(id)"
         )
-    if "artigo_catalogo_id" not in proc_art_cols:
-        c.execute(
-            "ALTER TABLE processo_artigo ADD COLUMN artigo_catalogo_id INTEGER REFERENCES artigo_catalogo(id)"
-        )
+        c.execute("PRAGMA table_info(processo_artigo)")
+        proc_art_cols = [row[1] for row in c.fetchall()]
 
-    c.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_processo_artigo_catalogo
-        ON processo_artigo(processo_id, artigo_catalogo_id)
-        WHERE artigo_catalogo_id IS NOT NULL
-        """
-    )
+    if "artigo_catalogo_id" in proc_art_cols:
+        c.execute("PRAGMA foreign_keys = OFF")
+        try:
+            c.execute("ALTER TABLE processo_artigo RENAME TO processo_artigo_legacy")
+            c.execute(
+                """
+                CREATE TABLE processo_artigo (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    processo_id INTEGER NOT NULL,
+                    artigo_num TEXT,
+                    descricao TEXT NOT NULL,
+                    quantidade INTEGER NOT NULL DEFAULT 1,
+                    unidade_id INTEGER NOT NULL,
+                    marca TEXT,
+                    ordem INTEGER DEFAULT 1,
+                    marca_id INTEGER,
+                    FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE CASCADE,
+                    FOREIGN KEY (unidade_id) REFERENCES unidade(id) ON DELETE RESTRICT,
+                    FOREIGN KEY (marca_id) REFERENCES marca(id) ON DELETE SET NULL
+                )
+                """
+            )
+            c.execute(
+                """
+                INSERT INTO processo_artigo (
+                    id,
+                    processo_id,
+                    artigo_num,
+                    descricao,
+                    quantidade,
+                    unidade_id,
+                    marca,
+                    ordem,
+                    marca_id
+                )
+                SELECT
+                    id,
+                    processo_id,
+                    artigo_num,
+                    descricao,
+                    quantidade,
+                    unidade_id,
+                    marca,
+                    ordem,
+                    marca_id
+                  FROM processo_artigo_legacy
+                ORDER BY id
+                """
+            )
+            c.execute("DROP TABLE processo_artigo_legacy")
+        finally:
+            c.execute("PRAGMA foreign_keys = ON")
+
+        c.execute("PRAGMA table_info(processo_artigo)")
+        proc_art_cols = [row[1] for row in c.fetchall()]
 
     c.execute(
         """
@@ -1048,20 +1023,6 @@ def criar_base_dados_completa():
          WHERE marca_id IS NULL
            AND marca IS NOT NULL
            AND TRIM(marca) != ''
-        """
-    )
-
-    c.execute(
-        """
-        UPDATE processo_artigo
-           SET artigo_catalogo_id = (
-                SELECT id
-                  FROM artigo_catalogo
-                 WHERE artigo_num = processo_artigo.artigo_num
-           )
-         WHERE artigo_catalogo_id IS NULL
-           AND artigo_num IS NOT NULL
-           AND TRIM(artigo_num) != ''
         """
     )
 
@@ -1079,12 +1040,10 @@ def criar_base_dados_completa():
             ordem INTEGER DEFAULT 1,
             processo_artigo_id INTEGER,
             marca_id INTEGER,
-            artigo_catalogo_id INTEGER,
             FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE,
             FOREIGN KEY (processo_artigo_id) REFERENCES processo_artigo(id) ON DELETE CASCADE,
             FOREIGN KEY (unidade_id) REFERENCES unidade(id) ON DELETE RESTRICT,
-            FOREIGN KEY (marca_id) REFERENCES marca(id) ON DELETE SET NULL,
-            FOREIGN KEY (artigo_catalogo_id) REFERENCES artigo_catalogo(id) ON DELETE SET NULL
+            FOREIGN KEY (marca_id) REFERENCES marca(id) ON DELETE SET NULL
         )
         """
     )
@@ -1096,6 +1055,7 @@ def criar_base_dados_completa():
         "unidade_id" not in artigo_cols
         or "unidade" in artigo_cols
         or "marca" in artigo_cols
+        or "artigo_catalogo_id" in artigo_cols
     ):
         c.execute("PRAGMA foreign_keys = OFF")
         try:
@@ -1113,12 +1073,10 @@ def criar_base_dados_completa():
                     ordem INTEGER DEFAULT 1,
                     processo_artigo_id INTEGER,
                     marca_id INTEGER,
-                    artigo_catalogo_id INTEGER,
                     FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE,
                     FOREIGN KEY (processo_artigo_id) REFERENCES processo_artigo(id) ON DELETE CASCADE,
                     FOREIGN KEY (unidade_id) REFERENCES unidade(id) ON DELETE RESTRICT,
-                    FOREIGN KEY (marca_id) REFERENCES marca(id) ON DELETE SET NULL,
-                    FOREIGN KEY (artigo_catalogo_id) REFERENCES artigo_catalogo(id) ON DELETE SET NULL
+                    FOREIGN KEY (marca_id) REFERENCES marca(id) ON DELETE SET NULL
                 )
                 """
             )
@@ -1135,15 +1093,14 @@ def criar_base_dados_completa():
                         unidade_id = ensure_unidade(unidade_nome, cursor=c)
                     except ValueError:
                         unidade_id = ensure_unidade("Peças", cursor=c)
-                    quantidade = dados.get("quantidade") if dados.get("quantidade") is not None else 1
+                    quantidade = (
+                        dados.get("quantidade")
+                        if dados.get("quantidade") is not None
+                        else 1
+                    )
                     marca_id = dados.get("marca_id")
                     if marca_id is None and dados.get("marca"):
                         marca_id = get_marca_id(dados.get("marca"), cursor=c)
-                    artigo_catalogo_id = dados.get("artigo_catalogo_id")
-                    if artigo_catalogo_id is None and dados.get("artigo_num"):
-                        artigo_catalogo_id = get_artigo_catalogo_id(
-                            dados.get("artigo_num"), cursor=c
-                        )
                     c.execute(
                         """
                         INSERT INTO artigo (
@@ -1156,10 +1113,9 @@ def criar_base_dados_completa():
                             especificacoes,
                             ordem,
                             processo_artigo_id,
-                            marca_id,
-                            artigo_catalogo_id
+                            marca_id
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             dados.get("id"),
@@ -1172,7 +1128,6 @@ def criar_base_dados_completa():
                             dados.get("ordem"),
                             dados.get("processo_artigo_id"),
                             marca_id,
-                            artigo_catalogo_id,
                         ),
                     )
 
@@ -1191,40 +1146,6 @@ def criar_base_dados_completa():
         c.execute(
             "ALTER TABLE artigo ADD COLUMN marca_id INTEGER REFERENCES marca(id)"
         )
-    if "artigo_catalogo_id" not in artigo_cols:
-        c.execute(
-            "ALTER TABLE artigo ADD COLUMN artigo_catalogo_id INTEGER REFERENCES artigo_catalogo(id)"
-        )
-
-    if "artigo_catalogo_id" in artigo_cols:
-        c.execute(
-            """
-            UPDATE artigo
-               SET artigo_catalogo_id = (
-                    SELECT id
-                      FROM artigo_catalogo
-                     WHERE artigo_num = artigo.artigo_num
-               )
-             WHERE artigo_catalogo_id IS NULL
-               AND artigo_num IS NOT NULL
-               AND TRIM(artigo_num) != ''
-            """
-        )
-
-    # Tabela de catálogo de artigos
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS artigo_catalogo (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            artigo_num TEXT NOT NULL UNIQUE,
-            descricao TEXT NOT NULL,
-            fabricante TEXT,
-            preco_venda REAL NOT NULL DEFAULT 0.0,
-            validade_preco TEXT
-        )
-        """
-    )
-
     # Remover tabela de seleção de artigos (não é mais necessária)
     c.execute("DROP TABLE IF EXISTS processo_artigo_selecao")
 
@@ -1550,7 +1471,6 @@ def criar_base_dados_completa():
         "CREATE INDEX IF NOT EXISTS idx_rfq_estado_id ON rfq(estado_id)",
         "CREATE INDEX IF NOT EXISTS idx_rfq_data_atualizacao ON rfq(data_atualizacao)",
         "CREATE INDEX IF NOT EXISTS idx_artigo_rfq ON artigo(rfq_id)",
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_artigo_catalogo_num ON artigo_catalogo(artigo_num)",
         "CREATE INDEX IF NOT EXISTS idx_resposta_fornecedor ON resposta_fornecedor(fornecedor_id, rfq_id)",
         "CREATE INDEX IF NOT EXISTS idx_resposta_artigo ON resposta_fornecedor(artigo_id)",
         "CREATE INDEX IF NOT EXISTS idx_fornecedor_nome ON fornecedor(nome)",
@@ -1641,60 +1561,3 @@ def criar_processo(
         session.close()
 
 
-def inserir_artigo_catalogo(
-    artigo_num: str,
-    descricao: str,
-    fabricante: str = "",
-    preco_venda: float = 0.0,
-    validade_preco: str | None = None,
-):
-    """Insert or update an article in the catalogue."""
-
-    if validade_preco is None:
-        validade_preco = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-
-    conn = get_connection()
-    ensure_artigo_catalogo_schema(conn)
-    c = conn.cursor()
-    c.execute(
-        """
-        INSERT INTO artigo_catalogo
-            (artigo_num, descricao, fabricante, preco_venda, validade_preco)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(artigo_num) DO UPDATE SET
-            descricao = excluded.descricao,
-            fabricante = excluded.fabricante,
-            preco_venda = excluded.preco_venda,
-            validade_preco = excluded.validade_preco
-        """,
-        (
-            artigo_num,
-            descricao,
-            fabricante,
-            preco_venda,
-            validade_preco,
-        ),
-    )
-    conn.commit()
-    conn.close()
-
-
-def procurar_artigos_catalogo(termo: str = ""):
-    """Search catalogue articles by number or description."""
-
-    conn = get_connection()
-    ensure_artigo_catalogo_schema(conn)
-    c = conn.cursor()
-    like = f"%{termo}%"
-    c.execute(
-        """
-        SELECT artigo_num, descricao, fabricante, preco_venda, validade_preco
-        FROM artigo_catalogo
-        WHERE artigo_num LIKE ? OR descricao LIKE ?
-        ORDER BY artigo_num
-        """,
-        (like, like),
-    )
-    rows = c.fetchall()
-    conn.close()
-    return rows
