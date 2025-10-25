@@ -2248,7 +2248,6 @@ def obter_respostas_cotacao(rfq_id):
         respostas.append(
             {
                 "id": row[0],
-                "fornecedor_id": row[1],
                 "rfq_id": row[2],
                 "artigo_id": row[3],
                 "descricao": row[4] if row[4] else row[16],
@@ -2437,7 +2436,6 @@ def obter_respostas_por_processo(processo_id):
                     "prazo": prazo,
                     "moeda": moeda,
                     "quantidade_final": quantidade_final,
-                    "fornecedor_id": fornecedor_id,
                     "fornecedor_nome": fornecedor_nome or "",
                     "rfq_id": rfq_id,
                     "validade_preco": validade_preco,
