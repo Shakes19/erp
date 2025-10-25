@@ -29,14 +29,11 @@ from db import (
     verify_password,
     DB_PATH,
     engine,
-    inserir_artigo_catalogo,
-    procurar_artigos_catalogo,
     fetch_all,
     fetch_one,
     ensure_estado,
     ensure_unidade,
     get_marca_id,
-    get_artigo_catalogo_id,
     obter_processo_id_por_rfq,
     get_table_columns,
 )
@@ -145,6 +142,47 @@ def _rfq_estado_clause(
             f"COALESCE({estado_alias}.nome, 'pendente')",
         )
     return "", f"COALESCE({rfq_alias}.{column}, 'pendente')"
+
+
+@lru_cache(maxsize=1)
+def _artigo_rel_table() -> str:
+    """Return the table name used to store base articles for processos/RFQs."""
+
+    for name in ("rfq_artigo", "processo_artigo"):
+        try:
+            columns = get_table_columns(name)
+        except sqlite3.OperationalError:
+            continue
+        else:
+            if not columns:
+                continue
+            return name
+    return "rfq_artigo"
+
+
+@lru_cache(maxsize=1)
+def _artigo_rel_fk_column() -> str:
+    """Return the foreign-key column name from ``artigo`` to the relation table."""
+
+    try:
+        columns = get_table_columns("artigo")
+    except sqlite3.OperationalError:
+        return "rfq_artigo_id"
+
+    if "rfq_artigo_id" in columns:
+        return "rfq_artigo_id"
+    if "processo_artigo_id" in columns:
+        return "processo_artigo_id"
+    return "rfq_artigo_id"
+
+
+def _artigo_fk_select(alias: str = "a") -> str:
+    """Return the SELECT expression that yields ``rfq_artigo_id``."""
+
+    column = _artigo_rel_fk_column()
+    if column == "rfq_artigo_id":
+        return f"{alias}.rfq_artigo_id"
+    return f"{alias}.{column} AS rfq_artigo_id"
 
 
 def limitar_descricao_artigo(texto: str, max_linhas: int = 2) -> str:
@@ -679,7 +717,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
         st.session_state["show_supplier_requirement_dialog"] = True
         return False
 
-    processo_id, numero_processo, processo_artigos = criar_processo_com_artigos(
+    processo_id, numero_processo, rfq_artigos = criar_processo_com_artigos(
         artigos, cliente_id
     )
     rfqs_criados: list[tuple[int, tuple, dict]] = []
@@ -687,13 +725,13 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
     for fornecedor_id, indices in fornecedores_map.items():
         artigos_fornecedor: list[dict] = []
         for indice in indices:
-            if indice >= len(processo_artigos):
+            if indice >= len(rfq_artigos):
                 continue
-            processo_info = processo_artigos[indice]
+            processo_info = rfq_artigos[indice]
             artigos_fornecedor.append(
                 {
                     **artigos[indice],
-                    "processo_artigo_id": processo_info.get("processo_artigo_id"),
+                    "rfq_artigo_id": processo_info.get("rfq_artigo_id"),
                     "ordem": processo_info.get("ordem"),
                 }
             )
@@ -706,7 +744,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
             cliente_id,
             processo_id=processo_id,
             numero_processo=numero_processo,
-            processo_artigos=processo_artigos,
+            rfq_artigos=rfq_artigos,
             requisitos_fornecedor=requisitos_fornecedores.get(fornecedor_id),
         )
 
@@ -1340,7 +1378,9 @@ def criar_processo_com_artigos(artigos, cliente_id: int | None = None):
     )
     conn = obter_conexao()
     c = conn.cursor()
-    processo_artigos: list[dict] = []
+    rfq_artigos: list[dict] = []
+
+    rel_table = _artigo_rel_table()
 
     try:
         for ordem, art in enumerate(artigos, 1):
@@ -1356,13 +1396,12 @@ def criar_processo_com_artigos(artigos, cliente_id: int | None = None):
             except ValueError:
                 unidade_id = ensure_unidade("Peças", cursor=c)
             marca_id = get_marca_id(marca_artigo, cursor=c)
-            artigo_catalogo_id = get_artigo_catalogo_id(artigo_num, cursor=c)
             c.execute(
-                """
-                INSERT INTO processo_artigo (processo_id, artigo_num, descricao,
-                                             quantidade, unidade_id, marca, ordem,
-                                             marca_id, artigo_catalogo_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                f"""
+                INSERT INTO {rel_table} (processo_id, artigo_num, descricao,
+                                         quantidade, unidade_id, marca, ordem,
+                                         marca_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     processo_id,
@@ -1373,10 +1412,9 @@ def criar_processo_com_artigos(artigos, cliente_id: int | None = None):
                     marca_artigo,
                     ordem,
                     marca_id,
-                    artigo_catalogo_id,
                 ),
             )
-            processo_artigos.append(
+            rfq_artigos.append(
                 {
                     **art,
                     "artigo_num": artigo_num,
@@ -1385,14 +1423,13 @@ def criar_processo_com_artigos(artigos, cliente_id: int | None = None):
                     "unidade": unidade_artigo,
                     "marca": marca_artigo,
                     "ordem": ordem,
-                    "processo_artigo_id": c.lastrowid,
+                    "rfq_artigo_id": c.lastrowid,
                     "marca_id": marca_id,
-                    "artigo_catalogo_id": artigo_catalogo_id,
                 }
             )
 
         conn.commit()
-        return processo_id, numero_processo, processo_artigos
+        return processo_id, numero_processo, rfq_artigos
     finally:
         conn.close()
 
@@ -1405,7 +1442,7 @@ def criar_rfq(
     cliente_id=None,
     processo_id=None,
     numero_processo=None,
-    processo_artigos=None,
+    rfq_artigos=None,
     requisitos_fornecedor: dict | None = None,
 ):
     """Criar nova RFQ"""
@@ -1416,21 +1453,22 @@ def criar_rfq(
         utilizador_id = st.session_state.get("user_id")
 
         ordem_para_processo: dict[int, int | None] = {}
-        if processo_id is None or numero_processo is None or processo_artigos is None:
-            processo_id, numero_processo, processo_artigos = criar_processo_com_artigos(
+        artigo_fk_column = _artigo_rel_fk_column()
+        if processo_id is None or numero_processo is None or rfq_artigos is None:
+            processo_id, numero_processo, rfq_artigos = criar_processo_com_artigos(
                 artigos, cliente_id
             )
             ordem_para_processo = {
-                item.get("ordem", idx + 1): item.get("processo_artigo_id")
-                for idx, item in enumerate(processo_artigos)
-                if item.get("processo_artigo_id")
+                item.get("ordem", idx + 1): item.get("rfq_artigo_id")
+                for idx, item in enumerate(rfq_artigos)
+                if item.get("rfq_artigo_id")
             }
         else:
             # Garantir que temos um mapa por ordem caso não exista nos artigos
             ordem_para_processo = {
-                item.get("ordem", idx + 1): item.get("processo_artigo_id")
-                for idx, item in enumerate(processo_artigos)
-                if item.get("processo_artigo_id")
+                item.get("ordem", idx + 1): item.get("rfq_artigo_id")
+                for idx, item in enumerate(rfq_artigos)
+                if item.get("rfq_artigo_id")
             }
 
         if processo_id and cliente_id is not None:
@@ -1534,17 +1572,14 @@ def criar_rfq(
                     art["descricao"] = descricao_art
                     art["marca"] = marca_art
                     art["artigo_num"] = (art.get("artigo_num") or "").strip()
-                    processo_artigo_id = art.get("processo_artigo_id")
-                    if not processo_artigo_id and processo_artigos:
-                        processo_artigo_id = ordem_para_processo.get(ordem)
-                        if not processo_artigo_id and ordem - 1 < len(processo_artigos):
-                            processo_artigo_id = processo_artigos[ordem - 1].get(
-                                "processo_artigo_id"
+                    rfq_artigo_id = art.get("rfq_artigo_id")
+                    if not rfq_artigo_id and rfq_artigos:
+                        rfq_artigo_id = ordem_para_processo.get(ordem)
+                        if not rfq_artigo_id and ordem - 1 < len(rfq_artigos):
+                            rfq_artigo_id = rfq_artigos[ordem - 1].get(
+                                "rfq_artigo_id"
                             )
                     marca_id = get_marca_id(marca_art, cursor=cursor)
-                    artigo_catalogo_id = get_artigo_catalogo_id(
-                        art.get("artigo_num"), cursor=cursor
-                    )
                     unidade_nome = art.get("unidade", "Peças") or "Peças"
                     try:
                         unidade_id = ensure_unidade(unidade_nome, cursor=cursor)
@@ -1552,11 +1587,11 @@ def criar_rfq(
                         unidade_id = ensure_unidade("Peças", cursor=cursor)
 
                     cursor.execute(
-                        """
+                        f"""
                         INSERT INTO artigo (rfq_id, artigo_num, descricao, quantidade,
                                           unidade_id, especificacoes, ordem,
-                                          processo_artigo_id, marca_id, artigo_catalogo_id)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                          {artigo_fk_column}, marca_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             rfq_pk,
@@ -1566,9 +1601,8 @@ def criar_rfq(
                             unidade_id,
                             art.get("especificacoes", ""),
                             ordem,
-                            processo_artigo_id,
+                            rfq_artigo_id,
                             marca_id,
-                            artigo_catalogo_id,
                         ),
                     )
 
@@ -1603,7 +1637,7 @@ def criar_rfq(
         envio_email = enviar_email_pedido_fornecedor(rfq_id)
 
         invalidate_overview_caches()
-        return rfq_id, numero_processo, processo_id, processo_artigos, envio_email
+        return rfq_id, numero_processo, processo_id, rfq_artigos, envio_email
     except Exception as e:
         conn.rollback()
         if "UNIQUE" in str(e).upper():
@@ -2007,9 +2041,10 @@ def guardar_respostas(
             ) = item
 
             # Obter marca e artigo do processo associado
+            fk_select = _artigo_fk_select("a")
             c.execute(
-                """
-                SELECT COALESCE(m.marca, ''), a.processo_artigo_id
+                f"""
+                SELECT COALESCE(m.marca, ''), {fk_select}
                   FROM artigo a
                   LEFT JOIN marca m ON a.marca_id = m.id
                  WHERE a.id = ?
@@ -2018,7 +2053,7 @@ def guardar_respostas(
             )
             marca_result = c.fetchone()
             marca = marca_result[0] if marca_result else None
-            processo_artigo_id = marca_result[1] if marca_result and len(marca_result) > 1 else None
+            rfq_artigo_id = marca_result[1] if marca_result and len(marca_result) > 1 else None
 
             proporcao = (custo / total_custos) if total_custos else 0
             custo_total = custo + (custo_envio + custo_embalagem) * proporcao
@@ -2114,8 +2149,9 @@ def obter_respostas_cotacao(rfq_id):
     conn = obter_conexao()
     c = conn.cursor()
     
+    fk_select = _artigo_fk_select("a")
     c.execute(
-        """
+        f"""
         SELECT rf.id,
                rf.fornecedor_id,
                rf.rfq_id,
@@ -2134,7 +2170,7 @@ def obter_respostas_cotacao(rfq_id):
                rf.validade_preco,
                a.descricao AS descricao_original,
                a.quantidade AS quantidade_original,
-               a.processo_artigo_id,
+               {fk_select},
                fornecedor.nome AS fornecedor_nome,
                COALESCE(u.nome, '') AS unidade_nome,
                COALESCE(m.marca, '') AS marca_nome
@@ -2171,7 +2207,7 @@ def obter_respostas_cotacao(rfq_id):
                 "validade_preco": row[15],
                 "descricao_original": row[16],
                 "quantidade_original": row[17],
-                "processo_artigo_id": row[18],
+                "rfq_artigo_id": row[18],
                 "fornecedor_nome": row[19] or "",
                 "unidade": row[20],
                 "marca": row[21],
@@ -2202,7 +2238,7 @@ def obter_respostas_processo(processo_id):
     return sorted(
         respostas.values(),
         key=lambda item: (
-            item.get("processo_artigo_id") or 10**6,
+            item.get("rfq_artigo_id") or 10**6,
             item.get("artigo_id") or 0,
             item["id"],
         ),
@@ -2216,6 +2252,9 @@ def obter_respostas_por_processo(processo_id):
 
     estado_join, estado_expr = _rfq_estado_clause("r", "e")
     estado_join_clause = f"        {estado_join}\n" if estado_join else ""
+
+    rel_table = _artigo_rel_table()
+    artigo_fk_column = _artigo_rel_fk_column()
 
     c.execute(
         f"""
@@ -2237,9 +2276,9 @@ def obter_respostas_por_processo(processo_id):
                r.id as rfq_id,
                {estado_expr} AS estado_nome,
                rf.validade_preco
-        FROM processo_artigo pa
+        FROM {rel_table} pa
         LEFT JOIN unidade u ON pa.unidade_id = u.id
-        LEFT JOIN artigo a ON a.processo_artigo_id = pa.id
+        LEFT JOIN artigo a ON a.{artigo_fk_column} = pa.id
         LEFT JOIN rfq r ON a.rfq_id = r.id
 {estado_join_clause}        LEFT JOIN resposta_fornecedor rf ON rf.artigo_id = a.id AND rf.rfq_id = r.id
         LEFT JOIN fornecedor f ON rf.fornecedor_id = f.id
@@ -2254,7 +2293,7 @@ def obter_respostas_por_processo(processo_id):
 
     for row in c.fetchall():
         (
-            processo_artigo_id,
+            rfq_artigo_id,
             artigo_num,
             descricao,
             quantidade,
@@ -2275,9 +2314,9 @@ def obter_respostas_por_processo(processo_id):
         ) = row
 
         artigo_info = artigos.setdefault(
-            processo_artigo_id,
+            rfq_artigo_id,
             {
-                "processo_artigo_id": processo_artigo_id,
+                "rfq_artigo_id": rfq_artigo_id,
                 "artigo_num": artigo_num or "",
                 "descricao": descricao,
                 "quantidade": quantidade,
@@ -2418,8 +2457,9 @@ def obter_detalhes_processo(processo_id: int):
         "referencia": row[4] or "",
     }
 
+    rel_table = _artigo_rel_table()
     c.execute(
-        """
+        f"""
         SELECT pa.id,
                COALESCE(pa.artigo_num, ''),
                pa.descricao,
@@ -2427,7 +2467,7 @@ def obter_detalhes_processo(processo_id: int):
                COALESCE(u.nome, ''),
                COALESCE(pa.marca, ''),
                pa.ordem
-          FROM processo_artigo pa
+          FROM {rel_table} pa
           LEFT JOIN unidade u ON pa.unidade_id = u.id
          WHERE pa.processo_id = ?
          ORDER BY pa.ordem, pa.id
@@ -2483,6 +2523,7 @@ def obter_detalhes_processo(processo_id: int):
     if rfq_ids:
         placeholders = ",".join(["?"] * len(rfq_ids))
 
+        fk_select = _artigo_fk_select("a")
         c.execute(
             f"""
             SELECT a.rfq_id,
@@ -2493,7 +2534,7 @@ def obter_detalhes_processo(processo_id: int):
                    COALESCE(u.nome, ''),
                    COALESCE(m.marca, ''),
                    a.ordem,
-                   a.processo_artigo_id
+                   {fk_select}
               FROM artigo a
               LEFT JOIN unidade u ON a.unidade_id = u.id
               LEFT JOIN marca m ON a.marca_id = m.id
@@ -2513,7 +2554,7 @@ def obter_detalhes_processo(processo_id: int):
                     "unidade": artigo_row[5],
                     "marca": artigo_row[6] or "",
                     "ordem": artigo_row[7],
-                    "processo_artigo_id": artigo_row[8],
+                    "rfq_artigo_id": artigo_row[8],
                 }
             )
 
@@ -2540,7 +2581,7 @@ def obter_detalhes_processo(processo_id: int):
             key=lambda x: (x.get("ordem") or 0, x.get("id")),
         )
         artigos_clientes = [
-            artigo for artigo in artigos_rfq if artigo.get("processo_artigo_id")
+            artigo for artigo in artigos_rfq if artigo.get("rfq_artigo_id")
         ]
         total_artigos_cliente = len(artigos_clientes)
         rfqs.append(
@@ -4003,7 +4044,9 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
             if isinstance(rid, (int, str)) and str(rid).isdigit()
         }
 
-        base_query = """
+        rel_table = _artigo_rel_table()
+        artigo_fk_column = _artigo_rel_fk_column()
+        base_query = f"""
             SELECT a.artigo_num,
                    rf.descricao,
                    COALESCE(rf.quantidade_final, a.quantidade) AS quantidade_final,
@@ -4017,7 +4060,7 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
             FROM resposta_fornecedor rf
             JOIN artigo a ON rf.artigo_id = a.id
             LEFT JOIN unidade u ON a.unidade_id = u.id
-            LEFT JOIN processo_artigo pa ON pa.id = a.processo_artigo_id
+            LEFT JOIN {rel_table} pa ON pa.id = a.{artigo_fk_column}
         """
 
         if resposta_ids_set:
@@ -6953,12 +6996,12 @@ elif menu_option == "📩 Process Center":
                                 resposta_id = resposta.get("id")
                                 if resposta_id is not None:
                                     resposta_para_pedido[resposta_id] = pedido
-                                proc_art_id = resposta.get("processo_artigo_id") or resposta.get("artigo_id")
+                                proc_art_id = resposta.get("rfq_artigo_id") or resposta.get("artigo_id")
                                 chave_artigo = str(proc_art_id or f"artigo_{resposta_id}")
                                 artigo_relacionado = None
                                 if proc_art_id:
                                     for artigo in artigos_pedido:
-                                        if artigo.get("processo_artigo_id") == proc_art_id or artigo.get("id") == proc_art_id:
+                                        if artigo.get("rfq_artigo_id") == proc_art_id or artigo.get("id") == proc_art_id:
                                             artigo_relacionado = artigo
                                             break
                                 if not artigo_relacionado:
@@ -6973,7 +7016,7 @@ elif menu_option == "📩 Process Center":
                                 grupo = respostas_por_artigo.setdefault(
                                     chave_artigo,
                                     {
-                                        "processo_artigo_id": proc_art_id,
+                                        "rfq_artigo_id": proc_art_id,
                                         "artigo_num": artigo_relacionado.get("artigo_num"),
                                         "descricao": artigo_relacionado.get("descricao")
                                         or resposta.get("descricao_original")
@@ -7618,46 +7661,6 @@ elif menu_option == "📄 PDFs":
                     st.info("Apenas administradores podem atualizar o PDF.")
     else:
         st.info("Nenhum processo disponível")
-
-elif menu_option == "📦 Artigos":
-    st.title("📦 Catálogo de Artigos")
-    tab_search, tab_create = st.tabs(["🔍 Procurar", "➕ Criar"])
-
-    with tab_search:
-        termo = st.text_input("Pesquisar por nº ou descrição")
-        resultados = procurar_artigos_catalogo(termo)
-        if resultados:
-            df = pd.DataFrame(
-                resultados,
-                columns=[
-                    "Nº Artigo",
-                    "Descrição",
-                    "Fabricante",
-                    "Preço Venda",
-                    "Validade Preço",
-                ],
-            )
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.info("Nenhum artigo encontrado")
-
-    with tab_create:
-        with st.form("novo_artigo_catalogo"):
-            numero = st.text_input("Nº Artigo *")
-            descricao = st.text_area("Descrição *")
-            fabricante = st.text_input("Fabricante")
-            preco = st.number_input(
-                "Preço de venda", min_value=0.0, step=0.01, format="%.2f"
-            )
-            submit = st.form_submit_button("Guardar Artigo")
-        if submit:
-            if numero.strip() and descricao.strip():
-                inserir_artigo_catalogo(
-                    numero.strip(), descricao.strip(), fabricante.strip(), preco
-                )
-                st.success("Artigo guardado com sucesso")
-            else:
-                st.error("Preencha os campos obrigatórios")
 
 elif menu_option == "👤 Perfil":
     st.title("👤 Meu Perfil")
