@@ -863,20 +863,20 @@ def criar_base_dados_completa():
             artigo_num TEXT,
             descricao TEXT NOT NULL,
             quantidade INTEGER NOT NULL DEFAULT 1,
-            unidade_id INTEGER NOT NULL,
-            marca TEXT,
             ordem INTEGER DEFAULT 1,
-            marca_id INTEGER,
+            artigo_id INTEGER,
             FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE CASCADE,
-            FOREIGN KEY (unidade_id) REFERENCES unidade(id) ON DELETE RESTRICT,
-            FOREIGN KEY (marca_id) REFERENCES marca(id) ON DELETE SET NULL
+            FOREIGN KEY (artigo_id) REFERENCES artigo(id) ON DELETE SET NULL
         )
         """
     )
 
     c.execute("PRAGMA table_info(processo_artigo)")
     proc_art_cols = [row[1] for row in c.fetchall()]
-    if "unidade_id" not in proc_art_cols or "unidade" in proc_art_cols:
+    legacy_cols_to_remove = {"unidade_id", "marca", "marca_id", "artigo_catalogo_id"}
+    if "artigo_id" not in proc_art_cols or legacy_cols_to_remove.intersection(
+        proc_art_cols
+    ):
         c.execute("PRAGMA foreign_keys = OFF")
         try:
             c.execute("ALTER TABLE processo_artigo RENAME TO processo_artigo_legacy")
@@ -888,11 +888,24 @@ def criar_base_dados_completa():
                     artigo_num TEXT,
                     descricao TEXT NOT NULL,
                     quantidade INTEGER NOT NULL DEFAULT 1,
-                    unidade_id INTEGER NOT NULL,
-                    marca TEXT,
                     ordem INTEGER DEFAULT 1,
-                    marca_id INTEGER,
+                    artigo_id INTEGER,
                     FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE CASCADE,
+                    FOREIGN KEY (artigo_id) REFERENCES artigo(id) ON DELETE SET NULL
+                )
+                """
+            )
+
+            # Garantir que a tabela de artigos existe antes da migração
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS artigo (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    artigo_num TEXT,
+                    descricao TEXT NOT NULL,
+                    unidade_id INTEGER NOT NULL,
+                    especificacoes TEXT,
+                    marca_id INTEGER,
                     FOREIGN KEY (unidade_id) REFERENCES unidade(id) ON DELETE RESTRICT,
                     FOREIGN KEY (marca_id) REFERENCES marca(id) ON DELETE SET NULL
                 )
@@ -908,12 +921,53 @@ def criar_base_dados_completa():
                 )
                 for row in c.fetchall():
                     dados = dict(zip(legacy_cols, row))
-                    unidade_nome = dados.get("unidade") or "Peças"
-                    try:
-                        unidade_id = ensure_unidade(unidade_nome, cursor=c)
-                    except ValueError:
-                        unidade_id = ensure_unidade("Peças", cursor=c)
-                    quantidade = dados.get("quantidade") if dados.get("quantidade") is not None else 1
+                    unidade_id = dados.get("unidade_id")
+                    if unidade_id is None:
+                        unidade_nome = dados.get("unidade") or "Peças"
+                        try:
+                            unidade_id = ensure_unidade(unidade_nome, cursor=c)
+                        except ValueError:
+                            unidade_id = ensure_unidade("Peças", cursor=c)
+
+                    marca_id = dados.get("marca_id")
+                    if marca_id is None:
+                        marca_nome = (dados.get("marca") or "").strip()
+                        if marca_nome:
+                            marca_id = get_marca_id(marca_nome, cursor=c)
+
+                    descricao = dados.get("descricao") or ""
+                    if not descricao:
+                        descricao = "Descrição indisponível"
+
+                    c.execute(
+                        """
+                        INSERT INTO artigo (
+                            artigo_num,
+                            descricao,
+                            unidade_id,
+                            especificacoes,
+                            marca_id
+                        )
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            dados.get("artigo_num"),
+                            descricao,
+                            unidade_id,
+                            None,
+                            marca_id,
+                        ),
+                    )
+                    artigo_id = c.lastrowid
+
+                    quantidade = dados.get("quantidade")
+                    if quantidade is None:
+                        quantidade = 1
+
+                    ordem = dados.get("ordem")
+                    if ordem is None:
+                        ordem = 1
+
                     c.execute(
                         """
                         INSERT INTO processo_artigo (
@@ -922,23 +976,19 @@ def criar_base_dados_completa():
                             artigo_num,
                             descricao,
                             quantidade,
-                            unidade_id,
-                            marca,
                             ordem,
-                            marca_id
+                            artigo_id
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             dados.get("id"),
                             dados.get("processo_id"),
                             dados.get("artigo_num"),
-                            dados.get("descricao"),
+                            descricao,
                             quantidade,
-                            unidade_id,
-                            dados.get("marca"),
-                            dados.get("ordem"),
-                            dados.get("marca_id"),
+                            ordem,
+                            artigo_id,
                         ),
                     )
 
@@ -948,83 +998,6 @@ def criar_base_dados_completa():
 
         c.execute("PRAGMA table_info(processo_artigo)")
         proc_art_cols = [row[1] for row in c.fetchall()]
-
-    if "marca_id" not in proc_art_cols:
-        c.execute(
-            "ALTER TABLE processo_artigo ADD COLUMN marca_id INTEGER REFERENCES marca(id)"
-        )
-        c.execute("PRAGMA table_info(processo_artigo)")
-        proc_art_cols = [row[1] for row in c.fetchall()]
-
-    if "artigo_catalogo_id" in proc_art_cols:
-        c.execute("PRAGMA foreign_keys = OFF")
-        try:
-            c.execute("ALTER TABLE processo_artigo RENAME TO processo_artigo_legacy")
-            c.execute(
-                """
-                CREATE TABLE processo_artigo (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    processo_id INTEGER NOT NULL,
-                    artigo_num TEXT,
-                    descricao TEXT NOT NULL,
-                    quantidade INTEGER NOT NULL DEFAULT 1,
-                    unidade_id INTEGER NOT NULL,
-                    marca TEXT,
-                    ordem INTEGER DEFAULT 1,
-                    marca_id INTEGER,
-                    FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE CASCADE,
-                    FOREIGN KEY (unidade_id) REFERENCES unidade(id) ON DELETE RESTRICT,
-                    FOREIGN KEY (marca_id) REFERENCES marca(id) ON DELETE SET NULL
-                )
-                """
-            )
-            c.execute(
-                """
-                INSERT INTO processo_artigo (
-                    id,
-                    processo_id,
-                    artigo_num,
-                    descricao,
-                    quantidade,
-                    unidade_id,
-                    marca,
-                    ordem,
-                    marca_id
-                )
-                SELECT
-                    id,
-                    processo_id,
-                    artigo_num,
-                    descricao,
-                    quantidade,
-                    unidade_id,
-                    marca,
-                    ordem,
-                    marca_id
-                  FROM processo_artigo_legacy
-                ORDER BY id
-                """
-            )
-            c.execute("DROP TABLE processo_artigo_legacy")
-        finally:
-            c.execute("PRAGMA foreign_keys = ON")
-
-        c.execute("PRAGMA table_info(processo_artigo)")
-        proc_art_cols = [row[1] for row in c.fetchall()]
-
-    c.execute(
-        """
-        UPDATE processo_artigo
-           SET marca_id = (
-                SELECT id
-                  FROM marca
-                 WHERE marca_normalizada = PYCASEFOLD(COALESCE(processo_artigo.marca, ''))
-           )
-         WHERE marca_id IS NULL
-           AND marca IS NOT NULL
-           AND TRIM(marca) != ''
-        """
-    )
 
     # Tabela de artigos (informação base reutilizável entre RFQs)
     c.execute(

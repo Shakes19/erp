@@ -1362,6 +1362,12 @@ def criar_processo_com_artigos(artigos, cliente_id: int | None = None):
     rfq_artigos: list[dict] = []
 
     rel_table = _artigo_rel_table()
+    rel_columns = get_table_columns(rel_table)
+    usa_artigo_referencia = (
+        "artigo_id" in rel_columns
+        and "unidade_id" not in rel_columns
+        and "marca" not in rel_columns
+    )
 
     try:
         for ordem, art in enumerate(artigos, 1):
@@ -1377,24 +1383,69 @@ def criar_processo_com_artigos(artigos, cliente_id: int | None = None):
             except ValueError:
                 unidade_id = ensure_unidade("Peças", cursor=c)
             marca_id = get_marca_id(marca_artigo, cursor=c)
-            c.execute(
-                f"""
-                INSERT INTO {rel_table} (processo_id, artigo_num, descricao,
-                                         quantidade, unidade_id, marca, ordem,
-                                         marca_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    processo_id,
-                    artigo_num,
-                    descricao_artigo,
-                    quantidade_artigo,
-                    unidade_id,
-                    marca_artigo,
-                    ordem,
-                    marca_id,
-                ),
-            )
+            artigo_base_id = None
+            if usa_artigo_referencia:
+                c.execute(
+                    """
+                    INSERT INTO artigo (
+                        artigo_num,
+                        descricao,
+                        unidade_id,
+                        especificacoes,
+                        marca_id
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        artigo_num,
+                        descricao_artigo,
+                        unidade_id,
+                        art.get("especificacoes", ""),
+                        marca_id,
+                    ),
+                )
+                artigo_base_id = c.lastrowid
+                c.execute(
+                    f"""
+                    INSERT INTO {rel_table} (
+                        processo_id,
+                        artigo_num,
+                        descricao,
+                        quantidade,
+                        ordem,
+                        artigo_id
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        processo_id,
+                        artigo_num,
+                        descricao_artigo,
+                        quantidade_artigo,
+                        ordem,
+                        artigo_base_id,
+                    ),
+                )
+            else:
+                c.execute(
+                    f"""
+                    INSERT INTO {rel_table} (processo_id, artigo_num, descricao,
+                                             quantidade, unidade_id, marca, ordem,
+                                             marca_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        processo_id,
+                        artigo_num,
+                        descricao_artigo,
+                        quantidade_artigo,
+                        unidade_id,
+                        marca_artigo,
+                        ordem,
+                        marca_id,
+                    ),
+                )
+                artigo_base_id = None
             rfq_artigos.append(
                 {
                     **art,
@@ -1406,6 +1457,7 @@ def criar_processo_com_artigos(artigos, cliente_id: int | None = None):
                     "ordem": ordem,
                     "rfq_artigo_id": c.lastrowid,
                     "marca_id": marca_id,
+                    "artigo_id": artigo_base_id,
                 }
             )
 
@@ -2261,14 +2313,45 @@ def obter_respostas_por_processo(processo_id):
 
     rel_table = _artigo_rel_table()
 
+    rel_columns = get_table_columns(rel_table)
+    usa_artigo_referencia = (
+        "artigo_id" in rel_columns
+        and "unidade_id" not in rel_columns
+        and "marca" not in rel_columns
+    )
+
+    if usa_artigo_referencia:
+        base_joins = [
+            "LEFT JOIN artigo a_base ON pa.artigo_id = a_base.id",
+            "LEFT JOIN unidade u ON a_base.unidade_id = u.id",
+            "LEFT JOIN marca m_base ON a_base.marca_id = m_base.id",
+        ]
+        unidade_select = "COALESCE(u.nome, '')"
+        marca_select = "COALESCE(m_base.marca, '')"
+    else:
+        base_joins = ["LEFT JOIN unidade u ON pa.unidade_id = u.id"]
+        if "marca_id" in rel_columns:
+            base_joins.append("LEFT JOIN marca m_base ON pa.marca_id = m_base.id")
+        if "marca" in rel_columns and "marca_id" in rel_columns:
+            marca_select = "COALESCE(pa.marca, COALESCE(m_base.marca, ''))"
+        elif "marca" in rel_columns:
+            marca_select = "COALESCE(pa.marca, '')"
+        elif "marca_id" in rel_columns:
+            marca_select = "COALESCE(m_base.marca, '')"
+        else:
+            marca_select = "''"
+        unidade_select = "COALESCE(u.nome, '')"
+
+    base_join_clause = "\n".join(f"        {join}" for join in base_joins)
+
     c.execute(
         f"""
         SELECT pa.id,
                pa.artigo_num,
                pa.descricao,
                pa.quantidade,
-               COALESCE(u.nome, ''),
-               pa.marca,
+               {unidade_select} AS unidade_nome,
+               {marca_select} AS marca_nome,
                pa.ordem,
                rf.id as resposta_id,
                rf.preco_venda,
@@ -2282,7 +2365,7 @@ def obter_respostas_por_processo(processo_id):
                {estado_expr} AS estado_nome,
                rf.validade_preco
         FROM {rel_table} pa
-        LEFT JOIN unidade u ON pa.unidade_id = u.id
+{base_join_clause}
         LEFT JOIN rfq_artigo ra ON ra.processo_artigo_id = pa.id
         LEFT JOIN artigo a ON ra.artigo_id = a.id
         LEFT JOIN rfq r ON ra.rfq_id = r.id
@@ -2326,8 +2409,8 @@ def obter_respostas_por_processo(processo_id):
                 "artigo_num": artigo_num or "",
                 "descricao": descricao,
                 "quantidade": quantidade,
-                "unidade": unidade,
-                "marca": marca or "",
+            "unidade": unidade,
+            "marca": marca or "",
                 "ordem": ordem,
                 "respostas": [],
             },
@@ -2464,17 +2547,48 @@ def obter_detalhes_processo(processo_id: int):
     }
 
     rel_table = _artigo_rel_table()
+    rel_columns = get_table_columns(rel_table)
+    usa_artigo_referencia = (
+        "artigo_id" in rel_columns
+        and "unidade_id" not in rel_columns
+        and "marca" not in rel_columns
+    )
+
+    if usa_artigo_referencia:
+        base_joins = [
+            "LEFT JOIN artigo a_base ON pa.artigo_id = a_base.id",
+            "LEFT JOIN unidade u ON a_base.unidade_id = u.id",
+            "LEFT JOIN marca m_base ON a_base.marca_id = m_base.id",
+        ]
+        unidade_select = "COALESCE(u.nome, '')"
+        marca_select = "COALESCE(m_base.marca, '')"
+    else:
+        base_joins = ["LEFT JOIN unidade u ON pa.unidade_id = u.id"]
+        if "marca_id" in rel_columns:
+            base_joins.append("LEFT JOIN marca m_base ON pa.marca_id = m_base.id")
+        if "marca" in rel_columns and "marca_id" in rel_columns:
+            marca_select = "COALESCE(pa.marca, COALESCE(m_base.marca, ''))"
+        elif "marca" in rel_columns:
+            marca_select = "COALESCE(pa.marca, '')"
+        elif "marca_id" in rel_columns:
+            marca_select = "COALESCE(m_base.marca, '')"
+        else:
+            marca_select = "''"
+        unidade_select = "COALESCE(u.nome, '')"
+
+    base_join_clause = "\n".join(f"          {join}" for join in base_joins)
+
     c.execute(
         f"""
         SELECT pa.id,
                COALESCE(pa.artigo_num, ''),
                pa.descricao,
                pa.quantidade,
-               COALESCE(u.nome, ''),
-               COALESCE(pa.marca, ''),
+               {unidade_select} AS unidade_nome,
+               {marca_select} AS marca_nome,
                pa.ordem
           FROM {rel_table} pa
-          LEFT JOIN unidade u ON pa.unidade_id = u.id
+{base_join_clause}
          WHERE pa.processo_id = ?
          ORDER BY pa.ordem, pa.id
         """,
