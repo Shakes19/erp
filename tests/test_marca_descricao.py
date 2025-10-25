@@ -54,43 +54,23 @@ def test_criar_processo_grava_descricao_com_marca_primeira_palavra():
 
     conn = db.get_connection()
     try:
-        cols = db.get_table_columns("processo_artigo")
-        if "marca" in cols:
-            row = conn.execute(
-                "SELECT descricao, marca FROM processo_artigo WHERE processo_id = ?",
-                (processo_id,),
+        artigo_info = conn.execute(
+            "SELECT artigo_num, descricao, marca_id FROM artigo WHERE id = ?",
+            (processo_artigos[0]["artigo_id"],),
+        ).fetchone()
+        assert artigo_info is not None
+        artigo_num_db, descricao_db, marca_id_db = artigo_info
+        marca_db = ""
+        if marca_id_db:
+            marca_row = conn.execute(
+                "SELECT marca FROM marca WHERE id = ?",
+                (marca_id_db,),
             ).fetchone()
-            descricao_db, marca_db = row if row else (None, None)
-        elif "artigo_id" in cols:
-            row = conn.execute(
-                "SELECT descricao, artigo_id FROM processo_artigo WHERE processo_id = ?",
-                (processo_id,),
-            ).fetchone()
-            descricao_db, artigo_id_db = row if row else (None, None)
-            marca_db = ""
-            if artigo_id_db:
-                artigo_info = conn.execute(
-                    "SELECT descricao, marca_id FROM artigo WHERE id = ?",
-                    (artigo_id_db,),
-                ).fetchone()
-                assert artigo_info is not None
-                descricao_db = artigo_info[0]
-                marca_id_db = artigo_info[1]
-                if marca_id_db:
-                    marca_row = conn.execute(
-                        "SELECT marca FROM marca WHERE id = ?",
-                        (marca_id_db,),
-                    ).fetchone()
-                    marca_db = marca_row[0] if marca_row else ""
-        else:
-            row = conn.execute(
-                "SELECT descricao, '' FROM processo_artigo WHERE processo_id = ?",
-                (processo_id,),
-            ).fetchone()
-            descricao_db, marca_db = row if row else (None, None)
+            marca_db = marca_row[0] if marca_row else ""
     finally:
         conn.close()
 
+    assert artigo_num_db == "2167704"
     assert descricao_db is not None
     assert descricao_db.startswith("Turck ")
     assert (marca_db or "Turck").startswith("Turck")
