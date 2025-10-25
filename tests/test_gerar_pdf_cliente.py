@@ -36,10 +36,14 @@ def test_gerar_pdf_cliente(tmp_path, monkeypatch):
     rfq_id = c.lastrowid
     unidade_id = db_module.ensure_unidade("pcs", cursor=c)
     c.execute(
-        "INSERT INTO artigo(rfq_id, artigo_num, descricao, quantidade, unidade_id) VALUES (?, 'A1', 'Item', 2, ?)",
-        (rfq_id, unidade_id),
+        "INSERT INTO artigo(artigo_num, descricao, unidade_id) VALUES ('A1', 'Item', ?)",
+        (unidade_id,),
     )
     artigo_id = c.lastrowid
+    c.execute(
+        "INSERT INTO rfq_artigo(rfq_id, artigo_id, quantidade, ordem) VALUES (?, ?, 2, 1)",
+        (rfq_id, artigo_id),
+    )
     c.execute("""
         INSERT INTO resposta_fornecedor(
             fornecedor_id, rfq_id, artigo_id, descricao, custo,

@@ -61,51 +61,18 @@ def listar_fornecedores():
 # Obter artigos de um RFQ
 def obter_artigos(rfq_id):
     with obter_sessao() as session:
-        rel_table = None
-        for name in ("rfq_artigo", "processo_artigo"):
-            exists = session.execute(
-                text(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name = :name"
-                ),
-                {"name": name},
-            ).fetchone()
-            if exists:
-                rel_table = name
-                break
-
-        fk_column = "rfq_artigo_id"
-        info = session.execute(text("PRAGMA table_info(artigo)")).fetchall()
-        columns = {row[1] for row in info}
-        if "rfq_artigo_id" not in columns and "processo_artigo_id" in columns:
-            fk_column = "processo_artigo_id"
-
-        if rel_table:
-            descricao_expr = "COALESCE(a.descricao, ra.descricao, '')"
-            quantidade_expr = "COALESCE(a.quantidade, ra.quantidade, 0)"
-            unidade_join = "LEFT JOIN unidade u ON COALESCE(a.unidade_id, ra.unidade_id) = u.id"
-            unidade_expr = "COALESCE(u.nome, '')"
-            join_rel = f"LEFT JOIN {rel_table} ra ON a.{fk_column} = ra.id"
-            ordem_expr = "COALESCE(a.ordem, ra.ordem, a.id)"
-        else:
-            descricao_expr = "COALESCE(a.descricao, '')"
-            quantidade_expr = "COALESCE(a.quantidade, 0)"
-            unidade_join = "LEFT JOIN unidade u ON a.unidade_id = u.id"
-            unidade_expr = "COALESCE(u.nome, '')"
-            join_rel = ""
-            ordem_expr = "COALESCE(a.ordem, a.id)"
-
         result = session.execute(
             text(
                 f"""
                 SELECT a.id,
-                       {descricao_expr} AS descricao,
-                       {quantidade_expr} AS quantidade,
-                       {unidade_expr} AS unidade
-                  FROM artigo a
-                  {join_rel}
-                  {unidade_join}
-                 WHERE a.rfq_id = :rfq_id
-                 ORDER BY {ordem_expr}
+                       COALESCE(a.descricao, '') AS descricao,
+                       COALESCE(ra.quantidade, 0) AS quantidade,
+                       COALESCE(u.nome, '') AS unidade
+                  FROM rfq_artigo ra
+                  JOIN artigo a ON ra.artigo_id = a.id
+                  LEFT JOIN unidade u ON a.unidade_id = u.id
+                 WHERE ra.rfq_id = :rfq_id
+                 ORDER BY COALESCE(ra.ordem, a.id)
                 """
             ),
             {"rfq_id": rfq_id},
