@@ -863,7 +863,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
             }
             st.session_state["show_smart_success_dialog"] = True
             reset_smart_quotation_state()
-            st.session_state["smart_pdf"] = None
+            solicitar_reset_upload_smart_pdf()
             st.rerun()
 
         return True
@@ -1100,7 +1100,7 @@ def mostrar_dialogo_sucesso_smart() -> None:
         if st.button("Fechar"):
             st.session_state.pop("smart_success_data", None)
             st.session_state["show_smart_success_dialog"] = False
-            st.session_state["smart_pdf"] = None
+            solicitar_reset_upload_smart_pdf()
             st.rerun()
 
     _dialog()
@@ -4327,6 +4327,12 @@ def reset_smart_quotation_state():
         st.session_state.pop(key, None)
 
 
+def solicitar_reset_upload_smart_pdf() -> None:
+    """Agenda a remoção do ficheiro carregado no uploader do Smart Quotation."""
+
+    st.session_state["reset_smart_pdf_uploader"] = True
+
+
 def normalizar_quebras_linha(texto: str) -> str:
     """Normaliza caracteres de quebra de linha preservando a estrutura original."""
 
@@ -5799,6 +5805,10 @@ elif menu_option == "🤖 Smart Quotation":
     unidades_padrao = obter_nomes_unidades()
     unidade_padrao = unidades_padrao[0] if unidades_padrao else "Peças"
     marcas_disponiveis = [marca for marca in listar_todas_marcas() if marca]
+
+    if st.session_state.pop("reset_smart_pdf_uploader", False):
+        st.session_state.pop("smart_pdf", None)
+
     upload_pdf = st.file_uploader(
         "📎 Pedido do cliente (PDF ou email)",
         type=["pdf", "eml", "msg"],
@@ -6198,7 +6208,6 @@ elif menu_option == "🤖 Smart Quotation":
     else:
         if st.session_state.get("smart_pdf_uid"):
             reset_smart_quotation_state()
-        st.session_state.pop("smart_pdf", None)
 
     contexto_dup_smart = st.session_state.get("duplicated_ref_context")
     if contexto_dup_smart and contexto_dup_smart.get("origem") == "smart":
