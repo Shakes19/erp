@@ -7851,79 +7851,85 @@ elif menu_option == "📦 Artigos":
         "Consulte os artigos existentes e registe novos itens diretamente na tabela de artigos."
     )
 
-    col_filtro, col_limpar = st.columns([3, 1])
-    with col_filtro:
-        filtro_artigos = st.text_input(
-            "Pesquisar artigos",
-            placeholder="Descrição, nº artigo ou marca",
-            key="artigos_pesquisa",
-        )
-    with col_limpar:
-        if st.button("🔄 Limpar pesquisa", use_container_width=True):
-            st.session_state["artigos_pesquisa"] = ""
-            listar_artigos_catalogo.clear()
-            st.rerun()
+    tab_pesquisar, tab_criar = st.tabs([
+        "Pesquisar Artigo",
+        "Criar Artigo",
+    ])
 
-    artigos_catalogo = listar_artigos_catalogo(filtro=filtro_artigos)
-    if artigos_catalogo:
-        tabela: list[dict[str, object]] = []
-        for artigo in artigos_catalogo:
-            tabela.append(
-                {
-                    "ID": artigo["id"],
-                    "Nº Artigo": artigo["artigo_num"],
-                    "Descrição": artigo["descricao"],
-                    "Unidade": artigo["unidade"],
-                    "Marca": artigo["marca"],
-                    "Especificações": artigo["especificacoes"],
-                    "Preço Histórico": "" if artigo["preco_historico"] is None else artigo["preco_historico"],
-                    "Validade Histórica": _format_iso_date(artigo["validade_historico"]),
-                    "Peso": "" if artigo["peso"] is None else artigo["peso"],
-                    "HS Code": artigo["hs_code"],
-                    "País de Origem": artigo["pais_origem"],
-                }
+    with tab_pesquisar:
+        col_filtro, col_limpar = st.columns([3, 1])
+        with col_filtro:
+            filtro_artigos = st.text_input(
+                "Pesquisar artigos",
+                placeholder="Descrição, nº artigo ou marca",
+                key="artigos_pesquisa",
             )
+        with col_limpar:
+            if st.button("🔄 Limpar pesquisa", use_container_width=True):
+                st.session_state["artigos_pesquisa"] = ""
+                listar_artigos_catalogo.clear()
+                st.rerun()
 
-        df_artigos = pd.DataFrame(tabela)
-        st.dataframe(df_artigos, use_container_width=True, hide_index=True)
-    else:
-        st.info("Nenhum artigo encontrado para os critérios indicados.")
-
-    st.markdown("---")
-    st.subheader("Criar novo artigo")
-
-    unidades_disponiveis = listar_unidades()
-    if not unidades_disponiveis:
-        st.warning(
-            "Não existem unidades configuradas. Adicione unidades nas configurações antes de criar artigos."
-        )
-    else:
-        unidades_opcoes = [unidade[1] for unidade in unidades_disponiveis]
-        marca_opcoes = ["Sem marca"] + listar_todas_marcas()
-
-        with st.form("form_criar_artigo"):
-            col_artigo, col_unidade = st.columns(2)
-            with col_artigo:
-                artigo_num_input = st.text_input("Nº Artigo (opcional)")
-            with col_unidade:
-                unidade_selecionada = st.selectbox(
-                    "Unidade *",
-                    unidades_opcoes,
-                    index=0,
-                    help="Unidade em que o artigo será registado.",
+        artigos_catalogo = listar_artigos_catalogo(filtro=filtro_artigos)
+        if artigos_catalogo:
+            tabela: list[dict[str, object]] = []
+            for artigo in artigos_catalogo:
+                tabela.append(
+                    {
+                        "ID": artigo["id"],
+                        "Nº Artigo": artigo["artigo_num"],
+                        "Descrição": artigo["descricao"],
+                        "Unidade": artigo["unidade"],
+                        "Marca": artigo["marca"],
+                        "Especificações": artigo["especificacoes"],
+                        "Preço Histórico": "" if artigo["preco_historico"] is None else artigo["preco_historico"],
+                        "Validade Histórica": _format_iso_date(artigo["validade_historico"]),
+                        "Peso": "" if artigo["peso"] is None else artigo["peso"],
+                        "HS Code": artigo["hs_code"],
+                        "País de Origem": artigo["pais_origem"],
+                    }
                 )
 
-            descricao_input = st.text_area("Descrição *")
-            especificacoes_input = st.text_area(
-                "Especificações (opcional)",
-                help="Informações adicionais ou notas técnicas do artigo.",
+            df_artigos = pd.DataFrame(tabela)
+            st.dataframe(df_artigos, use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhum artigo encontrado para os critérios indicados.")
+
+    with tab_criar:
+        st.subheader("Criar novo artigo")
+
+        unidades_disponiveis = listar_unidades()
+        if not unidades_disponiveis:
+            st.warning(
+                "Não existem unidades configuradas. Adicione unidades nas configurações antes de criar artigos."
             )
-            marca_selecionada = st.selectbox(
-                "Marca (opcional)",
-                marca_opcoes,
-                index=0,
-                help="Selecione uma marca já registada ou escolha 'Sem marca'.",
-            )
+        else:
+            unidades_opcoes = [unidade[1] for unidade in unidades_disponiveis]
+            marca_opcoes = ["Sem marca"] + listar_todas_marcas()
+
+            with st.form("form_criar_artigo"):
+                col_artigo, col_unidade = st.columns(2)
+                with col_artigo:
+                    artigo_num_input = st.text_input("Nº Artigo (opcional)")
+                with col_unidade:
+                    unidade_selecionada = st.selectbox(
+                        "Unidade *",
+                        unidades_opcoes,
+                        index=0,
+                        help="Unidade em que o artigo será registado.",
+                    )
+
+                descricao_input = st.text_area("Descrição *")
+                especificacoes_input = st.text_area(
+                    "Especificações (opcional)",
+                    help="Informações adicionais ou notas técnicas do artigo.",
+                )
+                marca_selecionada = st.selectbox(
+                    "Marca (opcional)",
+                    marca_opcoes,
+                    index=0,
+                    help="Selecione uma marca já registada ou escolha 'Sem marca'.",
+                )
 
             submitted = st.form_submit_button("Criar artigo")
 
