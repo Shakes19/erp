@@ -522,6 +522,138 @@ def listar_unidades():
     return unidades
 
 
+@st.cache_data(show_spinner=False)
+def listar_artigos_catalogo(filtro: str | None = None) -> list[dict[str, object]]:
+    """Listar artigos registados na tabela ``artigo``."""
+
+    filtro_txt = (filtro or "").strip()
+    parametros: list[str] = []
+    where_clause = ""
+    if filtro_txt:
+        termo = f"%{filtro_txt.casefold()}%"
+        where_clause = (
+            "WHERE PYCASEFOLD(COALESCE(a.artigo_num, '')) LIKE ? "
+            "OR PYCASEFOLD(a.descricao) LIKE ? "
+            "OR PYCASEFOLD(COALESCE(m.marca, '')) LIKE ?"
+        )
+        parametros = [termo, termo, termo]
+
+    rows = fetch_all(
+        f"""
+        SELECT a.id,
+               COALESCE(a.artigo_num, ''),
+               a.descricao,
+               COALESCE(u.nome, ''),
+               COALESCE(m.marca, ''),
+               COALESCE(a.especificacoes, ''),
+               a.preco_historico,
+               a.validade_historico,
+               a.peso,
+               COALESCE(a.hs_code, ''),
+               COALESCE(a.pais_origem, '')
+          FROM artigo a
+          LEFT JOIN unidade u ON a.unidade_id = u.id
+          LEFT JOIN marca m ON a.marca_id = m.id
+          {where_clause}
+         ORDER BY PYCASEFOLD(a.descricao), a.id
+        """,
+        parametros,
+        ensure_schema=True,
+    )
+
+    artigos: list[dict[str, object]] = []
+    for row in rows:
+        artigos.append(
+            {
+                "id": int(row[0]),
+                "artigo_num": row[1],
+                "descricao": row[2],
+                "unidade": row[3],
+                "marca": row[4],
+                "especificacoes": row[5],
+                "preco_historico": row[6],
+                "validade_historico": row[7],
+                "peso": row[8],
+                "hs_code": row[9],
+                "pais_origem": row[10],
+            }
+        )
+    return artigos
+
+
+def criar_artigo_catalogo(
+    descricao: str,
+    unidade_nome: str,
+    *,
+    artigo_num: str | None = None,
+    especificacoes: str | None = None,
+    marca_nome: str | None = None,
+) -> tuple[bool, str | None]:
+    """Inserir um novo artigo na tabela ``artigo``."""
+
+    descricao_limpa = (descricao or "").strip()
+    if not descricao_limpa:
+        return False, "A descrição do artigo é obrigatória."
+
+    unidade_limpa = (unidade_nome or "").strip()
+    if not unidade_limpa:
+        return False, "A unidade do artigo é obrigatória."
+
+    artigo_num_db = (artigo_num or "").strip() or None
+    especificacoes_db = (especificacoes or "").strip() or None
+
+    conn = obter_conexao()
+    cursor = conn.cursor()
+    try:
+        unidade_id = ensure_unidade(unidade_limpa, cursor=cursor)
+
+        marca_id = None
+        if marca_nome:
+            marca_id = get_marca_id(marca_nome, cursor=cursor)
+            if marca_id is None:
+                conn.rollback()
+                return False, "A marca selecionada deixou de existir."
+
+        cursor.execute(
+            """
+            INSERT INTO artigo (
+                artigo_num,
+                descricao,
+                unidade_id,
+                especificacoes,
+                marca_id
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (artigo_num_db, descricao_limpa, unidade_id, especificacoes_db, marca_id),
+        )
+        conn.commit()
+        listar_artigos_catalogo.clear()
+        invalidate_overview_caches()
+        return True, None
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        return False, "Já existe um artigo com o mesmo número."
+    except sqlite3.OperationalError as exc:
+        conn.rollback()
+        if "no such table" in str(exc).lower():
+            conn.close()
+            conn = None
+            criar_base_dados_completa()
+            return criar_artigo_catalogo(
+                descricao_limpa,
+                unidade_limpa,
+                artigo_num=artigo_num or "",
+                especificacoes=especificacoes or "",
+                marca_nome=marca_nome,
+            )
+        raise
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 def inserir_unidade(nome: str) -> int | None:
     """Adicionar uma nova unidade normalizada."""
 
@@ -7712,6 +7844,102 @@ elif menu_option == "📄 PDFs":
                     st.info("Apenas administradores podem atualizar o PDF.")
     else:
         st.info("Nenhum processo disponível")
+
+elif menu_option == "📦 Artigos":
+    st.title("📦 Gestão de Artigos")
+    st.markdown(
+        "Consulte os artigos existentes e registe novos itens diretamente na tabela de artigos."
+    )
+
+    col_filtro, col_limpar = st.columns([3, 1])
+    with col_filtro:
+        filtro_artigos = st.text_input(
+            "Pesquisar artigos",
+            placeholder="Descrição, nº artigo ou marca",
+            key="artigos_pesquisa",
+        )
+    with col_limpar:
+        if st.button("🔄 Limpar pesquisa", use_container_width=True):
+            st.session_state["artigos_pesquisa"] = ""
+            listar_artigos_catalogo.clear()
+            st.rerun()
+
+    artigos_catalogo = listar_artigos_catalogo(filtro=filtro_artigos)
+    if artigos_catalogo:
+        tabela: list[dict[str, object]] = []
+        for artigo in artigos_catalogo:
+            tabela.append(
+                {
+                    "ID": artigo["id"],
+                    "Nº Artigo": artigo["artigo_num"],
+                    "Descrição": artigo["descricao"],
+                    "Unidade": artigo["unidade"],
+                    "Marca": artigo["marca"],
+                    "Especificações": artigo["especificacoes"],
+                    "Preço Histórico": "" if artigo["preco_historico"] is None else artigo["preco_historico"],
+                    "Validade Histórica": _format_iso_date(artigo["validade_historico"]),
+                    "Peso": "" if artigo["peso"] is None else artigo["peso"],
+                    "HS Code": artigo["hs_code"],
+                    "País de Origem": artigo["pais_origem"],
+                }
+            )
+
+        df_artigos = pd.DataFrame(tabela)
+        st.dataframe(df_artigos, use_container_width=True, hide_index=True)
+    else:
+        st.info("Nenhum artigo encontrado para os critérios indicados.")
+
+    st.markdown("---")
+    st.subheader("Criar novo artigo")
+
+    unidades_disponiveis = listar_unidades()
+    if not unidades_disponiveis:
+        st.warning(
+            "Não existem unidades configuradas. Adicione unidades nas configurações antes de criar artigos."
+        )
+    else:
+        unidades_opcoes = [unidade[1] for unidade in unidades_disponiveis]
+        marca_opcoes = ["Sem marca"] + listar_todas_marcas()
+
+        with st.form("form_criar_artigo"):
+            col_artigo, col_unidade = st.columns(2)
+            with col_artigo:
+                artigo_num_input = st.text_input("Nº Artigo (opcional)")
+            with col_unidade:
+                unidade_selecionada = st.selectbox(
+                    "Unidade *",
+                    unidades_opcoes,
+                    index=0,
+                    help="Unidade em que o artigo será registado.",
+                )
+
+            descricao_input = st.text_area("Descrição *")
+            especificacoes_input = st.text_area(
+                "Especificações (opcional)",
+                help="Informações adicionais ou notas técnicas do artigo.",
+            )
+            marca_selecionada = st.selectbox(
+                "Marca (opcional)",
+                marca_opcoes,
+                index=0,
+                help="Selecione uma marca já registada ou escolha 'Sem marca'.",
+            )
+
+            submitted = st.form_submit_button("Criar artigo")
+
+        if submitted:
+            marca_nome = None if marca_selecionada == "Sem marca" else marca_selecionada
+            sucesso, mensagem = criar_artigo_catalogo(
+                descricao=descricao_input,
+                unidade_nome=unidade_selecionada,
+                artigo_num=artigo_num_input,
+                especificacoes=especificacoes_input,
+                marca_nome=marca_nome,
+            )
+            if sucesso:
+                st.success("Artigo criado com sucesso.")
+            else:
+                st.error(mensagem)
 
 elif menu_option == "👤 Perfil":
     st.title("👤 Meu Perfil")
