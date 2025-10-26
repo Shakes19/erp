@@ -7899,6 +7899,7 @@ elif menu_option == "📦 Artigos":
         st.subheader("Criar novo artigo")
 
         unidades_disponiveis = listar_unidades()
+        submitted = False
         if not unidades_disponiveis:
             st.warning(
                 "Não existem unidades configuradas. Adicione unidades nas configurações antes de criar artigos."
@@ -7931,7 +7932,7 @@ elif menu_option == "📦 Artigos":
                     help="Selecione uma marca já registada ou escolha 'Sem marca'.",
                 )
 
-            submitted = st.form_submit_button("Criar artigo")
+                submitted = st.form_submit_button("Criar artigo")
 
         if submitted:
             marca_nome = None if marca_selecionada == "Sem marca" else marca_selecionada
