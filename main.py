@@ -7852,8 +7852,8 @@ elif menu_option == "📦 Artigos":
     )
 
     tab_pesquisar, tab_criar = st.tabs([
-        "Pesquisar Artigo",
-        "Criar Artigo",
+        "🔎 Pesquisar Artigo",
+        "➕ Criar Artigo",
     ])
 
     with tab_pesquisar:
