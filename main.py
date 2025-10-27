@@ -3238,16 +3238,6 @@ def guardar_pdf_uploads(rfq_id, tipo_pdf_base, ficheiros, *, processo_id=None):
         return False
 
 
-def guardar_pdf_upload(rfq_id, tipo_pdf, nome_ficheiro, bytes_, *, processo_id=None):
-    """Compatibilidade retroativa para guardar um único PDF."""
-
-    return guardar_pdf_uploads(
-        rfq_id,
-        tipo_pdf,
-        [(nome_ficheiro, bytes_)],
-        processo_id=processo_id,
-    )
-
 # ========================== CLASSES PDF ==========================
 
 class InquiryPDF(FPDF):
