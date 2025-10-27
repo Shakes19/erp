@@ -2203,6 +2203,27 @@ def guardar_respostas(
 
         total_custos = sum(item[1] for item in respostas if item[1] > 0)
 
+        artigo_ids = [item[0] for item in respostas]
+        marcas_por_artigo: dict[int, str | None] = {}
+        if artigo_ids:
+            placeholders = ",".join(["?"] * len(artigo_ids))
+            c.execute(
+                f"""
+                SELECT a.id, COALESCE(m.marca, '')
+                  FROM artigo a
+                  LEFT JOIN marca m ON a.marca_id = m.id
+                 WHERE a.id IN ({placeholders})
+                """,
+                artigo_ids,
+            )
+            marcas_por_artigo = {
+                row[0]: row[1] or None for row in c.fetchall()
+            }
+
+        margens_por_marca = _carregar_margens_por_marca(
+            c, fornecedor_id, marcas_por_artigo.values()
+        )
+
         # Obter margem para cada artigo baseada na marca
         for item in respostas:
             (
@@ -2217,24 +2238,16 @@ def guardar_respostas(
                 prazo,
             ) = item
 
-            # Obter marca e artigo do processo associado
-            c.execute(
-                """
-                SELECT COALESCE(m.marca, '')
-                  FROM artigo a
-                  LEFT JOIN marca m ON a.marca_id = m.id
-                 WHERE a.id = ?
-                """,
-                (artigo_id,),
-            )
-            marca_result = c.fetchone()
-            marca = marca_result[0] if marca_result else None
+            marca = marcas_por_artigo.get(artigo_id)
 
             proporcao = (custo / total_custos) if total_custos else 0
             custo_total = custo + (custo_envio + custo_embalagem) * proporcao
 
             # Obter margem configurada para a marca
-            margem = obter_margem_para_marca(fornecedor_id, marca)
+            margem = margens_por_marca.get(
+                _normalizar_nome_marca(marca),
+                0.0,
+            )
             preco_venda = custo_total * (1 + margem / 100)
             moeda_codigo = "EUR"
 
@@ -2860,6 +2873,48 @@ def obter_detalhes_processo(processo_id: int):
 
 # ========================== FUNÇÕES DE GESTÃO DE MARGENS ==========================
 
+def _normalizar_nome_marca(marca: str | None) -> str | None:
+    """Normalizar nome de marca para pesquisa em ``marca.marca_normalizada``."""
+
+    marca_limpa = (marca or "").strip()
+    if not marca_limpa:
+        return None
+    return marca_limpa.casefold()
+
+
+def _carregar_margens_por_marca(
+    cursor: sqlite3.Cursor,
+    fornecedor_id: int,
+    marcas: Iterable[str | None],
+) -> dict[str, float]:
+    """Carregar margens configuradas para um conjunto de marcas."""
+
+    normalizadas: list[str] = []
+    vistos: set[str] = set()
+    for marca in marcas:
+        normalizada = _normalizar_nome_marca(marca)
+        if not normalizada or normalizada in vistos:
+            continue
+        vistos.add(normalizada)
+        normalizadas.append(normalizada)
+
+    if not normalizadas:
+        return {}
+
+    placeholders = ",".join(["?"] * len(normalizadas))
+    cursor.execute(
+        f"""
+        SELECT marca_normalizada, COALESCE(margem, 0.0)
+          FROM marca
+         WHERE fornecedor_id = ?
+           AND marca_normalizada IN ({placeholders})
+        """,
+        (fornecedor_id, *normalizadas),
+    )
+
+    return {row[0]: float(row[1] or 0.0) for row in cursor.fetchall()}
+
+
 def obter_margem_para_marca(fornecedor_id, marca):
     """Obter margem configurada para fornecedor/marca específica.
 
@@ -2867,29 +2922,18 @@ def obter_margem_para_marca(fornecedor_id, marca):
     devolvido ``0.0``.
     """
     try:
-        marca_limpa = (marca or "").strip()
-        if not marca_limpa:
+        marca_normalizada = _normalizar_nome_marca(marca)
+        if not marca_normalizada:
             return 0.0
 
-        marca_normalizada = marca_limpa.casefold()
-
         conn = obter_conexao()
-        c = conn.cursor()
-        c.execute(
-            """
-            SELECT COALESCE(margem, 0.0)
-              FROM marca
-             WHERE fornecedor_id = ?
-               AND marca_normalizada = ?
-             LIMIT 1
-            """,
-            (fornecedor_id, marca_normalizada),
-        )
-        result = c.fetchone()
-        conn.close()
-        if result:
-            return float(result[0])
-        return 0.0
+        try:
+            c = conn.cursor()
+            margens = _carregar_margens_por_marca(c, fornecedor_id, [marca])
+        finally:
+            conn.close()
+
+        return float(margens.get(marca_normalizada, 0.0))
 
     except Exception as e:
         print(f"Erro ao obter margem: {e}")
@@ -4702,6 +4746,19 @@ def responder_cotacao_dialog(cotacao):
             for idx, (nome_resposta, resposta_bytes) in enumerate(st.session_state[anexos_resposta_key], start=1):
                 exibir_pdf(f"📄 Resposta carregada {idx} - {nome_resposta}", resposta_bytes, expanded=False)
 
+        margens_por_marca_ui: dict[str, float] = {}
+        if detalhes['artigos']:
+            conn_margens = obter_conexao()
+            try:
+                cursor_margens = conn_margens.cursor()
+                margens_por_marca_ui = _carregar_margens_por_marca(
+                    cursor_margens,
+                    detalhes["fornecedor_id"],
+                    (artigo.get("marca") for artigo in detalhes["artigos"]),
+                )
+            finally:
+                conn_margens.close()
+
         for i, artigo in enumerate(detalhes['artigos'], 1):
             st.subheader(f"Artigo {i}: {artigo['artigo_num'] if artigo['artigo_num'] else 'S/N'}")
 
@@ -4749,8 +4806,9 @@ def responder_cotacao_dialog(cotacao):
                     key=f"pais_{artigo['id']}"
                 )
 
-            margem = obter_margem_para_marca(
-                detalhes["fornecedor_id"], artigo.get("marca")
+            margem = margens_por_marca_ui.get(
+                _normalizar_nome_marca(artigo.get("marca")),
+                0.0,
             )
 
             col4, col5 = st.columns(2)
