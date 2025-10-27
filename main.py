@@ -3701,6 +3701,16 @@ class InquiryPDF(FPDF):
         # the UI, so fall back to an empty string before splitting.
         item_text = item.get("descricao") or ""
         lines = self._wrap_text(item_text, col_w[4])
+        hs_code = (item.get("hs_code") or "").strip()
+        origem = (item.get("pais_origem") or "").strip()
+        if hs_code or origem:
+            extra_parts: list[str] = []
+            if hs_code:
+                extra_parts.append(f"HS Code: {hs_code}")
+            if origem:
+                extra_parts.append(f"País de Origem: {origem}")
+            extra_text = " ".join(extra_parts)
+            lines.extend(self._wrap_text(extra_text, col_w[4]))
         line_count = len(lines)
         row_height = line_count * line_height
         sub_height = line_height
