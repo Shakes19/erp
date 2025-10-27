@@ -16,8 +16,9 @@ import copy
 import textwrap
 from uuid import uuid4
 from typing import Iterable
+import logging
 from pypdf import PdfReader
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 import pandas as pd
 from streamlit_option_menu import option_menu
 from db import (
@@ -252,14 +253,25 @@ def _obter_ou_criar_artigo(
     return int(cursor.lastrowid)
 
 
+LOGGER = logging.getLogger(__name__)
+
 LOGO_PATH = "assets/logo.png"
-with open(LOGO_PATH, "rb") as _logo_file:
-    LOGO_BYTES = _logo_file.read()
-LOGO_IMAGE = Image.open(BytesIO(LOGO_BYTES))
+FALLBACK_PAGE_ICON = "📦"
+
+try:
+    with open(LOGO_PATH, "rb") as _logo_file:
+        LOGO_BYTES = _logo_file.read()
+    LOGO_IMAGE = Image.open(BytesIO(LOGO_BYTES))
+    PAGE_ICON = LOGO_IMAGE
+except (FileNotFoundError, OSError, UnidentifiedImageError) as exc:
+    LOGO_BYTES = None
+    LOGO_IMAGE = None
+    PAGE_ICON = FALLBACK_PAGE_ICON
+    LOGGER.warning("Não foi possível carregar o logo em %s: %s", LOGO_PATH, exc)
 
 st.set_page_config(
     page_title="myERP",
-    page_icon=LOGO_IMAGE,
+    page_icon=PAGE_ICON,
     layout="wide",
 )
 
@@ -3560,7 +3572,9 @@ class InquiryPDF(FPDF):
         try:
             logo_w = 20
             logo_ratio = (
-                LOGO_IMAGE.height / LOGO_IMAGE.width if LOGO_IMAGE.width else 1
+                LOGO_IMAGE.height / LOGO_IMAGE.width
+                if LOGO_IMAGE and getattr(LOGO_IMAGE, "width", 0)
+                else 1
             )
             logo_h = logo_w * logo_ratio
             margin_px = 50
@@ -5533,12 +5547,20 @@ def login_screen():
             st.rerun()
         else:
             st.error("Credenciais inválidas")
-    st.markdown(
-        f"<div style='display:flex; justify-content:center;'>"
-        f"<img src='data:image/png;base64,{base64.b64encode(LOGO_BYTES).decode()}' width='120'>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
+    if LOGO_BYTES:
+        st.markdown(
+            f"<div style='display:flex; justify-content:center;'>"
+            f"<img src='data:image/png;base64,{base64.b64encode(LOGO_BYTES).decode()}' width='120'>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"<div style='display:flex; justify-content:center; font-size:64px;'>"
+            f"{FALLBACK_PAGE_ICON}"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
     st.markdown(
         "<p style='text-align:center;'>Sistema myERP v4.0<br/>© 2025 Ricardo Nogueira</p>",
         unsafe_allow_html=True,
@@ -5657,7 +5679,13 @@ with st.sidebar:
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.image(LOGO_BYTES, width=80)
+        if LOGO_BYTES:
+            st.image(LOGO_BYTES, width=80)
+        else:
+            st.markdown(
+                f"<div style='text-align:center; font-size:48px; line-height:1;'>{FALLBACK_PAGE_ICON}</div>",
+                unsafe_allow_html=True,
+            )
     st.markdown(
         "<div style='text-align:center; font-size: 12px;'>"
         "<p>Sistema myERP v4.0</p>"
