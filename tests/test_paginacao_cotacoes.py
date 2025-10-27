@@ -1,7 +1,6 @@
 import os
 import sys
 import importlib
-import types
 
 # Ensure project root in path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -11,27 +10,8 @@ def setup_module(module):
     # Use dedicated temporary database
     os.environ["DB_PATH"] = "test_paginacao.db"
 
-    # Stub streamlit to avoid UI during import
-    dummy = types.ModuleType("streamlit")
-    dummy.set_page_config = lambda *a, **k: None
-    dummy.title = lambda *a, **k: None
-    dummy.subheader = lambda *a, **k: None
-    dummy.columns = lambda n: [types.SimpleNamespace(button=lambda *a, **k: False) for _ in range(n)]
-    dummy.button = lambda *a, **k: False
-    dummy.write = lambda *a, **k: None
-    dummy.selectbox = lambda *a, **k: ""
-    dummy.warning = lambda *a, **k: None
-    dummy.info = lambda *a, **k: None
-    dummy.number_input = lambda *a, **k: 0
-    dummy.markdown = lambda *a, **k: None
-    dummy.success = lambda *a, **k: None
-
-    class DummySessionState(dict):
-        __getattr__ = dict.get
-        __setattr__ = dict.__setitem__
-
-    dummy.session_state = DummySessionState()
-    sys.modules['streamlit'] = dummy
+    for name in ("cotacoes", "db"):
+        sys.modules.pop(name, None)
 
     db = importlib.import_module('db')
     importlib.reload(db)
@@ -46,7 +26,6 @@ def teardown_module(module):
     module.db.engine.dispose()
     if os.path.exists("test_paginacao.db"):
         os.remove("test_paginacao.db")
-    sys.modules.pop('streamlit', None)
 
 
 def test_listar_processos_paginados():
