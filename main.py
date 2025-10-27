@@ -117,6 +117,15 @@ def _rfq_schema_info():
     }
 
 
+def criar_base_dados() -> bool:
+    """Create or migrate the database and refresh RFQ schema metadata cache."""
+
+    sucesso = criar_base_dados_completa()
+    if sucesso and hasattr(_rfq_schema_info, "cache_clear"):
+        _rfq_schema_info.cache_clear()
+    return sucesso
+
+
 def _rfq_data_expression(alias: str | None = None) -> str | None:
     """Return the fully-qualified expression for the RFQ date column."""
 
@@ -639,7 +648,7 @@ def criar_artigo_catalogo(
         if "no such table" in str(exc).lower():
             conn.close()
             conn = None
-            criar_base_dados_completa()
+            criar_base_dados()
             return criar_artigo_catalogo(
                 descricao_limpa,
                 unidade_limpa,
@@ -1306,7 +1315,7 @@ def inserir_empresa(nome, morada="", condicoes_pagamento=""):
     except sqlite3.OperationalError as e:
         conn.close()
         if "no such table" in str(e).lower():
-            criar_base_dados_completa()
+            criar_base_dados()
             return inserir_empresa(nome_limpo, morada, condicoes_pagamento)
         raise
     finally:
@@ -1767,7 +1776,7 @@ def criar_rfq(
                     limpeza_migracao_executada = True
                     conn.rollback()
                     conn.close()
-                    criar_base_dados_completa()
+                    criar_base_dados()
                     conn = obter_conexao()
                     continue
                 raise
@@ -5437,7 +5446,7 @@ def inicializar_sistema():
     """Inicializar todo o sistema"""
     print("Inicializando sistema myERP...")
     
-    if criar_base_dados_completa():
+    if criar_base_dados():
         print("✓ Base de dados inicializada")
     else:
         print("✗ Erro ao inicializar base de dados")

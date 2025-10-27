@@ -1216,6 +1216,8 @@ def criar_base_dados_completa():
         c.execute(idx)
 
     conn.commit()
+    if hasattr(get_table_columns, "cache_clear"):
+        get_table_columns.cache_clear()
 
     # Migração leve: garantir coluna custo_embalagem em bases existentes
     try:
@@ -1226,6 +1228,8 @@ def criar_base_dados_completa():
                 "ALTER TABLE resposta_custos ADD COLUMN custo_embalagem REAL DEFAULT 0.0"
             )
             conn.commit()
+            if hasattr(get_table_columns, "cache_clear"):
+                get_table_columns.cache_clear()
     except Exception:
         pass
 
