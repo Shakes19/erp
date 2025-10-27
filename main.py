@@ -2392,27 +2392,76 @@ def obter_respostas_processo(processo_id):
     """Obter respostas registadas em todas as RFQs de um processo."""
 
     conn = obter_conexao()
-    c = conn.cursor()
-    c.execute(
-        "SELECT id FROM rfq WHERE processo_id = ?",
-        (processo_id,),
-    )
-    rfq_ids = [row[0] for row in c.fetchall()]
-    conn.close()
+    try:
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT rf.id,
+                   rf.fornecedor_id,
+                   rf.rfq_id,
+                   rf.artigo_id,
+                   rf.descricao,
+                   rf.custo,
+                   rf.prazo_entrega,
+                   rf.quantidade_final,
+                   a.peso,
+                   a.hs_code,
+                   a.pais_origem,
+                   rf.moeda,
+                   rf.preco_venda,
+                   rf.observacoes,
+                   rf.data_resposta,
+                   rf.validade_preco,
+                   a.descricao AS descricao_original,
+                   COALESCE(ra.quantidade, 1) AS quantidade_original,
+                   ra.id AS rfq_artigo_id,
+                   COALESCE(fornecedor.nome, '') AS fornecedor_nome,
+                   COALESCE(u.nome, '') AS unidade_nome,
+                   COALESCE(m.marca, '') AS marca_nome
+              FROM resposta_fornecedor rf
+              JOIN rfq r ON rf.rfq_id = r.id
+              JOIN artigo a ON rf.artigo_id = a.id
+         LEFT JOIN rfq_artigo ra ON ra.artigo_id = a.id AND ra.rfq_id = rf.rfq_id
+         LEFT JOIN fornecedor ON fornecedor.id = rf.fornecedor_id
+         LEFT JOIN unidade u ON a.unidade_id = u.id
+         LEFT JOIN marca m ON a.marca_id = m.id
+             WHERE r.processo_id = ?
+          ORDER BY COALESCE(ra.id, 1000000), rf.artigo_id, rf.id
+            """,
+            (processo_id,),
+        )
 
-    respostas: dict[int, dict] = {}
-    for rfq_id in rfq_ids:
-        for resposta in obter_respostas_cotacao(rfq_id):
-            respostas.setdefault(resposta["id"], resposta)
+        respostas: list[dict] = []
+        for row in c.fetchall():
+            respostas.append(
+                {
+                    "id": row[0],
+                    "rfq_id": row[2],
+                    "artigo_id": row[3],
+                    "descricao": row[4] if row[4] else row[16],
+                    "custo": row[5],
+                    "prazo_entrega": row[6],
+                    "quantidade_final": row[7] if row[7] else row[17],
+                    "peso": row[8],
+                    "hs_code": row[9],
+                    "pais_origem": row[10],
+                    "moeda": row[11],
+                    "preco_venda": row[12],
+                    "observacoes": row[13],
+                    "data_resposta": row[14],
+                    "validade_preco": row[15],
+                    "descricao_original": row[16],
+                    "quantidade_original": row[17],
+                    "rfq_artigo_id": row[18],
+                    "fornecedor_nome": row[19] or '',
+                    "unidade": row[20],
+                    "marca": row[21],
+                }
+            )
 
-    return sorted(
-        respostas.values(),
-        key=lambda item: (
-            item.get("rfq_artigo_id") or 10**6,
-            item.get("artigo_id") or 0,
-            item["id"],
-        ),
-    )
+        return respostas
+    finally:
+        conn.close()
 
 def obter_respostas_por_processo(processo_id):
     """Agrega respostas de todos os fornecedores para um processo."""
