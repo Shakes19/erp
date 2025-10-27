@@ -19,13 +19,6 @@ def ensure_latin1(value: str | int | float | None) -> str:
     else:
         text = str(value)
     return text.encode("latin-1", errors="replace").decode("latin-1")
-
-
-def _safe_text(value: str | None) -> str:
-    """Backward compatible wrapper retained for older imports."""
-
-    return ensure_latin1(value)
-
 @st.cache_data(show_spinner=False)
 def load_pdf_config(tipo):
     """Load PDF layout configuration from ``pdf_layout.json``."""
