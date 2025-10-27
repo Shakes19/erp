@@ -4804,7 +4804,7 @@ def criar_cotacao_cliente_dialog(
             data=existing_pdf_state["bytes"],
             file_name=existing_pdf_state["file_name"],
             mime="application/pdf",
-            key=f"download_cliente_{rfq_id}",
+            key=f"download_cliente_dialog_existing_{rfq_id}",
         )
         st.markdown("---")
 
@@ -4938,7 +4938,7 @@ def criar_cotacao_cliente_dialog(
             data=pdf_bytes,
             file_name=ficheiro_pdf,
             mime="application/pdf",
-            key=f"download_cliente_{rfq_id}"
+            key=f"download_cliente_dialog_{rfq_id}"
         )
 
     if enviar_email and email_cliente:
@@ -7857,21 +7857,21 @@ elif menu_option == "📦 Artigos":
     ])
 
     with tab_pesquisar:
-        col_filtro, col_limpar = st.columns([3, 1])
-        with col_limpar:
-            limpar_pesquisa = st.button("🔄 Limpar pesquisa", use_container_width=True)
+        filtro_artigos = st.text_input(
+            "Pesquisar artigos",
+            placeholder="Descrição, nº artigo ou marca",
+            key="artigos_pesquisa",
+        )
+
+        limpar_pesquisa = st.button(
+            "🔄 Limpar pesquisa",
+            use_container_width=True,
+        )
 
         if limpar_pesquisa:
             st.session_state["artigos_pesquisa"] = ""
             listar_artigos_catalogo.clear()
             st.rerun()
-
-        with col_filtro:
-            filtro_artigos = st.text_input(
-                "Pesquisar artigos",
-                placeholder="Descrição, nº artigo ou marca",
-                key="artigos_pesquisa",
-            )
 
         artigos_catalogo = listar_artigos_catalogo(filtro=filtro_artigos)
         if artigos_catalogo:
