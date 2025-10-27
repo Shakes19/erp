@@ -2945,13 +2945,13 @@ def enviar_email_orcamento(
         if not assunto.strip():
             assunto = f"Quotation {numero_cotacao}{referencia_sufixo}"
 
-        print(f"🚀 Tentando enviar email para {email_destino}...")
+        print(f"🚀 A enviar email para {email_destino}...")
         send_email(
             email_destino,
             assunto,
             corpo,
             pdf_bytes=pdf_bytes,
-            pdf_filename=f"orcamento_{numero_cotacao}.pdf",
+            pdf_filename=f"quote_{numero_cotacao}.pdf",
             smtp_server=smtp_server,
             smtp_port=smtp_port,
             email_user=email_user,
