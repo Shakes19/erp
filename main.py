@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 from fpdf import FPDF
 import base64
 import json
-from collections import defaultdict, OrderedDict
+from collections import defaultdict
 from functools import lru_cache
 from io import BytesIO
 import os
@@ -7314,151 +7314,26 @@ elif menu_option == "📩 Process Center":
                         st.markdown("---")
                         st.markdown("### Cotação Cliente")
 
-                        respostas_por_artigo: OrderedDict[str, dict] = OrderedDict()
-                        resposta_para_pedido: dict[int, dict] = {}
-                        for pedido in pedidos_com_resposta:
-                            respostas_pedido = obter_respostas_cotacao(pedido.get("id"))
-                            artigos_pedido = pedido.get("artigos") or []
-                            for resposta in respostas_pedido:
-                                resposta_id = resposta.get("id")
-                                if resposta_id is not None:
-                                    resposta_para_pedido[resposta_id] = pedido
-                                proc_art_id = resposta.get("rfq_artigo_id") or resposta.get("artigo_id")
-                                chave_artigo = str(proc_art_id or f"artigo_{resposta_id}")
-                                artigo_relacionado = None
-                                if proc_art_id:
-                                    for artigo in artigos_pedido:
-                                        if artigo.get("rfq_artigo_id") == proc_art_id or artigo.get("id") == proc_art_id:
-                                            artigo_relacionado = artigo
-                                            break
-                                if not artigo_relacionado:
-                                    artigo_relacionado = {
-                                        "artigo_num": resposta.get("artigo_id"),
-                                        "descricao": resposta.get("descricao_original")
-                                        or resposta.get("descricao"),
-                                        "quantidade": resposta.get("quantidade_original")
-                                        or resposta.get("quantidade_final"),
-                                        "unidade": "",
-                                    }
-                                grupo = respostas_por_artigo.setdefault(
-                                    chave_artigo,
-                                    {
-                                        "rfq_artigo_id": proc_art_id,
-                                        "artigo_num": artigo_relacionado.get("artigo_num"),
-                                        "descricao": artigo_relacionado.get("descricao")
-                                        or resposta.get("descricao_original")
-                                        or resposta.get("descricao"),
-                                        "quantidade": artigo_relacionado.get("quantidade"),
-                                        "unidade": artigo_relacionado.get("unidade"),
-                                        "opcoes": [],
-                                    },
-                                )
-                                grupo["opcoes"].append({"pedido": pedido, "resposta": resposta})
+                        primeiro_pedido: dict | None = pedidos_com_resposta[0] if pedidos_com_resposta else None
 
-                        if respostas_por_artigo:
-                            respostas_destacadas: list[int] = []
-                            primeiro_pedido: dict | None = None
+                        st.info(
+                            "Selecione os artigos e condições pretendidos no passo seguinte ao criar a cotação do cliente."
+                        )
 
-                            for idx, (chave_artigo, dados_artigo) in enumerate(respostas_por_artigo.items(), start=1):
-                                opcoes_artigo = dados_artigo.get("opcoes", [])
-                                if not opcoes_artigo:
-                                    continue
-
-                                resposta_ids = [
-                                    opcao.get("resposta", {}).get("id")
-                                    for opcao in opcoes_artigo
-                                    if opcao.get("resposta", {}).get("id") is not None
-                                ]
-                                if not resposta_ids:
-                                    continue
-
-                                descricao_artigo = limitar_descricao_artigo(
-                                    dados_artigo.get("descricao") or "",
-                                    max_linhas=2,
-                                ) or "Artigo"
-                                numero_artigo = dados_artigo.get("artigo_num") or ""
-                                quantidade_artigo = dados_artigo.get("quantidade")
-                                unidade_artigo = dados_artigo.get("unidade") or ""
-
-                                detalhes = []
-                                if numero_artigo:
-                                    detalhes.append(f"Artigo {numero_artigo}")
-                                if descricao_artigo:
-                                    detalhes.append(descricao_artigo)
-                                if quantidade_artigo not in (None, ""):
-                                    unidade_txt = f" {unidade_artigo}" if unidade_artigo else ""
-                                    detalhes.append(f"Qtd: {quantidade_artigo}{unidade_txt}")
-
-                                titulo_artigo = " • ".join(detalhes) or f"Artigo #{idx}"
-
-                                def _format_resposta(resposta_id: int, opcoes=opcoes_artigo) -> str:
-                                    for opcao in opcoes:
-                                        resposta_item = opcao.get("resposta", {})
-                                        if resposta_item.get("id") != resposta_id:
-                                            continue
-                                        pedido_item = opcao.get("pedido") or {}
-                                        fornecedor = (
-                                            pedido_item.get("fornecedor")
-                                            or resposta_item.get("fornecedor_nome")
-                                            or "Fornecedor"
-                                        )
-                                        referencia = pedido_item.get("referencia") or "—"
-                                        quantidade = (
-                                            resposta_item.get("quantidade_final")
-                                            or resposta_item.get("quantidade_original")
-                                            or "—"
-                                        )
-                                        preco_venda = resposta_item.get("preco_venda") or 0
-                                        moeda = resposta_item.get("moeda") or "EUR"
-                                        resumo_preco = (
-                                            f" • P.V.: {preco_venda:.2f} {moeda}" if preco_venda else ""
-                                        )
-                                        prazo = resposta_item.get("prazo_entrega")
-                                        resumo_prazo = (
-                                            f" • Prazo: {prazo}d"
-                                            if prazo not in (None, "")
-                                            else ""
-                                        )
-                                        return (
-                                            f"{fornecedor} • Ref: {referencia}"
-                                            f" • Qtd: {quantidade}{resumo_preco}{resumo_prazo}"
-                                        )
-                                    return "Resposta"
-
-                                select_key = (
-                                    f"pc_cliente_select_{processo_escolhido.get('id')}_{chave_artigo}"
-                                )
-                                selecao_resposta = st.selectbox(
-                                    f"Resposta para {titulo_artigo}",
-                                    options=resposta_ids,
-                                    format_func=_format_resposta,
-                                    key=select_key,
-                                )
-
-                                if selecao_resposta is not None:
-                                    respostas_destacadas.append(selecao_resposta)
-                                    if primeiro_pedido is None:
-                                        primeiro_pedido = resposta_para_pedido.get(
-                                            selecao_resposta,
-                                        )
-
-                            respostas_destacadas = list(dict.fromkeys(respostas_destacadas))
-
+                        if primeiro_pedido is not None:
                             col_criar, _ = st.columns([1, 5])
                             with col_criar:
                                 if st.button(
                                     "💰 Criar Cotação Cliente",
                                     key=f"pc_cliente_{processo_escolhido.get('id')}",
                                 ):
-                                    pedido_sel = primeiro_pedido or (pedidos_com_resposta[0] if pedidos_com_resposta else {})
                                     criar_cotacao_cliente_dialog(
-                                        pedido_sel.get("id"),
+                                        primeiro_pedido.get("id"),
                                         processo_info.get("numero"),
-                                        pedido_sel.get("referencia"),
-                                        pedido_sel.get("nome_solicitante")
-                                        or pedido_sel.get("cliente"),
-                                        pedido_sel.get("email_solicitante"),
-                                        respostas_destacadas=respostas_destacadas,
+                                        primeiro_pedido.get("referencia"),
+                                        primeiro_pedido.get("nome_solicitante")
+                                        or primeiro_pedido.get("cliente"),
+                                        primeiro_pedido.get("email_solicitante"),
                                         processo_id=processo_escolhido.get("id"),
                                     )
                         else:
