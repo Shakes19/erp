@@ -8001,15 +8001,21 @@ elif menu_option == "📦 Artigos":
     ])
 
     with tab_pesquisar:
+        def _limpar_pesquisa_artigos() -> None:
+            st.session_state["artigos_pesquisa"] = ""
+            listar_artigos_catalogo.clear()
+
         filtro_artigos = st.text_input(
             "Pesquisar artigos",
             placeholder="Descrição, nº artigo ou marca",
             key="artigos_pesquisa",
         )
 
-        if st.button("🔄 Limpar pesquisa", use_container_width=True):
-            st.session_state["artigos_pesquisa"] = ""
-            listar_artigos_catalogo.clear()
+        st.button(
+            "🔄 Limpar pesquisa",
+            use_container_width=True,
+            on_click=_limpar_pesquisa_artigos,
+        )
 
         artigos_catalogo = listar_artigos_catalogo(filtro=filtro_artigos)
         if artigos_catalogo:
