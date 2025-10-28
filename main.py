@@ -7880,15 +7880,17 @@ elif menu_option == "📦 Artigos":
             st.session_state["artigos_pesquisa"] = ""
             listar_artigos_catalogo.clear()
 
-        col_filtro_artigos, col_limpar_artigos = st.columns([6, 1])
-        with col_filtro_artigos:
+        col_filtro, col_limpar = st.columns([1, 0.25])
+
+        with col_filtro:
             filtro_artigos = st.text_input(
                 "Pesquisar artigos",
                 placeholder="Descrição, nº artigo ou marca",
                 key="artigos_pesquisa",
             )
 
-        with col_limpar_artigos:
+        with col_limpar:
+            st.markdown("<div style='height: 1.95rem'></div>", unsafe_allow_html=True)
             st.button(
                 "🔄 Limpar pesquisa",
                 use_container_width=True,
