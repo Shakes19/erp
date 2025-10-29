@@ -816,6 +816,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
     referencia = (contexto.get("referencia") or "").strip()
     cliente_id = contexto.get("cliente_id")
     origem = contexto.get("origem", "manual")
+    enviar_emails = bool(contexto.get("enviar_emails", True))
     artigos = contexto.get("artigos") or []
     requisitos_fornecedores = copy.deepcopy(
         contexto.get("requisitos_fornecedores") or {}
@@ -917,6 +918,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
             numero_processo=numero_processo,
             rfq_artigos=rfq_artigos,
             requisitos_fornecedor=requisitos_fornecedores.get(fornecedor_id),
+            enviar_email=enviar_emails,
         )
 
         if rfq_id:
@@ -985,6 +987,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
                 "fornecedores": fornecedores_notificados,
                 "pdfs": pdf_resultados,
                 "emails": emails_info,
+                "envio_automatico": enviar_emails,
             }
             st.session_state["show_nova_cotacao_success_dialog"] = True
 
@@ -1014,6 +1017,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
                 "fornecedores": fornecedores_notificados,
                 "pdfs": pdf_resultados,
                 "emails": emails_info,
+                "envio_automatico": enviar_emails,
             }
             st.session_state["show_smart_success_dialog"] = True
             reset_smart_quotation_state()
@@ -1156,6 +1160,7 @@ def mostrar_dialogo_sucesso_manual() -> None:
     fornecedores = payload.get("fornecedores") or []
     pdfs = payload.get("pdfs") or []
     emails = payload.get("emails") or []
+    envio_automatico = bool(payload.get("envio_automatico", True))
 
     titulo = "Cotação criada"
 
@@ -1170,9 +1175,17 @@ def mostrar_dialogo_sucesso_manual() -> None:
             st.write(f"**Referência do cliente:** {referencia}")
 
         if fornecedores:
-            st.markdown("**Fornecedores notificados:**")
+            titulo_lista = (
+                "Fornecedores notificados"
+                if envio_automatico
+                else "Fornecedores no processo"
+            )
+            st.markdown(f"**{titulo_lista}:**")
             for nome in fornecedores:
                 st.write(f"• {nome}")
+
+        if not envio_automatico:
+            st.info("Os emails aos fornecedores não foram enviados automaticamente.")
 
         if emails:
             st.markdown("**Estado do envio de emails:**")
@@ -1216,6 +1229,7 @@ def mostrar_dialogo_sucesso_smart() -> None:
     fornecedores = payload.get("fornecedores") or []
     pdfs = payload.get("pdfs") or []
     emails = payload.get("emails") or []
+    envio_automatico = bool(payload.get("envio_automatico", True))
 
     titulo = "Cotação criada"
 
@@ -1225,9 +1239,17 @@ def mostrar_dialogo_sucesso_smart() -> None:
         if referencia:
             st.write(f"**Referência do cliente:** {referencia}")
         if fornecedores:
-            st.markdown("**Fornecedores notificados:**")
+            titulo_lista = (
+                "Fornecedores notificados"
+                if envio_automatico
+                else "Fornecedores no processo"
+            )
+            st.markdown(f"**{titulo_lista}:**")
             for nome in fornecedores:
                 st.write(f"• {nome}")
+
+        if not envio_automatico:
+            st.info("Os emails aos fornecedores não foram enviados automaticamente.")
 
         if emails:
             st.markdown("**Estado do envio de emails:**")
@@ -1603,6 +1625,7 @@ def criar_rfq(
     numero_processo=None,
     rfq_artigos=None,
     requisitos_fornecedor: dict | None = None,
+    enviar_email: bool = True,
 ):
     """Criar nova RFQ"""
     conn = obter_conexao()
@@ -1796,8 +1819,14 @@ def criar_rfq(
 
         # Gerar PDF
         gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos)
-        # Enviar pedido por email ao fornecedor
-        envio_email = enviar_email_pedido_fornecedor(rfq_id)
+        # Enviar pedido por email ao fornecedor (opcional)
+        if enviar_email:
+            envio_email = enviar_email_pedido_fornecedor(rfq_id)
+        else:
+            envio_email = {
+                "sucesso": True,
+                "mensagem": "Email não enviado (criação sem envio automático).",
+            }
 
         invalidate_overview_caches()
         return rfq_id, numero_processo, processo_id, rfq_artigos, envio_email
@@ -5969,6 +5998,10 @@ elif menu_option == "📝 Nova Cotação":
                 type="primary",
                 use_container_width=True,
             )
+            criar_processo_sem_email = st.form_submit_button(
+                "📁 Criar Processo (sem email)",
+                use_container_width=True,
+            )
             limpar_form = st.form_submit_button(
                 "♻️ Limpar Formulário",
                 use_container_width=True,
@@ -6007,7 +6040,7 @@ elif menu_option == "📝 Nova Cotação":
         }]
         st.rerun()
 
-    if criar_cotacao:
+    if criar_cotacao or criar_processo_sem_email:
         # Validar campos obrigatórios
         if not referencia_input.strip():
             st.error("Por favor, indique uma referência")
@@ -6066,6 +6099,7 @@ elif menu_option == "📝 Nova Cotação":
                     "anexos": st.session_state.get("pedido_cliente_anexos", []),
                     "anexo_tipo": "anexo_cliente",
                 }
+                contexto_criacao["enviar_emails"] = bool(criar_cotacao)
                 processar_criacao_cotacoes(contexto_criacao)
 
     contexto_dup_manual = st.session_state.get("duplicated_ref_context")
@@ -6382,7 +6416,20 @@ elif menu_option == "🤖 Smart Quotation":
                     else None
                 )
 
-                if st.button("Submeter", type="primary", key="smart_submit"):
+                col_submit_principal, col_submit_sem_email = st.columns(2)
+                with col_submit_principal:
+                    submit_smart = st.button(
+                        "Submeter",
+                        type="primary",
+                        key="smart_submit",
+                    )
+                with col_submit_sem_email:
+                    submit_smart_sem_email = st.button(
+                        "Criar processo (sem email)",
+                        key="smart_submit_sem_email",
+                    )
+
+                if submit_smart or submit_smart_sem_email:
                     if not cliente_selecionado:
                         st.error("Selecione um cliente existente na gestão de clientes.")
                     else:
@@ -6490,6 +6537,7 @@ elif menu_option == "🤖 Smart Quotation":
                                 "anexos": anexos_processados,
                                 "anexo_tipo": "anexo_cliente",
                             }
+                            contexto_criacao_smart["enviar_emails"] = bool(submit_smart)
                             processar_criacao_cotacoes(contexto_criacao_smart)
 
             with col_pdf:
@@ -7235,7 +7283,7 @@ elif menu_option == "📩 Process Center":
                                 "id": pedido.get("id"),
                                 "processo": processo_info.get("numero") or "Processo",
                             }
-                            botoes_acoes = st.columns([1, 1])
+                            botoes_acoes = st.columns([1, 1, 1])
                             with botoes_acoes[0]:
                                 if st.button(
                                     "💬 Responder",
@@ -7259,6 +7307,28 @@ elif menu_option == "📩 Process Center":
                                         mime="application/pdf",
                                         key=f"pc_pdf_{pedido.get('id')}"
                                     )
+
+                            resend_status_key = f"pc_resend_status_{pedido.get('id')}"
+                            with botoes_acoes[2]:
+                                if st.button(
+                                    "🔁 Reenviar Email",
+                                    key=f"pc_resend_{pedido.get('id')}",
+                                ):
+                                    resultado_envio = enviar_email_pedido_fornecedor(
+                                        pedido.get("id")
+                                    )
+                                    st.session_state[resend_status_key] = resultado_envio
+
+                            resultado_envio = st.session_state.get(resend_status_key)
+                            if resultado_envio:
+                                mensagem_envio = (
+                                    resultado_envio.get("mensagem")
+                                    or "Estado de envio indisponível."
+                                )
+                                if resultado_envio.get("sucesso"):
+                                    st.success(mensagem_envio)
+                                else:
+                                    st.error(mensagem_envio)
 
                             if (pedido.get("total_respostas", 0) or 0) > 0 or estado_lower == "respondido":
                                 pedidos_com_resposta.append(pedido)
