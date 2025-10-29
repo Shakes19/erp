@@ -4,6 +4,7 @@ streamlit
 pandas
 numpy
 streamlit-option-menu
+altair
 schedule
 sqlalchemy
 bcrypt
