@@ -20,6 +20,7 @@ import logging
 from pypdf import PdfReader
 from PIL import Image, UnidentifiedImageError
 import pandas as pd
+import altair as alt
 from streamlit_option_menu import option_menu
 from db import (
     criar_processo,
@@ -7576,6 +7577,9 @@ elif menu_option == "📊 Relatórios":
         data_column_plain = _rfq_data_expression()  # coluna sem alias
         data_column_alias = _rfq_data_expression("r")
 
+        df_count: pd.DataFrame | None = None
+        df_value: pd.DataFrame | None = None
+
         if data_column_plain:
             c.execute(
                 f"""
@@ -7588,19 +7592,17 @@ elif menu_option == "📊 Relatórios":
             )
             rows = c.fetchall()
             if rows:
-                df = pd.DataFrame(rows, columns=["data", "total"])
-                df["data"] = pd.to_datetime(
-                    df["data"].astype(str).str.replace("T", " ", regex=False),
+                df_count = pd.DataFrame(
+                    rows,
+                    columns=["data", "Quantidade de Cotações"],
+                )
+                df_count["data"] = pd.to_datetime(
+                    df_count["data"].astype(str).str.replace("T", " ", regex=False),
                     errors="coerce",
                 )
-                df = df.dropna(subset=["data"]).set_index("data").sort_index()
-                df["cumulativo"] = df["total"].cumsum()
-                st.markdown("**Cotações por Dia (Cumulativo)**")
-                st.line_chart(df["cumulativo"], height=300)
-            else:
-                st.info("Sem dados diários")
-        else:
-            st.info("Sem coluna de data disponível para estatísticas diárias")
+                df_count = (
+                    df_count.dropna(subset=["data"]).set_index("data").sort_index()
+                )
 
         if data_column_alias:
             c.execute(
@@ -7615,63 +7617,142 @@ elif menu_option == "📊 Relatórios":
             )
             rows = c.fetchall()
             if rows:
-                df_val = pd.DataFrame(rows, columns=["data", "total"])
-                df_val["data"] = pd.to_datetime(
-                    df_val["data"].astype(str).str.replace("T", " ", regex=False),
+                df_value = pd.DataFrame(
+                    rows,
+                    columns=["data", "Valor Total de Venda"],
+                )
+                df_value["data"] = pd.to_datetime(
+                    df_value["data"].astype(str).str.replace("T", " ", regex=False),
                     errors="coerce",
                 )
-                df_val = df_val.dropna(subset=["data"]).set_index("data").sort_index()
-                df_val["cumulativo"] = df_val["total"].cumsum()
-                st.markdown("**Preço de Venda por Dia (Cumulativo)**")
-                st.line_chart(df_val["cumulativo"], height=300)
-            else:
-                st.info("Sem dados de preço de venda diário")
-        else:
-            st.info("Sem coluna de data para preço de venda diário")
+                df_value = (
+                    df_value.dropna(subset=["data"]).set_index("data").sort_index()
+                )
 
-        if data_column_plain:
-            c.execute(
-                f"""
-                SELECT strftime('%Y-%m', {data_column_plain}) AS mes,
-                       COUNT(*)
-                  FROM rfq
-                 GROUP BY mes
-                 ORDER BY mes
-                """
-            )
-            rows = c.fetchall()
-            if rows:
-                df_mes = pd.DataFrame(rows, columns=["mes", "total"])
-                df_mes["cumulativo"] = df_mes["total"].cumsum()
-                st.markdown("**Cotações por Mês (Cumulativo)**")
-                st.line_chart(df_mes.set_index("mes")["cumulativo"], height=300)
-            else:
-                st.info("Sem dados mensais")
-        else:
-            st.info("Sem coluna de data disponível para estatísticas mensais")
-
-        if data_column_alias:
-            c.execute(
-                f"""
-                SELECT strftime('%Y-%m', {data_column_alias}) AS mes,
-                       SUM(rf.preco_venda * rf.quantidade_final) AS total
-                  FROM rfq r
-                  JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
-                 GROUP BY mes
-                 ORDER BY mes
-                """
-            )
-            rows = c.fetchall()
-        else:
-            rows = []
         conn.close()
-        if rows:
-            df_val_mes = pd.DataFrame(rows, columns=["mes", "total"])
-            df_val_mes["cumulativo"] = df_val_mes["total"].cumsum()
-            st.markdown("**Preço de Venda por Mês (Cumulativo)**")
-            st.line_chart(df_val_mes.set_index("mes")["cumulativo"], height=300)
+
+        if df_count is None and df_value is None:
+            st.info("Sem dados temporais disponíveis para gerar gráficos.")
         else:
-            st.info("Sem dados de preço de venda mensal")
+            dataframes = [df for df in (df_count, df_value) if df is not None]
+            df_combined = pd.concat(dataframes, axis=1).sort_index()
+            df_combined = df_combined.fillna(0)
+
+            if df_combined.empty:
+                st.info("Sem dados temporais disponíveis para gerar gráficos.")
+            else:
+                min_date = df_combined.index.min()
+                max_date = df_combined.index.max()
+
+                if pd.isna(min_date) or pd.isna(max_date):
+                    st.info("Sem dados temporais disponíveis para gerar gráficos.")
+                else:
+                    default_range = (min_date.date(), max_date.date())
+                    date_range = st.date_input(
+                        "Intervalo de datas",
+                        value=default_range,
+                        min_value=default_range[0],
+                        max_value=default_range[1],
+                    )
+
+                    if isinstance(date_range, tuple) and len(date_range) == 2:
+                        start_date, end_date = date_range
+                    else:
+                        start_date = date_range
+                        end_date = date_range
+
+                    if start_date and end_date:
+                        start_ts = pd.Timestamp(start_date)
+                        end_ts = pd.Timestamp(end_date)
+                        if end_ts < start_ts:
+                            start_ts, end_ts = end_ts, start_ts
+                    else:
+                        start_ts = min_date
+                        end_ts = max_date
+
+                    mask = (df_combined.index >= start_ts) & (
+                        df_combined.index <= end_ts
+                    )
+                    df_filtered = df_combined.loc[mask]
+
+                    if df_filtered.empty:
+                        st.info("Sem dados no intervalo selecionado.")
+                    else:
+                        freq_options = {
+                            "Diário": "D",
+                            "Semanal": "W",
+                            "Mensal": "M",
+                            "Trimestral": "Q",
+                            "Anual": "A",
+                        }
+
+                        col_freq, col_chart, col_cum = st.columns(3)
+                        freq_label = col_freq.selectbox(
+                            "Intervalo de tempo",
+                            list(freq_options.keys()),
+                            index=2 if len(freq_options) > 2 else 0,
+                        )
+                        chart_type = col_chart.selectbox(
+                            "Formato do gráfico",
+                            ["Barras", "Linhas", "Área"],
+                            index=0,
+                        )
+                        cumulative = col_cum.checkbox(
+                            "Valores cumulativos",
+                            value=True,
+                        )
+
+                        df_resampled = df_filtered.resample(
+                            freq_options[freq_label]
+                        ).sum()
+                        if cumulative:
+                            df_resampled = df_resampled.cumsum()
+
+                        metric_options = list(df_resampled.columns)
+                        metrics = st.multiselect(
+                            "Métricas a exibir",
+                            options=metric_options,
+                            default=metric_options,
+                        )
+
+                        if not metrics:
+                            st.warning(
+                                "Selecione pelo menos uma métrica para visualizar."
+                            )
+                        else:
+                            df_plot = (
+                                df_resampled[metrics]
+                                .reset_index()
+                                .melt(
+                                    id_vars="data",
+                                    var_name="Métrica",
+                                    value_name="Valor",
+                                )
+                            )
+
+                            chart = alt.Chart(df_plot).encode(
+                                x=alt.X("data:T", title="Data"),
+                                y=alt.Y("Valor:Q", title="Valor"),
+                                color=alt.Color("Métrica:N", title="Métrica"),
+                                tooltip=[
+                                    alt.Tooltip("data:T", title="Data"),
+                                    alt.Tooltip("Métrica:N", title="Métrica"),
+                                    alt.Tooltip("Valor:Q", title="Valor", format=".2f"),
+                                ],
+                            )
+
+                            if chart_type == "Barras":
+                                chart = chart.mark_bar()
+                            elif chart_type == "Área":
+                                chart = chart.mark_area(opacity=0.7)
+                            else:
+                                chart = chart.mark_line(point=True)
+
+                            st.altair_chart(chart, use_container_width=True)
+                            st.dataframe(
+                                df_resampled[metrics].round(2),
+                                use_container_width=True,
+                            )
 
 elif menu_option == "📄 PDFs":
     st.title("📄 Gestão de PDFs")
