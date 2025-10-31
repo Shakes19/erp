@@ -2912,6 +2912,22 @@ def _normalizar_nome_marca(marca: str | None) -> str | None:
     return marca_limpa.casefold()
 
 
+def _encontrar_marca_equivalente(
+    nome_procurado: str | None, marcas_disponiveis: Iterable[str]
+) -> str | None:
+    """Retorna a marca disponível equivalente ignorando diferenças de capitalização."""
+
+    nome_normalizado = _normalizar_nome_marca(nome_procurado)
+    if not nome_normalizado:
+        return None
+
+    for marca_opcao in marcas_disponiveis:
+        if _normalizar_nome_marca(marca_opcao) == nome_normalizado:
+            return marca_opcao
+
+    return None
+
+
 def _carregar_margens_por_marca(
     cursor: sqlite3.Cursor,
     fornecedor_id: int,
@@ -6168,11 +6184,16 @@ elif menu_option == "🤖 Smart Quotation":
                 st.session_state.smart_pdf_uid = pdf_uid
                 st.session_state.smart_referencia = dados.get("referencia") or ""
                 st.session_state.smart_unidade = unidade_padrao
-                st.session_state.smart_marca = dados.get("marca") or ""
+                marca_pdf_extraida = dados.get("marca") or ""
+                marca_padrao_pdf = marca_pdf_extraida.strip()
+                marca_padrao_registada = (
+                    _encontrar_marca_equivalente(marca_padrao_pdf, marcas_disponiveis)
+                    or ""
+                )
+                st.session_state.smart_marca = marca_padrao_registada
 
                 itens_extraidos = dados.get("itens") or []
                 artigos_extraidos: list[dict[str, str]] = []
-                marca_padrao_pdf = (dados.get("marca") or "").strip()
 
                 for item in itens_extraidos:
                     ktb_code_item = (item.get("ktb_code") or "").strip()
@@ -6190,9 +6211,12 @@ elif menu_option == "🤖 Smart Quotation":
                             quantidade_str = str(quantidade_item).strip()
 
                     unidade_item = (item.get("unidade") or unidade_padrao).strip() or unidade_padrao
-                    marca_item = (item.get("marca") or marca_padrao_pdf).strip()
-                    if not marca_item and descricao_item:
-                        marca_item = descricao_item.split()[0]
+                    marca_bruta = (item.get("marca") or marca_padrao_pdf).strip()
+                    if not marca_bruta and descricao_item:
+                        marca_bruta = extrair_primeira_palavra(descricao_item)
+                    marca_item = _encontrar_marca_equivalente(
+                        marca_bruta, marcas_disponiveis
+                    ) or ""
 
                     artigos_extraidos.append(
                         {
@@ -6225,7 +6249,7 @@ elif menu_option == "🤖 Smart Quotation":
                                 "descricao": descricao_principal,
                                 "quantidade": quantidade_base_str,
                                 "unidade": unidade_padrao,
-                                "marca": marca_padrao_pdf,
+                                "marca": marca_padrao_registada,
                             }
                         ]
                     else:
@@ -6235,7 +6259,7 @@ elif menu_option == "🤖 Smart Quotation":
                                 "descricao": "",
                                 "quantidade": quantidade_base_str,
                                 "unidade": unidade_padrao,
-                                "marca": marca_padrao_pdf,
+                                "marca": marca_padrao_registada,
                             }
                         ]
 
@@ -6252,12 +6276,13 @@ elif menu_option == "🤖 Smart Quotation":
                     st.session_state[f"smart_artigos_{idx}_unidade"] = artigo.get(
                         "unidade", unidade_padrao
                     ) or unidade_padrao
-                    marca_extraida = extrair_primeira_palavra(descricao_guardada)
-                    if not marca_extraida:
-                        marca_extraida = artigo.get("marca", "") or ""
-                    if marca_extraida and marca_extraida not in marcas_disponiveis:
-                        marca_extraida = ""
-                    st.session_state[f"smart_artigos_{idx}_marca"] = marca_extraida
+                    marca_extraida_bruta = extrair_primeira_palavra(descricao_guardada)
+                    if not marca_extraida_bruta:
+                        marca_extraida_bruta = artigo.get("marca", "") or ""
+                    marca_equivalente = _encontrar_marca_equivalente(
+                        marca_extraida_bruta, marcas_disponiveis
+                    )
+                    st.session_state[f"smart_artigos_{idx}_marca"] = marca_equivalente or ""
 
 
                 cliente_extraido = (dados.get("cliente") or "").strip().lower()
@@ -6314,13 +6339,24 @@ elif menu_option == "🤖 Smart Quotation":
                     marca_registada = (marca_valor_guardado or "").strip()
 
                     if marca_registada:
-                        if marca_valor_guardado != marca_registada:
-                            st.session_state[marca_key] = marca_registada
+                        marca_equivalente = _encontrar_marca_equivalente(
+                            marca_registada, marcas_disponiveis
+                        )
+                        if marca_equivalente:
+                            if marca_valor_guardado != marca_equivalente:
+                                st.session_state[marca_key] = marca_equivalente
+                            marca_registada = marca_equivalente
+                        else:
+                            st.session_state[marca_key] = ""
+                            marca_registada = ""
                     else:
                         marca_detectada = extrair_primeira_palavra(descricao_atual)
-                        if marca_detectada:
-                            st.session_state[marca_key] = marca_detectada
-                            marca_registada = marca_detectada
+                        marca_equivalente = _encontrar_marca_equivalente(
+                            marca_detectada, marcas_disponiveis
+                        )
+                        if marca_equivalente:
+                            st.session_state[marca_key] = marca_equivalente
+                            marca_registada = marca_equivalente
 
                     col_art, col_qtd, col_uni, col_marca = st.columns([1.4, 1, 1, 1.6])
                     with col_art:
@@ -6352,9 +6388,17 @@ elif menu_option == "🤖 Smart Quotation":
                         opcao_sentinel = "Selecione uma marca"
                         opcoes_marca = [opcao_sentinel, *marcas_disponiveis]
                         marca_atual = st.session_state.get(marca_key, "").strip()
-                        if marca_atual and marca_atual not in marcas_disponiveis:
-                            marca_atual = ""
-                            st.session_state[marca_key] = ""
+                        if marca_atual:
+                            marca_equivalente = _encontrar_marca_equivalente(
+                                marca_atual, marcas_disponiveis
+                            )
+                            if marca_equivalente:
+                                if marca_equivalente != marca_atual:
+                                    st.session_state[marca_key] = marca_equivalente
+                                marca_atual = marca_equivalente
+                            else:
+                                marca_atual = ""
+                                st.session_state[marca_key] = ""
 
                         valor_widget_atual = st.session_state.get(marca_widget_key)
                         if marca_atual and marca_atual in marcas_disponiveis:
