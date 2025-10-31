@@ -6137,6 +6137,9 @@ elif menu_option == "🤖 Smart Quotation":
     unidades_padrao = obter_nomes_unidades()
     unidade_padrao = unidades_padrao[0] if unidades_padrao else "Peças"
     marcas_disponiveis = [marca for marca in listar_todas_marcas() if marca]
+    marcas_disponiveis_normalizadas = {
+        marca.casefold(): marca for marca in marcas_disponiveis
+    }
 
     if st.session_state.pop("reset_smart_pdf_uploader", False):
         st.session_state.pop("smart_pdf", None)
@@ -6255,9 +6258,12 @@ elif menu_option == "🤖 Smart Quotation":
                     marca_extraida = extrair_primeira_palavra(descricao_guardada)
                     if not marca_extraida:
                         marca_extraida = artigo.get("marca", "") or ""
-                    if marca_extraida and marca_extraida not in marcas_disponiveis:
-                        marca_extraida = ""
-                    st.session_state[f"smart_artigos_{idx}_marca"] = marca_extraida
+
+                    marca_normalizada = marca_extraida.casefold()
+                    marca_correspondente = marcas_disponiveis_normalizadas.get(
+                        marca_normalizada, ""
+                    )
+                    st.session_state[f"smart_artigos_{idx}_marca"] = marca_correspondente
 
 
                 cliente_extraido = (dados.get("cliente") or "").strip().lower()
@@ -6319,8 +6325,13 @@ elif menu_option == "🤖 Smart Quotation":
                     else:
                         marca_detectada = extrair_primeira_palavra(descricao_atual)
                         if marca_detectada:
-                            st.session_state[marca_key] = marca_detectada
-                            marca_registada = marca_detectada
+                            marca_detectada_normalizada = marca_detectada.casefold()
+                            marca_existente = marcas_disponiveis_normalizadas.get(
+                                marca_detectada_normalizada
+                            )
+                            if marca_existente:
+                                st.session_state[marca_key] = marca_existente
+                                marca_registada = marca_existente
 
                     col_art, col_qtd, col_uni, col_marca = st.columns([1.4, 1, 1, 1.6])
                     with col_art:
@@ -6352,12 +6363,21 @@ elif menu_option == "🤖 Smart Quotation":
                         opcao_sentinel = "Selecione uma marca"
                         opcoes_marca = [opcao_sentinel, *marcas_disponiveis]
                         marca_atual = st.session_state.get(marca_key, "").strip()
-                        if marca_atual and marca_atual not in marcas_disponiveis:
-                            marca_atual = ""
-                            st.session_state[marca_key] = ""
+                        if marca_atual:
+                            marca_atual_normalizada = marca_atual.casefold()
+                            marca_cadastrada = marcas_disponiveis_normalizadas.get(
+                                marca_atual_normalizada
+                            )
+                            if marca_cadastrada:
+                                if marca_cadastrada != marca_atual:
+                                    marca_atual = marca_cadastrada
+                                    st.session_state[marca_key] = marca_cadastrada
+                            else:
+                                marca_atual = ""
+                                st.session_state[marca_key] = ""
 
                         valor_widget_atual = st.session_state.get(marca_widget_key)
-                        if marca_atual and marca_atual in marcas_disponiveis:
+                        if marca_atual and marca_atual.casefold() in marcas_disponiveis_normalizadas:
                             if valor_widget_atual != marca_atual:
                                 st.session_state[marca_widget_key] = marca_atual
                         else:
