@@ -6422,8 +6422,8 @@ elif menu_option == "🤖 Smart Quotation":
                             else "Selecione uma marca",
                             key=marca_index_key,
                             help=(
-                                "A marca é sugerida automaticamente com base na descrição,",
-                                " mas pode ser editada."
+                                "A marca é sugerida automaticamente com base na descrição, "
+                                "mas pode ser editada."
                             ),
                         )
                         st.session_state[marca_key] = marca_options[selecao_marca_idx] or ""
