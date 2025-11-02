@@ -57,8 +57,6 @@ from services.email_service import (
 
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
 
-SMART_QUOTATION_MARCA_PLACEHOLDER = "Selecionar marca sugerida"
-
 def _format_iso_date(value):
     """Format ISO 8601 strings or datetime objects to ``dd/mm/YYYY``.
 
@@ -6266,16 +6264,18 @@ elif menu_option == "🤖 Smart Quotation":
                         marca_normalizada, ""
                     )
                     marca_key = f"smart_artigos_{idx}_marca"
-                    marca_text_key = f"{marca_key}_texto"
-                    marca_select_key = f"{marca_key}_selecao"
+                    st.session_state[marca_key] = marca_correspondente
 
-                    marca_final = (marca_correspondente or marca_extraida or "").strip()
-                    st.session_state[marca_key] = marca_final
-                    st.session_state[marca_text_key] = marca_final
-                    if marca_final and marca_final in marcas_disponiveis:
-                        st.session_state[marca_select_key] = marca_final
+                    marca_index_key = f"{marca_key}_index"
+                    if marca_correspondente:
+                        try:
+                            marca_idx_val = marcas_disponiveis.index(marca_correspondente) + 1
+                        except ValueError:
+                            marca_idx_val = 0
+                            st.session_state[marca_key] = ""
+                        st.session_state[marca_index_key] = marca_idx_val
                     else:
-                        st.session_state[marca_select_key] = SMART_QUOTATION_MARCA_PLACEHOLDER
+                        st.session_state[marca_index_key] = 0
 
 
                 cliente_extraido = (dados.get("cliente") or "").strip().lower()
@@ -6371,18 +6371,20 @@ elif menu_option == "🤖 Smart Quotation":
                             key=unidade_key,
                         )
                     with col_marca:
-                        marca_text_key = f"{marca_key}_texto"
-                        marca_select_key = f"{marca_key}_selecao"
-                        placeholder_marca = SMART_QUOTATION_MARCA_PLACEHOLDER
-
+                        marca_options = [None, *marcas_disponiveis]
+                        marca_index_key = f"{marca_key}_index"
                         marca_registada = (st.session_state.get(marca_key) or "").strip()
 
                         if marca_registada:
                             marca_normalizada = marca_registada.casefold()
                             marca_existente = marcas_disponiveis_normalizadas.get(marca_normalizada)
-                            if marca_existente and marca_existente != marca_registada:
-                                marca_registada = marca_existente
-                                st.session_state[marca_key] = marca_existente
+                            if marca_existente:
+                                if marca_existente != marca_registada:
+                                    marca_registada = marca_existente
+                                    st.session_state[marca_key] = marca_existente
+                            else:
+                                marca_registada = ""
+                                st.session_state[marca_key] = ""
                         if not marca_registada:
                             marca_detectada = extrair_primeira_palavra(descricao_atual)
                             if marca_detectada:
@@ -6393,66 +6395,38 @@ elif menu_option == "🤖 Smart Quotation":
                                     marca_registada = marca_existente
                                     st.session_state[marca_key] = marca_existente
 
-                        if marca_text_key not in st.session_state:
-                            st.session_state[marca_text_key] = marca_registada
-                        elif (
-                            marca_registada
-                            and not str(st.session_state.get(marca_text_key, "")).strip()
-                        ):
-                            st.session_state[marca_text_key] = marca_registada
+                        marca_idx = 0
+                        if marca_registada:
+                            try:
+                                marca_idx = marcas_disponiveis.index(marca_registada) + 1
+                            except ValueError:
+                                marca_idx = 0
+                                marca_registada = ""
+                                st.session_state[marca_key] = ""
 
-                        marca_text_atual = (st.session_state.get(marca_text_key) or "").strip()
-                        marca_options = [placeholder_marca, *marcas_disponiveis]
-
-                        selecao_previa = st.session_state.get(
-                            marca_select_key,
-                            marca_text_atual if marca_text_atual in marcas_disponiveis else placeholder_marca,
-                        )
-                        if selecao_previa not in marca_options:
-                            selecao_previa = (
-                                marca_text_atual
-                                if marca_text_atual in marcas_disponiveis
-                                else placeholder_marca
-                            )
-                        if marca_text_atual not in marcas_disponiveis:
-                            selecao_previa = placeholder_marca
-
-                        index_inicial = marca_options.index(selecao_previa)
-
-                        selecao_anterior = st.session_state.get(marca_select_key, selecao_previa)
-                        selecao_marca = st.selectbox(
-                            "Sugestões de marca",
-                            options=marca_options,
-                            index=index_inicial,
-                            key=marca_select_key,
-                            help=(
-                                "A marca é sugerida automaticamente com base na descrição. "
-                                "Também pode escrever uma marca manualmente abaixo."
-                            ),
-                        )
-
+                        indice_guardado = st.session_state.get(marca_index_key)
                         if (
-                            selecao_marca != placeholder_marca
-                            and selecao_marca != marca_text_atual
-                            and selecao_marca != selecao_anterior
+                            indice_guardado is None
+                            or indice_guardado < 0
+                            or indice_guardado >= len(marca_options)
                         ):
-                            st.session_state[marca_text_key] = selecao_marca
-                            marca_text_atual = selecao_marca
+                            st.session_state[marca_index_key] = marca_idx
+                        elif marca_idx != indice_guardado:
+                            st.session_state[marca_index_key] = marca_idx
 
-                        marca_input_val = st.text_input(
+                        selecao_marca_idx = st.selectbox(
                             "Marca *",
-                            key=marca_text_key,
+                            options=list(range(len(marca_options))),
+                            format_func=lambda idx, opcoes=marca_options: opcoes[idx]
+                            if opcoes[idx]
+                            else "Selecione uma marca",
+                            key=marca_index_key,
                             help=(
-                                "Escolha uma marca sugerida ou escreva qualquer outra marca manualmente."
+                                "A marca é sugerida automaticamente com base na descrição, "
+                                "mas pode ser editada."
                             ),
                         )
-                        marca_final_limpo = marca_input_val.strip()
-                        if marca_final_limpo in marcas_disponiveis:
-                            st.session_state[marca_select_key] = marca_final_limpo
-                        elif st.session_state.get(marca_select_key) != placeholder_marca:
-                            st.session_state[marca_select_key] = placeholder_marca
-
-                        st.session_state[marca_key] = marca_final_limpo
+                        st.session_state[marca_key] = marca_options[selecao_marca_idx] or ""
 
                     st.text_area(
                         "Descrição",
