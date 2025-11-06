@@ -18,15 +18,6 @@ from functools import lru_cache
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-DEFAULT_UNIDADES = (
-    "Peças",
-    "Metros",
-    "KG",
-    "Litros",
-    "Caixas",
-    "Paletes",
-)
-
 # Connection information ----------------------------------------------------
 # ``DB_PATH`` points to the SQLite database file.  It can be overridden via an
 # environment variable for testing, but the application always uses a local
@@ -582,12 +573,6 @@ def criar_base_dados_completa():
     c.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_unidade_nome_normalizada ON unidade(nome_normalizada)"
     )
-
-    c.execute("SELECT COUNT(*) FROM unidade")
-    unidades_count = c.fetchone()[0]
-    if not unidades_count:
-        for nome in DEFAULT_UNIDADES:
-            ensure_unidade(nome, cursor=c)
 
     # Tabela de estados normalizados
     c.execute(
