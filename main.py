@@ -1850,7 +1850,6 @@ def obter_todas_cotacoes(
     page: int | None = None,
     page_size: int = 10,
     return_total: bool = False,
-    filtro_tipo: str = "referencia",
 ):
     """Obter cotações com filtros opcionais e suporte para paginação."""
 
@@ -1886,16 +1885,9 @@ def obter_todas_cotacoes(
         conditions: list[str] = []
         params: list = []
 
-        filtro_normalizado = (filtro_referencia or "").strip()
-        if filtro_normalizado:
-            if filtro_tipo == "processo":
-                filtro_processado = re.sub(r"[^A-Za-z0-9-]", "", filtro_normalizado).upper()
-                if filtro_processado:
-                    conditions.append("UPPER(processo.numero) LIKE ?")
-                    params.append(f"%{filtro_processado}%")
-            else:
-                conditions.append("processo.ref_cliente LIKE ?")
-                params.append(f"%{filtro_normalizado}%")
+        if filtro_referencia:
+            conditions.append("processo.ref_cliente LIKE ?")
+            params.append(f"%{filtro_referencia}%")
 
         if estado:
             conditions.append(f"{estado_expr} = ?")
@@ -4993,7 +4985,7 @@ def criar_cotacao_cliente_dialog(
                     gap: 0.5rem;
                     padding: 0.35rem 0.55rem;
                     border-radius: 6px;
-                    max-width: min(100%, 32rem);
+                    max-width: min(100%, 48rem);
                 }
                 .cliente-cotacao-form div[data-testid="stCheckbox"] > label span {
                     font-size: 0.9rem;
@@ -5682,7 +5674,7 @@ st.markdown("""
     .block-container {
         padding-top: 1rem;
     }
-
+    
     .metric-card {
         background-color: #f0f2f6;
         border-radius: 10px;
@@ -5690,7 +5682,7 @@ st.markdown("""
         text-align: center;
         margin: 10px 0;
     }
-
+    
     .success-message {
         background-color: #d4edda;
         border-color: #c3e6cb;
@@ -5699,7 +5691,7 @@ st.markdown("""
         border-radius: 5px;
         margin: 10px 0;
     }
-
+    
     .warning-message {
         background-color: #fff3cd;
         border-color: #ffeeba;
@@ -5707,20 +5699,6 @@ st.markdown("""
         padding: 10px;
         border-radius: 5px;
         margin: 10px 0;
-    }
-
-    /* Limitar largura dos rótulos dos checkboxes para evitar botões excessivamente largos */
-    div[data-testid="stCheckbox"] > label {
-        display: inline-flex;
-        align-items: flex-start;
-        gap: 0.5rem;
-        width: auto;
-        max-width: min(100%, 32rem);
-    }
-
-    div[data-testid="stCheckbox"] > label span {
-        white-space: normal;
-        line-height: 1.25;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -6662,10 +6640,6 @@ elif menu_option == "📩 Process Center":
     st.title("📩 Process Center")
 
     PAGE_SIZE = 10
-    search_type_labels = {
-        "🔢 Processo": "processo",
-        "🏷️ Referência cliente": "referencia",
-    }
     if "cotacoes_pend_page" not in st.session_state:
         st.session_state.cotacoes_pend_page = 0
     if "cotacoes_resp_page" not in st.session_state:
@@ -6701,18 +6675,7 @@ elif menu_option == "📩 Process Center":
         # Filtros
         col1, col2, col3, col4 = st.columns([3, 2, 2, 1], vertical_alignment="bottom")
         with col1:
-            tipo_label_pend = st.selectbox(
-                "Tipo de pesquisa",
-                list(search_type_labels.keys()),
-                key="tipo_pesquisa_pend",
-            )
-            tipo_pesquisa_pend = search_type_labels.get(tipo_label_pend, "referencia")
-            placeholder_pend = "QT0000-00" if tipo_pesquisa_pend == "processo" else "Referência..."
-            filtro_ref_pend = st.text_input(
-                "🔍 Termo de pesquisa",
-                placeholder=placeholder_pend,
-                key="filtro_pend",
-            )
+            filtro_ref_pend = st.text_input("🔍 Pesquisar por referência", placeholder="Referência...", key="filtro_pend")
         with col2:
             fornecedor_sel_pend = st.selectbox(
                 "Fornecedor",
@@ -6741,7 +6704,6 @@ elif menu_option == "📩 Process Center":
             utilizador_id_pend,
             page=None,
             page_size=PAGE_SIZE,
-            filtro_tipo=tipo_pesquisa_pend,
         )
 
         processos_dict = {}
@@ -6924,18 +6886,7 @@ elif menu_option == "📩 Process Center":
         # Filtros
         col1, col2, col3, col4 = st.columns([3, 2, 2, 1], vertical_alignment="bottom")
         with col1:
-            tipo_label_resp = st.selectbox(
-                "Tipo de pesquisa",
-                list(search_type_labels.keys()),
-                key="tipo_pesquisa_resp",
-            )
-            tipo_pesquisa_resp = search_type_labels.get(tipo_label_resp, "referencia")
-            placeholder_resp = "QT0000-00" if tipo_pesquisa_resp == "processo" else "Referência..."
-            filtro_ref_resp = st.text_input(
-                "🔍 Termo de pesquisa",
-                placeholder=placeholder_resp,
-                key="filtro_resp",
-            )
+            filtro_ref_resp = st.text_input("🔍 Pesquisar por referência", placeholder="Referência...", key="filtro_resp")
         with col2:
             fornecedor_sel_resp = st.selectbox(
                 "Fornecedor",
@@ -6965,7 +6916,6 @@ elif menu_option == "📩 Process Center":
             page=st.session_state.cotacoes_resp_page,
             page_size=PAGE_SIZE,
             return_total=True,
-            filtro_tipo=tipo_pesquisa_resp,
         )
         total_paginas_resp = max(1, (total_resp + PAGE_SIZE - 1) // PAGE_SIZE)
 
@@ -7134,18 +7084,7 @@ elif menu_option == "📩 Process Center":
         # Filtros
         col1, col2, col3, col4 = st.columns([3, 2, 2, 1], vertical_alignment="bottom")
         with col1:
-            tipo_label_arq = st.selectbox(
-                "Tipo de pesquisa",
-                list(search_type_labels.keys()),
-                key="tipo_pesquisa_arq",
-            )
-            tipo_pesquisa_arq = search_type_labels.get(tipo_label_arq, "referencia")
-            placeholder_arq = "QT0000-00" if tipo_pesquisa_arq == "processo" else "Referência..."
-            filtro_ref_arq = st.text_input(
-                "🔍 Termo de pesquisa",
-                placeholder=placeholder_arq,
-                key="filtro_arq",
-            )
+            filtro_ref_arq = st.text_input("🔍 Pesquisar por referência", placeholder="Referência...", key="filtro_arq")
         with col2:
             fornecedor_sel_arq = st.selectbox(
                 "Fornecedor",
@@ -7175,7 +7114,6 @@ elif menu_option == "📩 Process Center":
             page=st.session_state.cotacoes_arq_page,
             page_size=PAGE_SIZE,
             return_total=True,
-            filtro_tipo=tipo_pesquisa_arq,
         )
         total_paginas_arq = max(1, (total_arq + PAGE_SIZE - 1) // PAGE_SIZE)
 
