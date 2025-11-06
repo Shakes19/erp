@@ -2667,7 +2667,12 @@ def obter_respostas_por_processo(processo_id):
     return artigos_ordenados, fornecedores_lista
 
 
-def procurar_processos_por_termo(termo: str, limite: int = 25):
+def procurar_processos_por_termo(
+    termo: str,
+    limite: int = 25,
+    *,
+    tipo: str = "todos",
+):
     """Pesquisa processos pelo número ou por referências de cliente associadas."""
 
     termo = (termo or "").strip()
@@ -2677,8 +2682,23 @@ def procurar_processos_por_termo(termo: str, limite: int = 25):
     conn = obter_conexao()
     c = conn.cursor()
 
-    like_term = f"%{termo}%"
-    c.execute(
+    tipo_normalizado = (tipo or "todos").lower()
+    parametros: tuple[object, ...]
+    if tipo_normalizado == "referencia":
+        like_term = f"%{termo}%"
+        where_clause = "processo.ref_cliente LIKE ?"
+        parametros = (like_term, limite)
+    elif tipo_normalizado == "processo":
+        like_term = f"%{termo.upper()}%"
+        where_clause = "UPPER(processo.numero) LIKE ?"
+        parametros = (like_term, limite)
+    else:
+        like_term = f"%{termo}%"
+        like_term_numero = f"%{termo.upper()}%"
+        where_clause = "UPPER(processo.numero) LIKE ? OR processo.ref_cliente LIKE ?"
+        parametros = (like_term_numero, like_term, limite)
+
+    query = (
         """
         SELECT processo.id,
                processo.numero,
@@ -2688,13 +2708,16 @@ def procurar_processos_por_termo(termo: str, limite: int = 25):
                COUNT(DISTINCT rfq.id) AS total_pedidos
           FROM processo
           LEFT JOIN rfq ON rfq.processo_id = processo.id
-         WHERE processo.numero LIKE ? OR processo.ref_cliente LIKE ?
+         WHERE """
+        + where_clause
+        + """
          GROUP BY processo.id
          ORDER BY processo.data_abertura DESC, processo.numero DESC
          LIMIT ?
-        """,
-        (like_term, like_term, limite),
+        """
     )
+
+    c.execute(query, parametros)
 
     resultados = [
         {
@@ -4985,11 +5008,14 @@ def criar_cotacao_cliente_dialog(
                     gap: 0.5rem;
                     padding: 0.35rem 0.55rem;
                     border-radius: 6px;
-                    max-width: min(100%, 48rem);
+                    max-width: min(100%, 34rem);
+                    width: fit-content;
+                    flex-wrap: wrap;
+                    box-sizing: border-box;
                 }
                 .cliente-cotacao-form div[data-testid="stCheckbox"] > label span {
                     font-size: 0.9rem;
-                    line-height: 1.25;
+                    line-height: 1.3;
                     white-space: normal;
                 }
                 </style>
@@ -7175,12 +7201,33 @@ elif menu_option == "📩 Process Center":
 
     with tab_process_center:
         with st.form("process_center_form"):
-            col_input, col_button = st.columns([6, 1], vertical_alignment="bottom")
+            col_tipo, col_input, col_button = st.columns(
+                [2, 4, 1], vertical_alignment="bottom"
+            )
+            with col_tipo:
+                tipo_pesquisa_label = st.radio(
+                    "Tipo de pesquisa",
+                    ("Processo", "Referência cliente"),
+                    key="process_center_tipo",
+                    horizontal=True,
+                )
+
+            placeholder = (
+                "QT2025-0001"
+                if tipo_pesquisa_label == "Processo"
+                else "Referência do cliente"
+            )
+            input_label = (
+                "Número do processo"
+                if tipo_pesquisa_label == "Processo"
+                else "Referência do cliente"
+            )
+
             with col_input:
                 termo_pesquisa = st.text_input(
-                    "Processo ou referência",
+                    input_label,
                     key="process_center_term",
-                    placeholder="QT2025-0001 ou KTB-DEXXX",
+                    placeholder=placeholder,
                 )
             with col_button:
                 submitted = st.form_submit_button(
@@ -7188,22 +7235,32 @@ elif menu_option == "📩 Process Center":
                 )
 
         if submitted:
+            tipo_pesquisa = (
+                "processo"
+                if tipo_pesquisa_label == "Processo"
+                else "referencia"
+            )
             termo = (termo_pesquisa or "").strip()
             if not termo:
                 st.warning("Introduza um termo de pesquisa válido.")
             else:
-                resultados = procurar_processos_por_termo(termo)
+                resultados = procurar_processos_por_termo(
+                    termo,
+                    tipo=tipo_pesquisa,
+                )
                 st.session_state.process_center_results = resultados
                 st.session_state.process_center_selected_id = (
                     resultados[0]["id"] if resultados else None
                 )
-                st.session_state.process_center_focus_ref = termo
+                st.session_state.process_center_focus_ref = (
+                    termo.casefold() if tipo_pesquisa == "referencia" else ""
+                )
                 if not resultados:
                     st.warning("Nenhum processo encontrado para o termo indicado.")
 
         resultados = st.session_state.get("process_center_results", [])
         processo_selecionado_id = st.session_state.get("process_center_selected_id")
-        foco_referencia = (st.session_state.get("process_center_focus_ref") or "").lower()
+        foco_referencia = (st.session_state.get("process_center_focus_ref") or "").casefold()
 
         if resultados:
             indices = list(range(len(resultados)))
