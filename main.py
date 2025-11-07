@@ -5770,10 +5770,12 @@ st.markdown("""
     }
 
     form[data-testid="stForm"][aria-label="process_center_form"] {
-        border: 1px solid rgba(250, 250, 250, 0.2);
-        padding: 16px 20px;
-        border-radius: 12px;
-        background: rgba(250, 250, 250, 0.03);
+        border: none;
+        border-bottom: 1px solid rgba(250, 250, 250, 0.2);
+        padding: 0 0 12px;
+        margin-bottom: 20px;
+        border-radius: 0;
+        background: transparent;
     }
 
     form[data-testid="stForm"][aria-label="process_center_form"] div[data-testid="stHorizontalBlock"] {
@@ -5940,32 +5942,6 @@ elif menu_option == "📝 Nova Cotação":
 
     marcas = listar_todas_marcas()
 
-    st.markdown(
-        """
-        <style>
-        .delete-button-wrapper {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-            justify-content: flex-end;
-            align-items: flex-end;
-        }
-        .delete-button-wrapper > div {
-            width: 100%;
-            display: flex;
-            justify-content: flex-end;
-        }
-        .delete-button-wrapper button {
-            width: auto;
-        }
-        .delete-button-placeholder {
-            height: 100%;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
     with st.form(key="nova_cotacao_form"):
         clientes = listar_clientes()
         clientes_opcoes = [None] + clientes
@@ -6004,7 +5980,9 @@ elif menu_option == "📝 Nova Cotação":
         remover_indice = None
         for i, artigo in enumerate(st.session_state.artigos, 1):
             with st.expander(f"Artigo {i}", expanded=(i == 1)):
-                col_desc, col_id, col_qty, col_del = st.columns([3, 1.5, 1, 0.5])
+                col_desc, col_id, col_qty, col_del = st.columns(
+                    [3, 1.5, 1, 0.5], vertical_alignment="bottom"
+                )
 
                 with col_desc:
                     artigo['descricao'] = st.text_area(
@@ -6051,23 +6029,13 @@ elif menu_option == "📝 Nova Cotação":
                     )
 
                 with col_del:
-                    if i == 1:
-                        st.markdown(
-                            "<div class='delete-button-placeholder'></div>",
-                            unsafe_allow_html=True,
-                        )
-                    else:
+                    if i > 1:
                         # st.form_submit_button does not accept a "key" argument in some
                         # Streamlit versions. To keep the delete buttons distinct without
-                        # visible numbering, append invisible zero‑width characters so each
+                        # visible numbering, append invisible zero-width characters so each
                         # label remains unique while displaying only the trash icon.
                         delete_label = "🗑️" + "\u200B" * i
-                        st.markdown(
-                            "<div class='delete-button-wrapper'>",
-                            unsafe_allow_html=True,
-                        )
                         delete_clicked = st.form_submit_button(delete_label)
-                        st.markdown("</div>", unsafe_allow_html=True)
                         if delete_clicked:
                             remover_indice = i - 1
 
@@ -7272,6 +7240,8 @@ elif menu_option == "📩 Process Center":
             st.session_state.pop("process_center_selected_id", None)
             st.session_state.pop("process_center_selected_info", None)
             st.session_state.pop("process_center_focus_ref", None)
+            st.session_state.pop("process_center_matches", None)
+            st.session_state.pop("process_center_match_selector", None)
 
         with st.container():
             col_tipo, col_form = st.columns([2, 5], vertical_alignment="bottom")
@@ -7323,22 +7293,80 @@ elif menu_option == "📩 Process Center":
             if not termo:
                 st.warning("Introduza um termo de pesquisa válido.")
             else:
+                limite = 50 if tipo_pesquisa == "referencia" else 1
                 resultados = procurar_processos_por_termo(
                     termo,
-                    limite=1,
+                    limite=limite,
                     tipo=tipo_pesquisa,
                     match_mode="exact",
                 )
-                processo_encontrado = resultados[0] if resultados else None
-                st.session_state.process_center_selected_id = (
-                    processo_encontrado.get("id") if processo_encontrado else None
-                )
-                st.session_state.process_center_selected_info = processo_encontrado
-                st.session_state.process_center_focus_ref = (
-                    termo.casefold() if tipo_pesquisa == "referencia" else ""
-                )
-                if not processo_encontrado:
+
+                if tipo_pesquisa == "referencia":
+                    st.session_state.process_center_matches = resultados
+                else:
+                    st.session_state.pop("process_center_matches", None)
+                    st.session_state.pop("process_center_match_selector", None)
+
+                if not resultados:
+                    st.session_state.process_center_selected_id = None
+                    st.session_state.process_center_selected_info = None
+                    st.session_state.process_center_focus_ref = ""
                     st.warning("Nenhum processo encontrado para o termo indicado.")
+                elif tipo_pesquisa == "referencia" and len(resultados) > 1:
+                    st.session_state.process_center_selected_id = None
+                    st.session_state.process_center_selected_info = None
+                    st.session_state.process_center_focus_ref = termo.casefold()
+                else:
+                    processo_encontrado = resultados[0]
+                    st.session_state.process_center_selected_id = processo_encontrado.get(
+                        "id"
+                    )
+                    st.session_state.process_center_selected_info = processo_encontrado
+                    st.session_state.process_center_focus_ref = (
+                        (processo_encontrado.get("referencia") or "").casefold()
+                        if tipo_pesquisa == "referencia"
+                        else ""
+                    )
+                    st.session_state.pop("process_center_matches", None)
+                    st.session_state.pop("process_center_match_selector", None)
+
+        matches = st.session_state.get("process_center_matches") or []
+        if matches and len(matches) > 1:
+            label_to_result: dict[str, dict[str, object]] = {}
+            for resultado in matches:
+                numero_proc = resultado.get("numero") or "Sem processo"
+                referencia_cli = resultado.get("referencia") or "Sem referência"
+                descricao_proc = resultado.get("descricao") or ""
+                label = f"{referencia_cli} — {numero_proc}"
+                if descricao_proc:
+                    label += f" ({descricao_proc})"
+                label_to_result[label] = resultado
+
+            labels = list(label_to_result.keys())
+            default_label = None
+            selected_id = st.session_state.get("process_center_selected_id")
+            if selected_id is not None:
+                for text, resultado in label_to_result.items():
+                    if resultado.get("id") == selected_id:
+                        default_label = text
+                        break
+
+            index = labels.index(default_label) if default_label in labels else 0
+            escolha = st.selectbox(
+                "Selecione a referência encontrada",
+                labels,
+                index=index,
+                key="process_center_match_selector",
+            )
+            selecionado = label_to_result.get(escolha)
+            if selecionado:
+                st.session_state.process_center_selected_id = selecionado.get("id")
+                st.session_state.process_center_selected_info = selecionado
+                st.session_state.process_center_focus_ref = (
+                    (selecionado.get("referencia") or "").casefold()
+                )
+        else:
+            st.session_state.pop("process_center_match_selector", None)
 
         processo_escolhido = st.session_state.get("process_center_selected_info")
         processo_selecionado_id = (
