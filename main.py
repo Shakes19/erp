@@ -2672,8 +2672,22 @@ def procurar_processos_por_termo(
     limite: int = 25,
     *,
     tipo: str = "todos",
+    match_mode: str = "partial",
 ):
-    """Pesquisa processos pelo número ou por referências de cliente associadas."""
+    """Pesquisa processos pelo número ou por referências de cliente associadas.
+
+    Parameters
+    ----------
+    termo:
+        Termo a pesquisar.
+    limite:
+        Número máximo de registos devolvidos.
+    tipo:
+        Campo a pesquisar (``processo``, ``referencia`` ou ``todos``).
+    match_mode:
+        Define se a pesquisa deve utilizar correspondência parcial (``partial``)
+        ou exata (``exact``).
+    """
 
     termo = (termo or "").strip()
     if not termo:
@@ -2683,20 +2697,35 @@ def procurar_processos_por_termo(
     c = conn.cursor()
 
     tipo_normalizado = (tipo or "todos").lower()
+    modo_correspondencia = (match_mode or "partial").lower()
+
     parametros: tuple[object, ...]
-    if tipo_normalizado == "referencia":
-        like_term = f"%{termo}%"
-        where_clause = "processo.ref_cliente LIKE ?"
-        parametros = (like_term, limite)
-    elif tipo_normalizado == "processo":
-        like_term = f"%{termo.upper()}%"
-        where_clause = "UPPER(processo.numero) LIKE ?"
-        parametros = (like_term, limite)
+    if modo_correspondencia == "exact":
+        if tipo_normalizado == "referencia":
+            where_clause = "processo.ref_cliente = ? COLLATE NOCASE"
+            parametros = (termo, limite)
+        elif tipo_normalizado == "processo":
+            where_clause = "UPPER(processo.numero) = ?"
+            parametros = (termo.upper(), limite)
+        else:
+            where_clause = (
+                "UPPER(processo.numero) = ? OR processo.ref_cliente = ? COLLATE NOCASE"
+            )
+            parametros = (termo.upper(), termo, limite)
     else:
-        like_term = f"%{termo}%"
-        like_term_numero = f"%{termo.upper()}%"
-        where_clause = "UPPER(processo.numero) LIKE ? OR processo.ref_cliente LIKE ?"
-        parametros = (like_term_numero, like_term, limite)
+        if tipo_normalizado == "referencia":
+            like_term = f"%{termo}%"
+            where_clause = "processo.ref_cliente LIKE ?"
+            parametros = (like_term, limite)
+        elif tipo_normalizado == "processo":
+            like_term = f"%{termo.upper()}%"
+            where_clause = "UPPER(processo.numero) LIKE ?"
+            parametros = (like_term, limite)
+        else:
+            like_term = f"%{termo}%"
+            like_term_numero = f"%{termo.upper()}%"
+            where_clause = "UPPER(processo.numero) LIKE ? OR processo.ref_cliente LIKE ?"
+            parametros = (like_term_numero, like_term, limite)
 
     query = (
         """
@@ -7246,48 +7275,41 @@ elif menu_option == "📩 Process Center":
             else:
                 resultados = procurar_processos_por_termo(
                     termo,
+                    limite=1,
                     tipo=tipo_pesquisa,
+                    match_mode="exact",
                 )
-                st.session_state.process_center_results = resultados
+                processo_encontrado = resultados[0] if resultados else None
                 st.session_state.process_center_selected_id = (
-                    resultados[0]["id"] if resultados else None
+                    processo_encontrado.get("id") if processo_encontrado else None
                 )
+                st.session_state.process_center_selected_info = processo_encontrado
                 st.session_state.process_center_focus_ref = (
                     termo.casefold() if tipo_pesquisa == "referencia" else ""
                 )
-                if not resultados:
+                if not processo_encontrado:
                     st.warning("Nenhum processo encontrado para o termo indicado.")
 
-        resultados = st.session_state.get("process_center_results", [])
-        processo_selecionado_id = st.session_state.get("process_center_selected_id")
+        processo_escolhido = st.session_state.get("process_center_selected_info")
+        processo_selecionado_id = (
+            processo_escolhido.get("id") if processo_escolhido else None
+        )
         foco_referencia = (st.session_state.get("process_center_focus_ref") or "").casefold()
 
-        if resultados:
-            indices = list(range(len(resultados)))
-            indice_default = 0
-            for idx, processo in enumerate(resultados):
-                if processo.get("id") == processo_selecionado_id:
-                    indice_default = idx
-                    break
+        if processo_escolhido and processo_selecionado_id:
+            descricao_resumo = processo_escolhido.get("descricao") or ""
+            resumo_processos = [
+                f"**Processo:** {processo_escolhido.get('numero', '—')}",
+                f"**Pedidos associados:** {processo_escolhido.get('total_pedidos', 0)}",
+            ]
+            if descricao_resumo:
+                resumo_processos.append(f"**Descrição:** {descricao_resumo}")
+            referencia_resumo = processo_escolhido.get("referencia")
+            if referencia_resumo:
+                resumo_processos.append(f"**Referência cliente:** {referencia_resumo}")
+            st.info("\n".join(resumo_processos))
 
-            def _format_result(idx: int) -> str:
-                item = resultados[idx]
-                descricao = f" • {item['descricao']}" if item.get("descricao") else ""
-                return (
-                    f"{item['numero']} • {item['total_pedidos']} pedidos{descricao}"
-                )
-
-            selected_index = st.selectbox(
-                "Processos encontrados",
-                options=indices,
-                index=indice_default if indices else 0,
-                format_func=_format_result,
-            )
-
-            processo_escolhido = resultados[selected_index]
-            st.session_state.process_center_selected_id = processo_escolhido.get("id")
-
-            detalhes_processo = obter_detalhes_processo(processo_escolhido.get("id"))
+            detalhes_processo = obter_detalhes_processo(processo_selecionado_id)
 
             if detalhes_processo:
                 processo_info = detalhes_processo.get("processo", {})
