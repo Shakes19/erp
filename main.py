@@ -5770,18 +5770,22 @@ st.markdown("""
     }
 
     form[data-testid="stForm"][aria-label="process_center_form"] {
-        border: none;
-        padding: 0;
-        background: transparent;
+        border: 1px solid rgba(250, 250, 250, 0.2);
+        padding: 16px 20px;
+        border-radius: 12px;
+        background: rgba(250, 250, 250, 0.03);
     }
 
-    div[data-testid="stVerticalBlock"]:has(>
-        div[data-testid="stHorizontalBlock"] > div:has(>
-            form[data-testid="stForm"][aria-label="process_center_form"]
-        )
-    ) {
-        border-bottom: 1px solid rgba(250, 250, 250, 0.2);
-        padding: 0 20px 20px 20px;
+    form[data-testid="stForm"][aria-label="process_center_form"] div[data-testid="stHorizontalBlock"] {
+        gap: 0.75rem;
+    }
+
+    form[data-testid="stForm"][aria-label="process_center_form"] div[data-testid="column"] {
+        padding: 0 !important;
+    }
+
+    form[data-testid="stForm"][aria-label="process_center_form"] div[data-testid="stFormSubmitButton"] {
+        margin-top: 0.25rem;
     }
     </style>
 """, unsafe_allow_html=True)
