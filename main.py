@@ -5945,9 +5945,10 @@ elif menu_option == "📝 Nova Cotação":
         <style>
         .delete-button-wrapper {
             display: flex;
+            flex-direction: column;
             height: 100%;
-            align-items: flex-end;
             justify-content: flex-end;
+            align-items: flex-end;
         }
         .delete-button-wrapper > div {
             width: 100%;
@@ -5956,6 +5957,9 @@ elif menu_option == "📝 Nova Cotação":
         }
         .delete-button-wrapper button {
             width: auto;
+        }
+        .delete-button-placeholder {
+            height: 100%;
         }
         </style>
         """,
@@ -6047,16 +6051,25 @@ elif menu_option == "📝 Nova Cotação":
                     )
 
                 with col_del:
-                    # st.form_submit_button does not accept a "key" argument in some
-                    # Streamlit versions. To keep the delete buttons distinct without
-                    # visible numbering, append invisible zero‑width characters so each
-                    # label remains unique while displaying only the trash icon.
-                    delete_label = "🗑️" + "\u200B" * i
-                    st.markdown("<div class='delete-button-wrapper'>", unsafe_allow_html=True)
-                    delete_clicked = st.form_submit_button(delete_label)
-                    st.markdown("</div>", unsafe_allow_html=True)
-                    if delete_clicked:
-                        remover_indice = i - 1
+                    if i == 1:
+                        st.markdown(
+                            "<div class='delete-button-placeholder'></div>",
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        # st.form_submit_button does not accept a "key" argument in some
+                        # Streamlit versions. To keep the delete buttons distinct without
+                        # visible numbering, append invisible zero‑width characters so each
+                        # label remains unique while displaying only the trash icon.
+                        delete_label = "🗑️" + "\u200B" * i
+                        st.markdown(
+                            "<div class='delete-button-wrapper'>",
+                            unsafe_allow_html=True,
+                        )
+                        delete_clicked = st.form_submit_button(delete_label)
+                        st.markdown("</div>", unsafe_allow_html=True)
+                        if delete_clicked:
+                            remover_indice = i - 1
 
         col_acoes_1, _, _ = st.columns([1, 1, 2])
 
