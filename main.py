@@ -7102,7 +7102,7 @@ elif menu_option == "📩 Process Center":
 
     with tab_respondidas:
         # Filtros
-        col1, col2, col3, col4 = st.columns([3, 2, 2, 1], vertical_alignment="bottom")
+        col1, col2, col3 = st.columns([3, 2, 2], vertical_alignment="bottom")
         with col1:
             filtro_ref_resp = st.text_input("🔍 Pesquisar por referência", placeholder="Referência...", key="filtro_resp")
         with col2:
@@ -7117,11 +7117,10 @@ elif menu_option == "📩 Process Center":
                 utilizador_option_labels,
                 key="utilizador_resp",
             )
-        with col4:
-            st.markdown("<div style='display:flex;justify-content:center;'>", unsafe_allow_html=True)
-            if st.button("🔄 Atualizar", key="refresh_resp"):
+        botao_cols_resp = st.columns([4, 1, 4])
+        with botao_cols_resp[1]:
+            if st.button("🔄 Atualizar", key="refresh_resp", use_container_width=True):
                 st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
 
         fornecedor_id_resp = fornecedor_options[fornecedor_sel_resp]
         utilizador_id_resp = utilizador_options[utilizador_sel_resp]
@@ -7300,7 +7299,7 @@ elif menu_option == "📩 Process Center":
 
     with tab_arquivados:
         # Filtros
-        col1, col2, col3, col4 = st.columns([3, 2, 2, 1], vertical_alignment="bottom")
+        col1, col2, col3 = st.columns([3, 2, 2], vertical_alignment="bottom")
         with col1:
             filtro_ref_arq = st.text_input("🔍 Pesquisar por referência", placeholder="Referência...", key="filtro_arq")
         with col2:
@@ -7315,11 +7314,10 @@ elif menu_option == "📩 Process Center":
                 utilizador_option_labels,
                 key="utilizador_arq",
             )
-        with col4:
-            st.markdown("<div style='display:flex;justify-content:center;'>", unsafe_allow_html=True)
-            if st.button("🔄 Atualizar", key="refresh_arq"):
+        botao_cols_arq = st.columns([4, 1, 4])
+        with botao_cols_arq[1]:
+            if st.button("🔄 Atualizar", key="refresh_arq", use_container_width=True):
                 st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
 
         fornecedor_id_arq = fornecedor_options[fornecedor_sel_arq]
         utilizador_id_arq = utilizador_options[utilizador_sel_arq]
