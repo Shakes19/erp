@@ -6909,10 +6909,8 @@ elif menu_option == "📩 Process Center":
                 key="utilizador_pend",
             )
         with col4:
-            st.markdown("<div style='display:flex;justify-content:center;'>", unsafe_allow_html=True)
-            if st.button("🔄 Atualizar", key="refresh_pend"):
+            if st.button("🔄 Atualizar", key="refresh_pend", use_container_width=True):
                 st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
 
         fornecedor_id_pend = fornecedor_options[fornecedor_sel_pend]
         utilizador_id_pend = utilizador_options[utilizador_sel_pend]
@@ -7405,7 +7403,7 @@ elif menu_option == "📩 Process Center":
             st.session_state.pop("process_center_match_selector", None)
 
         with st.container():
-            col_tipo, col_form = st.columns([2, 5], vertical_alignment="bottom")
+            col_tipo, col_form = st.columns([2, 5], vertical_alignment="top")
 
             with col_tipo:
                 tipo_pesquisa_label = st.radio(
