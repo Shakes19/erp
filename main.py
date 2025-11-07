@@ -7244,29 +7244,29 @@ elif menu_option == "📩 Process Center":
             st.rerun()
 
     with tab_process_center:
+        col_tipo, col_input, col_button = st.columns(
+            [2, 4, 1], vertical_alignment="bottom"
+        )
+        with col_tipo:
+            tipo_pesquisa_label = st.radio(
+                "Tipo de pesquisa",
+                ("Processo", "Referência cliente"),
+                key="process_center_tipo",
+                horizontal=True,
+            )
+
+        placeholder = (
+            "QT2025-0001"
+            if tipo_pesquisa_label == "Processo"
+            else "Referência do cliente"
+        )
+        input_label = (
+            "Número do processo"
+            if tipo_pesquisa_label == "Processo"
+            else "Referência do cliente"
+        )
+
         with st.form("process_center_form"):
-            col_tipo, col_input, col_button = st.columns(
-                [2, 4, 1], vertical_alignment="bottom"
-            )
-            with col_tipo:
-                tipo_pesquisa_label = st.radio(
-                    "Tipo de pesquisa",
-                    ("Processo", "Referência cliente"),
-                    key="process_center_tipo",
-                    horizontal=True,
-                )
-
-            placeholder = (
-                "QT2025-0001"
-                if tipo_pesquisa_label == "Processo"
-                else "Referência do cliente"
-            )
-            input_label = (
-                "Número do processo"
-                if tipo_pesquisa_label == "Processo"
-                else "Referência do cliente"
-            )
-
             with col_input:
                 termo_pesquisa = st.text_input(
                     input_label,
