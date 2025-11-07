@@ -4675,6 +4675,19 @@ def reset_smart_quotation_state():
         st.session_state.pop(key, None)
 
 
+def reset_process_center_state() -> None:
+    """Remove valores temporários associados ao módulo Process Center."""
+
+    for key in (
+        "process_center_term",
+        "process_center_selected_id",
+        "process_center_selected_info",
+        "process_center_focus_ref",
+        "process_center_tipo",
+    ):
+        st.session_state.pop(key, None)
+
+
 def solicitar_reset_upload_smart_pdf() -> None:
     """Agenda a remoção do ficheiro carregado no uploader do Smart Quotation."""
 
@@ -5840,6 +5853,8 @@ with st.sidebar:
 # ========================== PÁGINAS DO SISTEMA ==========================
 
 previous_menu_option = st.session_state.get("last_menu_option")
+if previous_menu_option == "📩 Process Center" and menu_option != "📩 Process Center":
+    reset_process_center_state()
 if previous_menu_option != menu_option and menu_option == "🤖 Smart Quotation":
     reset_smart_quotation_state()
 st.session_state.last_menu_option = menu_option
@@ -7297,22 +7312,14 @@ elif menu_option == "📩 Process Center":
         foco_referencia = (st.session_state.get("process_center_focus_ref") or "").casefold()
 
         if processo_escolhido and processo_selecionado_id:
-            descricao_resumo = processo_escolhido.get("descricao") or ""
-            resumo_processos = [
-                f"**Processo:** {processo_escolhido.get('numero', '—')}",
-                f"**Pedidos associados:** {processo_escolhido.get('total_pedidos', 0)}",
-            ]
-            if descricao_resumo:
-                resumo_processos.append(f"**Descrição:** {descricao_resumo}")
-            referencia_resumo = processo_escolhido.get("referencia")
-            if referencia_resumo:
-                resumo_processos.append(f"**Referência cliente:** {referencia_resumo}")
-            st.info("\n".join(resumo_processos))
-
             detalhes_processo = obter_detalhes_processo(processo_selecionado_id)
 
             if detalhes_processo:
                 processo_info = detalhes_processo.get("processo", {})
+                referencia_cliente = (
+                    processo_info.get("referencia")
+                    or processo_escolhido.get("referencia")
+                )
                 resumo_col, pedido_cliente_col = st.columns(2)
 
                 def _estado_envio_cliente(enviados: int, total: int) -> tuple[str, str]:
@@ -7326,6 +7333,8 @@ elif menu_option == "📩 Process Center":
 
                 with resumo_col:
                     st.markdown(f"### {processo_info.get('numero', 'Processo')}")
+                    if referencia_cliente:
+                        st.write(referencia_cliente)
                     if processo_info.get("descricao"):
                         st.caption(processo_info.get("descricao"))
 
