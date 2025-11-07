@@ -5768,6 +5768,21 @@ st.markdown("""
         border-radius: 5px;
         margin: 10px 0;
     }
+
+    form[data-testid="stForm"][aria-label="process_center_form"] {
+        border: none;
+        padding: 0;
+        background: transparent;
+    }
+
+    div[data-testid="stVerticalBlock"]:has(>
+        div[data-testid="stHorizontalBlock"] > div:has(>
+            form[data-testid="stForm"][aria-label="process_center_form"]
+        )
+    ) {
+        border-bottom: 1px solid rgba(250, 250, 250, 0.2);
+        padding: 0 20px 20px 20px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -7252,44 +7267,45 @@ elif menu_option == "📩 Process Center":
             st.session_state.pop("process_center_selected_info", None)
             st.session_state.pop("process_center_focus_ref", None)
 
-        col_tipo, col_form = st.columns([2, 5], vertical_alignment="bottom")
+        with st.container():
+            col_tipo, col_form = st.columns([2, 5], vertical_alignment="bottom")
 
-        with col_tipo:
-            tipo_pesquisa_label = st.radio(
-                "Tipo de pesquisa",
-                ("Processo", "Referência cliente"),
-                key="process_center_tipo",
-                horizontal=True,
-                on_change=_on_process_center_tipo_change,
+            with col_tipo:
+                tipo_pesquisa_label = st.radio(
+                    "Tipo de pesquisa",
+                    ("Processo", "Referência cliente"),
+                    key="process_center_tipo",
+                    horizontal=True,
+                    on_change=_on_process_center_tipo_change,
+                )
+
+            placeholder = (
+                "QT2025-0001"
+                if tipo_pesquisa_label == "Processo"
+                else "Referência do cliente"
+            )
+            input_label = (
+                "Número do processo"
+                if tipo_pesquisa_label == "Processo"
+                else "Referência do cliente"
             )
 
-        placeholder = (
-            "QT2025-0001"
-            if tipo_pesquisa_label == "Processo"
-            else "Referência do cliente"
-        )
-        input_label = (
-            "Número do processo"
-            if tipo_pesquisa_label == "Processo"
-            else "Referência do cliente"
-        )
-
-        submitted = False
-        with col_form:
-            with st.form("process_center_form"):
-                col_input, col_button = st.columns(
-                    [4, 1], vertical_alignment="bottom"
-                )
-                with col_input:
-                    termo_pesquisa = st.text_input(
-                        input_label,
-                        key="process_center_term",
-                        placeholder=placeholder,
+            submitted = False
+            with col_form:
+                with st.form("process_center_form"):
+                    col_input, col_button = st.columns(
+                        [4, 1], vertical_alignment="bottom"
                     )
-                with col_button:
-                    submitted = st.form_submit_button(
-                        "Pesquisar", type="primary", use_container_width=True
-                    )
+                    with col_input:
+                        termo_pesquisa = st.text_input(
+                            input_label,
+                            key="process_center_term",
+                            placeholder=placeholder,
+                        )
+                    with col_button:
+                        submitted = st.form_submit_button(
+                            "Pesquisar", type="primary", use_container_width=True
+                        )
 
         if submitted:
             tipo_pesquisa = (
