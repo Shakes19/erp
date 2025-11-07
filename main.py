@@ -7244,39 +7244,52 @@ elif menu_option == "📩 Process Center":
             st.rerun()
 
     with tab_process_center:
-        with st.form("process_center_form"):
-            col_tipo, col_input, col_button = st.columns(
-                [2, 4, 1], vertical_alignment="bottom"
-            )
-            with col_tipo:
-                tipo_pesquisa_label = st.radio(
-                    "Tipo de pesquisa",
-                    ("Processo", "Referência cliente"),
-                    key="process_center_tipo",
-                    horizontal=True,
-                )
+        def _on_process_center_tipo_change() -> None:
+            """Atualiza o campo de pesquisa quando o tipo é alterado."""
 
-            placeholder = (
-                "QT2025-0001"
-                if tipo_pesquisa_label == "Processo"
-                else "Referência do cliente"
-            )
-            input_label = (
-                "Número do processo"
-                if tipo_pesquisa_label == "Processo"
-                else "Referência do cliente"
+            st.session_state.process_center_term = ""
+            st.session_state.pop("process_center_selected_id", None)
+            st.session_state.pop("process_center_selected_info", None)
+            st.session_state.pop("process_center_focus_ref", None)
+
+        col_tipo, col_form = st.columns([2, 5], vertical_alignment="bottom")
+
+        with col_tipo:
+            tipo_pesquisa_label = st.radio(
+                "Tipo de pesquisa",
+                ("Processo", "Referência cliente"),
+                key="process_center_tipo",
+                horizontal=True,
+                on_change=_on_process_center_tipo_change,
             )
 
-            with col_input:
-                termo_pesquisa = st.text_input(
-                    input_label,
-                    key="process_center_term",
-                    placeholder=placeholder,
+        placeholder = (
+            "QT2025-0001"
+            if tipo_pesquisa_label == "Processo"
+            else "Referência do cliente"
+        )
+        input_label = (
+            "Número do processo"
+            if tipo_pesquisa_label == "Processo"
+            else "Referência do cliente"
+        )
+
+        submitted = False
+        with col_form:
+            with st.form("process_center_form"):
+                col_input, col_button = st.columns(
+                    [4, 1], vertical_alignment="bottom"
                 )
-            with col_button:
-                submitted = st.form_submit_button(
-                    "Pesquisar", type="primary", use_container_width=True
-                )
+                with col_input:
+                    termo_pesquisa = st.text_input(
+                        input_label,
+                        key="process_center_term",
+                        placeholder=placeholder,
+                    )
+                with col_button:
+                    submitted = st.form_submit_button(
+                        "Pesquisar", type="primary", use_container_width=True
+                    )
 
         if submitted:
             tipo_pesquisa = (
