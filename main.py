@@ -15,7 +15,7 @@ import re
 import copy
 import textwrap
 from uuid import uuid4
-from typing import Iterable
+from typing import Callable, Iterable
 import logging
 from pypdf import PdfReader
 from PIL import Image, UnidentifiedImageError
@@ -4658,34 +4658,195 @@ def exibir_pdf(
             )
 
 
-def reset_smart_quotation_state():
-    """Limpa os valores guardados para o módulo Smart Quotation."""
-    for key in (
-        "smart_pdf_uid",
-        "smart_referencia",
-        "smart_unidade",
-        "smart_marca",
-        "smart_cliente_index",
-        "smart_artigos",
-    ):
+def _clear_session_state_keys(keys: Iterable[str]) -> None:
+    """Remove uma lista de chaves do ``session_state`` se existirem."""
+
+    for key in keys:
         st.session_state.pop(key, None)
 
-    artigos_keys = [k for k in st.session_state.keys() if k.startswith("smart_artigos_")]
-    for key in artigos_keys:
-        st.session_state.pop(key, None)
+
+def _clear_session_state_prefixes(prefixes: Iterable[str]) -> None:
+    """Remove todas as chaves que comecem pelos prefixos indicados."""
+
+    for prefix in prefixes:
+        for key in list(st.session_state.keys()):
+            if key.startswith(prefix):
+                st.session_state.pop(key, None)
+
+
+def reset_duplicate_reference_state() -> None:
+    """Elimina o estado associado ao alerta de referência duplicada."""
+
+    _clear_session_state_keys(
+        (
+            "duplicated_ref_context",
+            "duplicated_ref_force",
+            "show_duplicate_ref_dialog",
+        )
+    )
+
+
+def reset_supplier_requirement_state() -> None:
+    """Limpa os dados recolhidos para requisitos adicionais de fornecedores."""
+
+    _clear_session_state_keys(
+        (
+            "supplier_requirement_context",
+            "supplier_requirement_suppliers",
+            "supplier_requirement_data",
+            "supplier_requirement_ready",
+            "supplier_requirement_origin",
+            "show_supplier_requirement_dialog",
+        )
+    )
+
+
+def reset_smart_quotation_state() -> None:
+    """Limpa os valores guardados para o módulo Smart Quotation."""
+
+    _clear_session_state_keys(
+        (
+            "smart_pdf",
+            "smart_pdf_uid",
+            "smart_referencia",
+            "smart_unidade",
+            "smart_marca",
+            "smart_cliente_index",
+            "smart_artigos",
+            "smart_success_data",
+            "show_smart_success_dialog",
+            "reset_smart_pdf_uploader",
+        )
+    )
+    _clear_session_state_prefixes(
+        (
+            "smart_artigos_",
+            "smart_dialog_pdf_",
+        )
+    )
+    reset_duplicate_reference_state()
+    reset_supplier_requirement_state()
+
+
+def reset_nova_cotacao_state() -> None:
+    """Reinicia o formulário manual de criação de cotações."""
+
+    _clear_session_state_keys(
+        (
+            "nova_cotacao_data",
+            "nova_cotacao_referencia",
+            "cliente_select_nova",
+            "artigos",
+            "pedido_cliente_anexos",
+            "upload_pedido_cliente",
+            "nova_cotacao_success_data",
+            "show_nova_cotacao_success_dialog",
+            "reset_nova_cotacao_form",
+        )
+    )
+    _clear_session_state_prefixes(
+        (
+            "nova_desc_",
+            "nova_art_num_",
+            "nova_qtd_",
+            "nova_unidade_",
+            "nova_marca_",
+            "manual_dialog_pdf_",
+        )
+    )
+    reset_duplicate_reference_state()
+    reset_supplier_requirement_state()
 
 
 def reset_process_center_state() -> None:
     """Remove valores temporários associados ao módulo Process Center."""
 
-    for key in (
-        "process_center_term",
-        "process_center_selected_id",
-        "process_center_selected_info",
-        "process_center_focus_ref",
-        "process_center_tipo",
-    ):
-        st.session_state.pop(key, None)
+    _clear_session_state_keys(
+        (
+            "process_center_term",
+            "process_center_selected_id",
+            "process_center_selected_info",
+            "process_center_focus_ref",
+            "process_center_tipo",
+            "process_center_matches",
+            "process_center_match_selector",
+            "cotacoes_pend_page",
+            "cotacoes_resp_page",
+            "cotacoes_arq_page",
+            "confirmacao",
+            "filtro_pend",
+            "fornecedor_pend",
+            "utilizador_pend",
+            "refresh_pend",
+            "filtro_resp",
+            "fornecedor_resp",
+            "utilizador_resp",
+            "refresh_resp",
+            "filtro_arq",
+            "fornecedor_arq",
+            "utilizador_arq",
+            "refresh_arq",
+        )
+    )
+    _clear_session_state_prefixes(
+        (
+            "cliente_pdf_state_",
+            "cliente_sel_",
+            "pc_resend_status_",
+        )
+    )
+
+
+def reset_pdf_management_state() -> None:
+    """Limpa estado temporário utilizado na gestão de PDFs."""
+
+    _clear_session_state_prefixes(("tipo_pdf_gest_", "upload_pdf_gest_"))
+
+
+def reset_artigos_state() -> None:
+    """Reinicia filtros e pesquisas na área de artigos."""
+
+    _clear_session_state_keys(("artigos_pesquisa",))
+    try:
+        listar_artigos_catalogo.clear()
+    except AttributeError:
+        pass
+
+
+def reset_perfil_state() -> None:
+    """Estado do perfil não mantém campos persistentes."""
+
+
+def reset_configuracoes_state() -> None:
+    """Remove valores mantidos nas várias abas de configurações."""
+
+    _clear_session_state_keys(
+        (
+            "forn_marcas",
+            "empresa_comercial_sel",
+            "config_email_provider",
+            "config_email_smtp_server",
+            "config_email_smtp_port",
+            "config_email_use_tls",
+            "config_email_use_ssl",
+            "config_email_provider_prev",
+            "layout_email_tipo",
+            "logo_empresa",
+        )
+    )
+    _clear_session_state_prefixes(("forn_req_",))
+
+
+MENU_RESET_HANDLERS: dict[str, Callable[[], None]] = {
+    "📝 Nova Cotação": reset_nova_cotacao_state,
+    "🤖 Smart Quotation": reset_smart_quotation_state,
+    "📩 Process Center": reset_process_center_state,
+    "📊 Relatórios": lambda: None,
+    "📄 PDFs": reset_pdf_management_state,
+    "📦 Artigos": reset_artigos_state,
+    "👤 Perfil": reset_perfil_state,
+    "⚙️ Configurações": reset_configuracoes_state,
+}
 
 
 def solicitar_reset_upload_smart_pdf() -> None:
@@ -5874,10 +6035,10 @@ with st.sidebar:
 # ========================== PÁGINAS DO SISTEMA ==========================
 
 previous_menu_option = st.session_state.get("last_menu_option")
-if previous_menu_option == "📩 Process Center" and menu_option != "📩 Process Center":
-    reset_process_center_state()
-if previous_menu_option != menu_option and menu_option == "🤖 Smart Quotation":
-    reset_smart_quotation_state()
+if previous_menu_option and previous_menu_option != menu_option:
+    reset_handler = MENU_RESET_HANDLERS.get(previous_menu_option)
+    if reset_handler:
+        reset_handler()
 st.session_state.last_menu_option = menu_option
 
 if menu_option == "🏠 Dashboard":
