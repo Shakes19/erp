@@ -5947,12 +5947,15 @@ elif menu_option == "📝 Nova Cotação":
             display: flex;
             height: 100%;
             align-items: flex-end;
+            justify-content: flex-end;
         }
         .delete-button-wrapper > div {
             width: 100%;
+            display: flex;
+            justify-content: flex-end;
         }
         .delete-button-wrapper button {
-            width: 100%;
+            width: auto;
         }
         </style>
         """,
@@ -6091,10 +6094,6 @@ elif menu_option == "📝 Nova Cotação":
                 "📁 Criar Processo (sem email)",
                 use_container_width=True,
             )
-            limpar_form = st.form_submit_button(
-                "♻️ Limpar Formulário",
-                use_container_width=True,
-            )
     
     # Processar ações
     if remover_indice is not None:
@@ -6117,16 +6116,6 @@ elif menu_option == "📝 Nova Cotação":
             "unidade": "Peças",
             "marca": ""
         })
-        st.rerun()
-
-    if limpar_form:
-        st.session_state.artigos = [{
-            "artigo_num": "",
-            "descricao": "",
-            "quantidade": "",
-            "unidade": "Peças",
-            "marca": ""
-        }]
         st.rerun()
 
     if criar_cotacao or criar_processo_sem_email:
