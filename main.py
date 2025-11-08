@@ -8718,20 +8718,16 @@ elif menu_option == "📦 Artigos":
 
         if "artigo_em_edicao" not in st.session_state:
             st.session_state["artigo_em_edicao"] = None
-        if "mostrar_confirmacao_edicao_artigo" not in st.session_state:
-            st.session_state["mostrar_confirmacao_edicao_artigo"] = False
-        if "mostrar_form_edicao_artigo" not in st.session_state:
-            st.session_state["mostrar_form_edicao_artigo"] = False
+        if "mostrar_modal_edicao_artigo" not in st.session_state:
+            st.session_state["mostrar_modal_edicao_artigo"] = False
 
         def _solicitar_edicao_artigo(artigo: dict[str, object]) -> None:
             st.session_state["artigo_em_edicao"] = artigo
-            st.session_state["mostrar_confirmacao_edicao_artigo"] = True
-            st.session_state["mostrar_form_edicao_artigo"] = False
+            st.session_state["mostrar_modal_edicao_artigo"] = True
 
         def _cancelar_edicao_artigo() -> None:
             st.session_state["artigo_em_edicao"] = None
-            st.session_state["mostrar_confirmacao_edicao_artigo"] = False
-            st.session_state["mostrar_form_edicao_artigo"] = False
+            st.session_state["mostrar_modal_edicao_artigo"] = False
 
         def _parse_float(value: str) -> float | None:
             valor_limpo = (value or "").strip().replace(",", ".")
@@ -8781,17 +8777,7 @@ elif menu_option == "📦 Artigos":
 
         artigo_em_edicao: dict[str, object] | None = st.session_state.get("artigo_em_edicao")
 
-        if st.session_state.get("mostrar_confirmacao_edicao_artigo") and artigo_em_edicao:
-            with modal("Confirmar edição do artigo"):
-                st.write("Deseja editar este artigo?")
-                col_sim, col_nao = st.columns(2)
-                if col_sim.button("Sim", key="confirmar_edicao_artigo"):
-                    st.session_state["mostrar_confirmacao_edicao_artigo"] = False
-                    st.session_state["mostrar_form_edicao_artigo"] = True
-                if col_nao.button("Não", key="cancelar_edicao_artigo"):
-                    _cancelar_edicao_artigo()
-
-        if st.session_state.get("mostrar_form_edicao_artigo") and artigo_em_edicao:
+        if st.session_state.get("mostrar_modal_edicao_artigo") and artigo_em_edicao:
             with modal("Editar artigo", key="modal_form_editar_artigo"):
                 st.subheader("Editar artigo")
 
