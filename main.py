@@ -1,5 +1,6 @@
 import streamlit as st
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, date, timedelta
 from fpdf import FPDF
 import base64
@@ -56,6 +57,32 @@ from services.email_service import (
 )
 
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
+
+if hasattr(st, "modal"):
+
+    def modal(title: str, key: str | None = None):
+        """Wrapper to support Streamlit's ``st.modal`` when available."""
+
+        return st.modal(title, key=key)
+
+
+else:
+
+    @contextmanager
+    def modal(title: str, key: str | None = None):
+        """Fallback context manager that emulates ``st.modal`` in older versions.
+
+        Streamlit versions prior to 1.23 do not provide the ``st.modal`` context
+        manager.  To keep the application usable on those versions we display the
+        modal content inside a regular container while preserving the original
+        layout logic.
+        """
+
+        placeholder = st.empty()
+        with placeholder.container():
+            st.subheader(title)
+            yield
+
 
 def _format_iso_date(value):
     """Format ISO 8601 strings or datetime objects to ``dd/mm/YYYY``.
@@ -8698,7 +8725,7 @@ elif menu_option == "📦 Artigos":
         artigo_em_edicao: dict[str, object] | None = st.session_state.get("artigo_em_edicao")
 
         if st.session_state.get("mostrar_confirmacao_edicao_artigo") and artigo_em_edicao:
-            with st.modal("Confirmar edição do artigo"):
+            with modal("Confirmar edição do artigo"):
                 st.write("Deseja editar este artigo?")
                 col_sim, col_nao = st.columns(2)
                 if col_sim.button("Sim", key="confirmar_edicao_artigo"):
@@ -8708,7 +8735,7 @@ elif menu_option == "📦 Artigos":
                     _cancelar_edicao_artigo()
 
         if st.session_state.get("mostrar_form_edicao_artigo") and artigo_em_edicao:
-            with st.modal("Editar artigo", key="modal_form_editar_artigo"):
+            with modal("Editar artigo", key="modal_form_editar_artigo"):
                 st.subheader("Editar artigo")
 
                 unidades_disponiveis = listar_unidades()
