@@ -70,12 +70,13 @@ else:
 
     @contextmanager
     def modal(title: str, key: str | None = None):
-        """Fallback context manager that emulates ``st.modal`` in older versions.
+        """Fallback implementation for Streamlit versions without ``st.modal``.
 
-        Streamlit versions prior to 1.23 do not provide the ``st.modal`` context
-        manager.  To keep the application usable on those versions we render a
-        lightweight HTML/CSS overlay that behaves like a modal dialog, ensuring
-        the content appears as a pop-up rather than inline on the page.
+        Older releases render all elements inline, so we emulate a modal by
+        leveraging CSS to transform the placeholder container into a centred
+        dialog.  The structure stays entirely within Streamlit's layout, which
+        keeps widgets interactive while preventing the blank overlay that was
+        previously shown.
         """
 
         placeholder = st.empty()
@@ -83,78 +84,54 @@ else:
 
         with placeholder.container():
             st.markdown(
-                    f"""
-                    <style>
-                        #{modal_id}-overlay {{
-                            position: fixed;
-                            inset: 0;
-                            background-color: rgba(0, 0, 0, 0.35);
-                            z-index: 1000;
-                        }}
+                f"""
+                <div id="{modal_id}-anchor"></div>
+                <style>
+                    div[data-testid="stVerticalBlock"]:has(> div#{modal_id}-anchor) {{
+                        position: fixed;
+                        inset: 0;
+                        z-index: 1000;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        background: rgba(0, 0, 0, 0.35);
+                        padding: 1.5rem;
+                    }}
 
-                        #{modal_id}-content {{
-                            position: fixed;
-                            top: 50%;
-                            left: 50%;
-                            transform: translate(-50%, -50%);
-                            background-color: var(
-                                --background-color,
-                                var(--color-bg-primary, #0e1117)
-                            );
-                            color: var(
-                                --text-color,
-                                var(--color-text-primary, #e5e7eb)
-                            );
-                            padding: 1.5rem;
-                            border-radius: 0.75rem;
-                            box-shadow: 0 1.5rem 3rem rgba(15, 23, 42, 0.25);
-                            max-height: 90vh;
-                            overflow-y: auto;
-                            width: min(90vw, 720px);
-                            z-index: 1001;
-                        }}
+                    div[data-testid="stVerticalBlock"]:has(> div#{modal_id}-anchor)
+                        > div:first-child {{
+                        display: none;
+                    }}
 
-                        #{modal_id}-content h1,
-                        #{modal_id}-content h2,
-                        #{modal_id}-content h3,
-                        #{modal_id}-content h4,
-                        #{modal_id}-content h5,
-                        #{modal_id}-content h6 {{
-                            margin-top: 0;
-                        }}
+                    div[data-testid="stVerticalBlock"]:has(> div#{modal_id}-anchor)
+                        > div:not(:first-child) {{
+                        width: min(90vw, 720px);
+                        max-height: 90vh;
+                        overflow-y: auto;
+                        background: var(
+                            --background-color,
+                            var(--color-bg-primary, #0e1117)
+                        );
+                        color: var(
+                            --text-color,
+                            var(--color-text-primary, #e5e7eb)
+                        );
+                        padding: 1.5rem;
+                        border-radius: 0.75rem;
+                        box-shadow: 0 1.5rem 3rem rgba(15, 23, 42, 0.25);
+                    }}
 
-                        body.custom-modal-open {{
-                            overflow: hidden;
-                        }}
-                    </style>
-                    <script>
-                        document.body.classList.add('custom-modal-open');
-                    </script>
-                    <div id="{modal_id}-overlay"></div>
-                    <div id="{modal_id}-content" role="dialog" aria-modal="true">
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-            # Mantemos o conteúdo dentro do ``placeholder`` até ao final da execução
-            # para garantir que o modal permanece visível. A própria execução do
-            # Streamlit encarrega-se de remover o conteúdo na próxima iteração,
-            # pelo que não é necessário (nem desejável) limpar explicitamente o
-            # placeholder aqui.
-            content = st.container()
-            with content:
-                st.subheader(title)
-                yield
-
-            st.markdown(
-                """
-                </div>
-                <script>
-                    document.body.classList.remove('custom-modal-open');
-                </script>
+                    body:has(div[data-testid="stVerticalBlock"]
+                        > div#{modal_id}-anchor) {{
+                        overflow: hidden;
+                    }}
+                </style>
                 """,
                 unsafe_allow_html=True,
             )
+
+            st.subheader(title)
+            yield
 
 
 def _format_iso_date(value):
