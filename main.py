@@ -15,6 +15,7 @@ import tempfile
 import re
 import copy
 import textwrap
+import html
 from uuid import uuid4
 from typing import Callable, Iterable
 import logging
@@ -72,63 +73,55 @@ else:
     def modal(title: str, key: str | None = None):
         """Fallback implementation for Streamlit versions without ``st.modal``.
 
-        Older releases render all elements inline, so we emulate a modal by
-        transforming the placeholder container into a centred dialog.  The
-        structure stays entirely within Streamlit's layout, which keeps widgets
-        interactive while preventing the blank overlay that was previously
-        shown.
+        The modal is rendered inline but styled as a centred dialog with a
+        translucent backdrop so that the editing interface behaves like a pop-up
+        window.
         """
 
         placeholder = st.empty()
         modal_id = key or f"modal-{uuid4().hex}"
+        titulo_escapado = html.escape(title or "")
 
         with placeholder.container():
             st.markdown(
                 f"""
-                <div id="{modal_id}-anchor"></div>
-                <script>
-                    (function() {{
-                        const doc = window.parent.document;
-                        const anchor = doc.getElementById("{modal_id}-anchor");
-                        if (!anchor) {{
-                            return;
-                        }}
+                <div id="{modal_id}" class="erp-modal" role="dialog" aria-modal="true" aria-label="{titulo_escapado}">
+                    <div class="erp-modal__backdrop"></div>
+                    <div class="erp-modal__dialog">
+                """,
+                unsafe_allow_html=True,
+            )
 
-                        const block = anchor.closest('div[data-testid="stVerticalBlock"]');
-                        if (!block) {{
-                            return;
-                        }}
+            conteudo = st.container()
+            with conteudo:
+                st.markdown(
+                    f"<h3 class='erp-modal__title'>{titulo_escapado}</h3>",
+                    unsafe_allow_html=True,
+                )
+                yield
 
-                        block.classList.add('erp-modal--active');
-                        doc.body.classList.add('erp-modal--scroll-lock');
-
-                        const cleanup = () => {{
-                            block.classList.remove('erp-modal--active');
-                            doc.body.classList.remove('erp-modal--scroll-lock');
-                        }};
-
-                        anchor.addEventListener('DOMNodeRemoved', cleanup, {{ once: true }});
-                    }})();
-                </script>
+            st.markdown("</div></div>", unsafe_allow_html=True)
+            st.markdown(
+                """
                 <style>
-                    div[data-testid="stVerticalBlock"].erp-modal--active {{
+                    .erp-modal {
                         position: fixed;
                         inset: 0;
                         z-index: 1000;
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        background: rgba(0, 0, 0, 0.35);
                         padding: 1.5rem;
-                    }}
+                    }
 
-                    div[data-testid="stVerticalBlock"].erp-modal--active
-                        > div:first-child {{
-                        display: none;
-                    }}
+                    .erp-modal__backdrop {
+                        position: absolute;
+                        inset: 0;
+                        background: rgba(0, 0, 0, 0.35);
+                    }
 
-                    div[data-testid="stVerticalBlock"].erp-modal--active
-                        > div:not(:first-child) {{
+                    .erp-modal__dialog {
+                        position: relative;
                         width: min(90vw, 720px);
                         max-height: 90vh;
                         overflow-y: auto;
@@ -143,18 +136,41 @@ else:
                         padding: 1.5rem;
                         border-radius: 0.75rem;
                         box-shadow: 0 1.5rem 3rem rgba(15, 23, 42, 0.25);
-                    }}
+                    }
 
-                    body.erp-modal--scroll-lock {{
+                    .erp-modal__title {
+                        margin-top: 0;
+                        margin-bottom: 1rem;
+                    }
+
+                    body.erp-modal--scroll-lock {
                         overflow: hidden;
-                    }}
+                    }
                 </style>
                 """,
                 unsafe_allow_html=True,
             )
+            st.markdown(
+                f"""
+                <script>
+                    (function() {{
+                        const doc = window.parent.document;
+                        const modal = doc.getElementById("{modal_id}");
+                        if (!modal) {{
+                            return;
+                        }}
 
-            st.subheader(title)
-            yield
+                        const cleanup = () => {{
+                            doc.body.classList.remove('erp-modal--scroll-lock');
+                        }};
+
+                        doc.body.classList.add('erp-modal--scroll-lock');
+                        modal.addEventListener('DOMNodeRemoved', cleanup, {{ once: true }});
+                    }})();
+                </script>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 def _format_iso_date(value):
@@ -8802,7 +8818,6 @@ elif menu_option == "📦 Artigos":
 
         if st.session_state.get("mostrar_modal_edicao_artigo") and artigo_em_edicao:
             with modal("Editar artigo", key="modal_form_editar_artigo"):
-                st.subheader("Editar artigo")
 
                 unidades_disponiveis = listar_unidades()
                 if not unidades_disponiveis:
