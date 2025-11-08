@@ -73,10 +73,10 @@ else:
         """Fallback implementation for Streamlit versions without ``st.modal``.
 
         Older releases render all elements inline, so we emulate a modal by
-        leveraging CSS to transform the placeholder container into a centred
-        dialog.  The structure stays entirely within Streamlit's layout, which
-        keeps widgets interactive while preventing the blank overlay that was
-        previously shown.
+        transforming the placeholder container into a centred dialog.  The
+        structure stays entirely within Streamlit's layout, which keeps widgets
+        interactive while preventing the blank overlay that was previously
+        shown.
         """
 
         placeholder = st.empty()
@@ -86,8 +86,32 @@ else:
             st.markdown(
                 f"""
                 <div id="{modal_id}-anchor"></div>
+                <script>
+                    (function() {{
+                        const doc = window.parent.document;
+                        const anchor = doc.getElementById("{modal_id}-anchor");
+                        if (!anchor) {{
+                            return;
+                        }}
+
+                        const block = anchor.closest('div[data-testid="stVerticalBlock"]');
+                        if (!block) {{
+                            return;
+                        }}
+
+                        block.classList.add('erp-modal--active');
+                        doc.body.classList.add('erp-modal--scroll-lock');
+
+                        const cleanup = () => {{
+                            block.classList.remove('erp-modal--active');
+                            doc.body.classList.remove('erp-modal--scroll-lock');
+                        }};
+
+                        anchor.addEventListener('DOMNodeRemoved', cleanup, {{ once: true }});
+                    }})();
+                </script>
                 <style>
-                    div[data-testid="stVerticalBlock"]:has(> div#{modal_id}-anchor) {{
+                    div[data-testid="stVerticalBlock"].erp-modal--active {{
                         position: fixed;
                         inset: 0;
                         z-index: 1000;
@@ -98,12 +122,12 @@ else:
                         padding: 1.5rem;
                     }}
 
-                    div[data-testid="stVerticalBlock"]:has(> div#{modal_id}-anchor)
+                    div[data-testid="stVerticalBlock"].erp-modal--active
                         > div:first-child {{
                         display: none;
                     }}
 
-                    div[data-testid="stVerticalBlock"]:has(> div#{modal_id}-anchor)
+                    div[data-testid="stVerticalBlock"].erp-modal--active
                         > div:not(:first-child) {{
                         width: min(90vw, 720px);
                         max-height: 90vh;
@@ -121,8 +145,7 @@ else:
                         box-shadow: 0 1.5rem 3rem rgba(15, 23, 42, 0.25);
                     }}
 
-                    body:has(div[data-testid="stVerticalBlock"]
-                        > div#{modal_id}-anchor) {{
+                    body.erp-modal--scroll-lock {{
                         overflow: hidden;
                     }}
                 </style>
