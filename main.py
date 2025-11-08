@@ -97,7 +97,14 @@ else:
                             top: 50%;
                             left: 50%;
                             transform: translate(-50%, -50%);
-                            background-color: var(--background-color, #ffffff);
+                            background-color: var(
+                                --background-color,
+                                var(--color-bg-primary, #0e1117)
+                            );
+                            color: var(
+                                --text-color,
+                                var(--color-text-primary, #e5e7eb)
+                            );
                             padding: 1.5rem;
                             border-radius: 0.75rem;
                             box-shadow: 0 1.5rem 3rem rgba(15, 23, 42, 0.25);
