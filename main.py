@@ -73,15 +73,79 @@ else:
         """Fallback context manager that emulates ``st.modal`` in older versions.
 
         Streamlit versions prior to 1.23 do not provide the ``st.modal`` context
-        manager.  To keep the application usable on those versions we display the
-        modal content inside a regular container while preserving the original
-        layout logic.
+        manager.  To keep the application usable on those versions we render a
+        lightweight HTML/CSS overlay that behaves like a modal dialog, ensuring
+        the content appears as a pop-up rather than inline on the page.
         """
 
         placeholder = st.empty()
-        with placeholder.container():
-            st.subheader(title)
-            yield
+        modal_id = key or f"modal-{uuid4().hex}"
+
+        try:
+            with placeholder.container():
+                st.markdown(
+                    f"""
+                    <style>
+                        #{modal_id}-overlay {{
+                            position: fixed;
+                            inset: 0;
+                            background-color: rgba(0, 0, 0, 0.35);
+                            z-index: 1000;
+                        }}
+
+                        #{modal_id}-content {{
+                            position: fixed;
+                            top: 50%;
+                            left: 50%;
+                            transform: translate(-50%, -50%);
+                            background-color: var(--background-color, #ffffff);
+                            padding: 1.5rem;
+                            border-radius: 0.75rem;
+                            box-shadow: 0 1.5rem 3rem rgba(15, 23, 42, 0.25);
+                            max-height: 90vh;
+                            overflow-y: auto;
+                            width: min(90vw, 720px);
+                            z-index: 1001;
+                        }}
+
+                        #{modal_id}-content h1,
+                        #{modal_id}-content h2,
+                        #{modal_id}-content h3,
+                        #{modal_id}-content h4,
+                        #{modal_id}-content h5,
+                        #{modal_id}-content h6 {{
+                            margin-top: 0;
+                        }}
+
+                        body.custom-modal-open {{
+                            overflow: hidden;
+                        }}
+                    </style>
+                    <script>
+                        document.body.classList.add('custom-modal-open');
+                    </script>
+                    <div id="{modal_id}-overlay"></div>
+                    <div id="{modal_id}-content" role="dialog" aria-modal="true">
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                content = st.container()
+                with content:
+                    st.subheader(title)
+                    yield
+
+                st.markdown(
+                    """
+                    </div>
+                    <script>
+                        document.body.classList.remove('custom-modal-open');
+                    </script>
+                    """,
+                    unsafe_allow_html=True,
+                )
+        finally:
+            placeholder.empty()
 
 
 def _format_iso_date(value):
