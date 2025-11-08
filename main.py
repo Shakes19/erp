@@ -8247,10 +8247,6 @@ elif menu_option == "📄 PDFs":
                     "Pesquisar", type="primary", use_container_width=True
                 )
 
-    if st.button("Limpar pesquisa", key="pdf_clear_search"):
-        _reset_pdf_search_state()
-        st.rerun()
-
     if submitted:
         tipo_pesquisa = (
             "processo" if tipo_pesquisa_label == "Processo" else "referencia"
@@ -8276,34 +8272,39 @@ elif menu_option == "📄 PDFs":
                 st.session_state.pdf_selected_info = resultados[0]
 
     search_results = st.session_state.get("pdf_search_results")
-    if search_results is None:
-        options = processos
-    elif not search_results:
-        options = []
-    else:
-        options = search_results
-
     processo_sel = None
-    if options:
-        default_info = st.session_state.get("pdf_selected_info")
-        default_index = 0
-        if default_info:
-            for idx, item in enumerate(options):
-                if item.get("id") == default_info.get("id"):
+
+    if search_results:
+        processo_atual = st.session_state.get("pdf_selected_info")
+        ids_validos = {item.get("id") for item in search_results}
+        if not processo_atual or processo_atual.get("id") not in ids_validos:
+            processo_atual = search_results[0]
+        mostrar_selector = (
+            tipo_pesquisa_label == "Referência cliente" and len(search_results) > 1
+        )
+        if mostrar_selector:
+            default_index = 0
+            for idx, item in enumerate(search_results):
+                if item.get("id") == processo_atual.get("id"):
                     default_index = idx
                     break
-        processo_sel = st.selectbox(
-            "Selecionar Processo",
-            options=options,
-            format_func=_format_processo_item,
-            index=default_index,
-            key="pdf_process_selector",
-        )
+            processo_sel = st.selectbox(
+                "Selecionar Processo",
+                options=search_results,
+                format_func=_format_processo_item,
+                index=default_index,
+                key="pdf_process_selector",
+            )
+        else:
+            st.session_state.pop("pdf_process_selector", None)
+            processo_sel = processo_atual
         st.session_state.pdf_selected_info = processo_sel
     elif search_results == [] and not submitted:
         st.info("Nenhum processo encontrado para os critérios indicados.")
     elif not processos:
         st.info("Nenhum processo disponível")
+    else:
+        st.info("Pesquise por um processo para visualizar os PDFs disponíveis.")
 
     if processo_sel:
             processo_id = processo_sel["id"]
