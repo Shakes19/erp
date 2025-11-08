@@ -6191,11 +6191,18 @@ st.markdown("""
         margin: 10px 0;
     }
 
+    div[data-testid="stHorizontalBlock"]:has(
+        > div[data-testid="column"] form[data-testid="stForm"][aria-label="process_center_form"]
+    ) {
+        border-bottom: 1px solid rgba(250, 250, 250, 0.2);
+        padding-bottom: 12px;
+        margin-bottom: 20px;
+    }
+
     form[data-testid="stForm"][aria-label="process_center_form"] {
         border: none;
-        border-bottom: 1px solid rgba(250, 250, 250, 0.2);
-        padding: 0 0 12px;
-        margin-bottom: 20px;
+        padding: 0;
+        margin: 0;
         border-radius: 0;
         background: transparent;
     }
