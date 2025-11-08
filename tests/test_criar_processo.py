@@ -29,7 +29,7 @@ def test_criar_processo_returns_valid_id_and_number():
     assert pid1 > 0
     assert pid2 == pid1 + 1
 
-    prefix = f"QT{datetime.now().year}-"
+    prefix = f"QT{datetime.now().year % 100:02d}-"
     assert numero1.startswith(prefix)
     assert numero2.startswith(prefix)
 
