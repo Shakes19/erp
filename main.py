@@ -81,9 +81,8 @@ else:
         placeholder = st.empty()
         modal_id = key or f"modal-{uuid4().hex}"
 
-        try:
-            with placeholder.container():
-                st.markdown(
+        with placeholder.container():
+            st.markdown(
                     f"""
                     <style>
                         #{modal_id}-overlay {{
@@ -130,22 +129,25 @@ else:
                     unsafe_allow_html=True,
                 )
 
-                content = st.container()
-                with content:
-                    st.subheader(title)
-                    yield
+            # Mantemos o conteúdo dentro do ``placeholder`` até ao final da execução
+            # para garantir que o modal permanece visível. A própria execução do
+            # Streamlit encarrega-se de remover o conteúdo na próxima iteração,
+            # pelo que não é necessário (nem desejável) limpar explicitamente o
+            # placeholder aqui.
+            content = st.container()
+            with content:
+                st.subheader(title)
+                yield
 
-                st.markdown(
-                    """
-                    </div>
-                    <script>
-                        document.body.classList.remove('custom-modal-open');
-                    </script>
-                    """,
-                    unsafe_allow_html=True,
-                )
-        finally:
-            placeholder.empty()
+            st.markdown(
+                """
+                </div>
+                <script>
+                    document.body.classList.remove('custom-modal-open');
+                </script>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 def _format_iso_date(value):
