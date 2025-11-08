@@ -1244,15 +1244,16 @@ def criar_processo(
     ref_cliente: str | None = None,
 ):
     """Cria um novo processo com número sequencial anual."""
-    ano = datetime.now().year
-    prefixo = f"QT{ano}-"
+    ano = datetime.now().year % 100
+    prefixo = f"QT{ano:02d}-"
+    seq_offset = len(prefixo) + 1
     session = SessionLocal()
     try:
         result = session.execute(
             text(
-                "SELECT MAX(CAST(SUBSTR(numero, 8) AS INTEGER)) FROM processo WHERE numero LIKE :prefixo"
+                "SELECT MAX(CAST(SUBSTR(numero, :offset) AS INTEGER)) FROM processo WHERE numero LIKE :prefixo"
             ),
-            {"prefixo": f"{prefixo}%"},
+            {"prefixo": f"{prefixo}%", "offset": seq_offset},
         )
         max_seq = result.scalar()
         numero = f"{prefixo}{(max_seq or 0) + 1}"

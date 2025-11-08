@@ -2850,6 +2850,12 @@ def obter_detalhes_processo(processo_id: int):
     )
 
     rfqs_rows = c.fetchall()
+    c.execute(
+        "SELECT COUNT(*) FROM pdf_storage WHERE processo_id = ? AND tipo_pdf = 'cliente'",
+        (processo_id,),
+    )
+    pdf_cliente_count = c.fetchone()
+    cliente_pdf_disponivel = bool(pdf_cliente_count and (pdf_cliente_count[0] or 0))
     rfq_ids = [rfq_row[0] for rfq_row in rfqs_rows]
 
     artigos_por_rfq: dict[int, list[dict]] = {rfq_id: [] for rfq_id in rfq_ids}
@@ -2909,6 +2915,9 @@ def obter_detalhes_processo(processo_id: int):
     conn.close()
 
     rfqs = []
+    total_cliente_artigos = 0
+    total_cliente_enviados = 0
+    estados_processo: list[str] = []
     for rfq_row in rfqs_rows:
         rfq_id = rfq_row[0]
         artigos_rfq = sorted(
@@ -2919,6 +2928,13 @@ def obter_detalhes_processo(processo_id: int):
             artigo for artigo in artigos_rfq if artigo.get("rfq_artigo_id")
         ]
         total_artigos_cliente = len(artigos_clientes)
+        enviados_cliente = (
+            total_artigos_cliente if cliente_pdf_disponivel and total_artigos_cliente > 0 else 0
+        )
+        total_cliente_artigos += total_artigos_cliente
+        total_cliente_enviados += enviados_cliente
+        estado_atual = (rfq_row[2] or "pendente").strip().lower()
+        estados_processo.append(estado_atual or "pendente")
         rfqs.append(
             {
                 "id": rfq_id,
@@ -2934,7 +2950,7 @@ def obter_detalhes_processo(processo_id: int):
                 "artigos": artigos_rfq,
                 "total_respostas": respostas_por_rfq.get(rfq_id, 0),
                 "total_artigos_cliente": total_artigos_cliente,
-                "artigos_enviados_cliente": 0,
+                "artigos_enviados_cliente": enviados_cliente,
             }
         )
 
@@ -2944,13 +2960,36 @@ def obter_detalhes_processo(processo_id: int):
         if (rfq.get("estado") or "").lower() == "respondido" or rfq.get("total_respostas", 0) > 0
     )
 
+    total_rfqs = len(rfqs)
+    pendentes = sum(1 for estado in estados_processo if estado not in {"respondido", "arquivada"})
+    arquivadas = sum(1 for estado in estados_processo if estado == "arquivada")
+
+    if total_rfqs == 0:
+        estado_processo = "sem pedidos"
+    elif respondidas >= total_rfqs:
+        estado_processo = "completo"
+    elif arquivadas == total_rfqs:
+        estado_processo = "arquivado"
+    elif respondidas > 0 and respondidas < total_rfqs:
+        estado_processo = "parcial"
+    elif pendentes > 0:
+        estado_processo = "pendente"
+    else:
+        estado_processo = "pendente"
+
+    processo_info["estado"] = estado_processo
+
     return {
         "processo": processo_info,
         "artigos": sorted(artigos_processo, key=lambda x: (x.get("ordem") or 0, x.get("id"))),
         "rfqs": rfqs,
         "total_rfqs": len(rfqs),
         "respondidas": respondidas,
-        "cliente_envios": {"total": 0, "enviados": 0},
+        "cliente_envios": {
+            "total": total_cliente_artigos,
+            "enviados": total_cliente_enviados,
+            "pdf_disponivel": cliente_pdf_disponivel,
+        },
     }
 
 # ========================== FUNÇÕES DE GESTÃO DE MARGENS ==========================
@@ -5295,10 +5334,30 @@ def criar_cotacao_cliente_dialog(
             )
         _, col_botao = st.columns([3, 1])
         with col_botao:
+            submit_lock_key = f"cliente_submit_lock_{rfq_id}"
+            last_submit_iso = st.session_state.get(submit_lock_key)
+            disabled_submit = False
+            last_submit_dt = None
+            if last_submit_iso:
+                try:
+                    last_submit_dt = datetime.fromisoformat(last_submit_iso)
+                except ValueError:
+                    last_submit_dt = None
+                if last_submit_dt and (datetime.now() - last_submit_dt).total_seconds() < 3:
+                    disabled_submit = True
+
             submitted = st.form_submit_button(
                 "Criar e Enviar",
                 type="primary",
+                disabled=disabled_submit,
             )
+
+            if submitted:
+                st.session_state[submit_lock_key] = datetime.now().isoformat()
+            elif disabled_submit and last_submit_dt and (
+                datetime.now() - last_submit_dt
+            ).total_seconds() >= 3:
+                st.session_state.pop(submit_lock_key, None)
 
     if not submitted:
         return
@@ -7410,8 +7469,9 @@ elif menu_option == "📩 Process Center":
                     on_change=_on_process_center_tipo_change,
                 )
 
+            placeholder_numero = f"QT{datetime.now().year % 100:02d}-0001"
             placeholder = (
-                "QT2025-0001"
+                placeholder_numero
                 if tipo_pesquisa_label == "Processo"
                 else "Referência do cliente"
             )
