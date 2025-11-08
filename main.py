@@ -7098,16 +7098,9 @@ elif menu_option == "📩 Process Center":
                         conn.close()
                         if anexos:
                             st.markdown("**Anexos:**")
-                            base_nome = resumo.get("processo") or "processo"
-                            for idx_anexo, (tipo, nome, data_pdf) in enumerate(anexos):
-                                rotulo = f"{tipo} - {nome if nome else 'ficheiro.pdf'}"
-                                st.download_button(
-                                    label=f"⬇️ {rotulo}",
-                                    data=data_pdf,
-                                    file_name=nome if nome else f"{tipo}_{base_nome}.pdf",
-                                    mime="application/pdf",
-                                    key=f"anexo_proc_{processo['group_key']}_{idx_anexo}_{tipo}"
-                                )
+                            st.caption(
+                                "Consulta de anexos e PDFs disponível apenas na aba PDFs."
+                            )
 
                     st.markdown("---")
                     st.markdown("**Cotações pendentes:**")
@@ -7279,59 +7272,19 @@ elif menu_option == "📩 Process Center":
                         conn.close()
                         if anexos:
                             st.markdown("**Anexos:**")
-                            for tipo, nome, data_pdf in anexos:
-                                rotulo = f"{tipo} - {nome if nome else 'ficheiro.pdf'}"
-                                st.download_button(
-                                    label=f"⬇️ {rotulo}",
-                                    data=data_pdf,
-                                    file_name=nome if nome else f"{tipo}_{cotacao['processo']}.pdf",
-                                    mime="application/pdf",
-                                    key=f"anexo_resp_{cotacao['id']}_{tipo}"
-                                )
-
-                        pdf_interno = obter_pdf_da_db(
-                            cotacao['id'],
-                            "pedido",
-                            processo_id=cotacao.get('processo_id'),
-                        )
-                        pdf_cliente = obter_pdf_da_db(
-                            cotacao['id'],
-                            "cliente",
-                            processo_id=cotacao.get('processo_id'),
-                        )
-
-                        col_pdf_int, col_info = st.columns(2)
-
-                        with col_pdf_int:
-                            if pdf_interno:
-                                st.download_button(
-                                    "📄 PDF Interno",
-                                    data=pdf_interno,
-                                    file_name=f"interno_{cotacao['processo']}.pdf",
-                                    mime="application/pdf",
-                                    key=f"pdf_int_{cotacao['id']}",
-                                )
-
-                        with col_info:
                             st.caption(
-                                "Envio de respostas ao cliente disponível apenas no Process Center."
+                                "Consulta de anexos disponível apenas na aba PDFs."
                             )
 
-                        col_pdf_cli, col_del = st.columns(2)
+                        st.caption(
+                            "Envio de respostas ao cliente disponível apenas no Process Center."
+                        )
+                        st.caption(
+                            "Visualização e download de PDFs disponível apenas na aba PDFs."
+                        )
 
-                        with col_pdf_cli:
-                            if pdf_cliente:
-                                st.download_button(
-                                    "💰 PDF Cliente",
-                                    data=pdf_cliente,
-                                    file_name=f"cliente_{cotacao['processo']}.pdf",
-                                    mime="application/pdf",
-                                    key=f"pdf_cli_{cotacao['id']}",
-                                )
-
-                        with col_del:
-                            if st.button("🗑️ Eliminar", key=f"del_resp_{cotacao['id']}"):
-                                st.session_state.confirmacao = ("eliminar", cotacao['id'])
+                        if st.button("🗑️ Eliminar", key=f"del_resp_{cotacao['id']}"):
+                            st.session_state.confirmacao = ("eliminar", cotacao['id'])
         else:
             st.info("Não há cotações respondidas")
 
@@ -7407,19 +7360,9 @@ elif menu_option == "📩 Process Center":
                         st.write(f"**Artigos:** {cotacao['num_artigos']}")
 
                     with col2:
-                        pdf_pedido = obter_pdf_da_db(
-                            cotacao['id'],
-                            "pedido",
-                            processo_id=cotacao.get('processo_id'),
+                        st.caption(
+                            "Visualização e download de PDFs disponível apenas na aba PDFs."
                         )
-                        if pdf_pedido:
-                            st.download_button(
-                                "📄 PDF",
-                                data=pdf_pedido,
-                                file_name=f"pedido_{cotacao['processo']}.pdf",
-                                mime="application/pdf",
-                                key=f"pdf_arq_{cotacao['id']}"
-                            )
 
                         if st.button("🗑️ Eliminar", key=f"del_arq_{cotacao['id']}"):
                             st.session_state.confirmacao = ("eliminar", cotacao['id'])
@@ -8245,26 +8188,124 @@ elif menu_option == "📄 PDFs":
     st.title("📄 Gestão de PDFs")
 
     processos = obter_processos_para_gestao_pdf()
-    if processos:
 
-        def _format_processo_item(item: dict[str, object]) -> str:
-            numero = (item.get("numero") or "Sem processo").strip() or "Sem processo"
-            referencia = (item.get("referencia") or "").strip()
-            total = int(item.get("total_rfq") or 0)
-            partes: list[str] = [numero]
-            if referencia:
-                partes.append(f"Ref: {referencia}")
-            if total:
-                partes.append(f"{total} pedido{'s' if total != 1 else ''}")
-            return " • ".join(partes)
+    def _format_processo_item(item: dict[str, object]) -> str:
+        numero = (item.get("numero") or "Sem processo").strip() or "Sem processo"
+        referencia = (item.get("referencia") or "").strip()
+        total = int(item.get("total_rfq") or item.get("total_pedidos") or 0)
+        partes: list[str] = [numero]
+        if referencia:
+            partes.append(f"Ref: {referencia}")
+        if total:
+            partes.append(f"{total} pedido{'s' if total != 1 else ''}")
+        return " • ".join(partes)
 
-        processo_sel = st.selectbox(
-            "Selecionar Processo",
-            options=processos,
-            format_func=_format_processo_item,
+    st.session_state.setdefault("pdf_search_term", "")
+    st.session_state.setdefault("pdf_search_tipo", "Processo")
+
+    def _reset_pdf_search_state() -> None:
+        st.session_state.pop("pdf_search_results", None)
+        st.session_state.pop("pdf_selected_info", None)
+        st.session_state.pop("pdf_process_selector", None)
+        st.session_state.pdf_search_term = ""
+
+    col_tipo, col_form = st.columns([2, 5], vertical_alignment="top")
+
+    with col_tipo:
+        tipo_pesquisa_label = st.radio(
+            "Tipo de pesquisa",
+            ("Processo", "Referência cliente"),
+            key="pdf_search_tipo",
+            horizontal=True,
+            on_change=_reset_pdf_search_state,
         )
 
-        if processo_sel:
+    placeholder_numero = f"QT{datetime.now().year % 100:02d}-0001"
+    placeholder = (
+        placeholder_numero
+        if tipo_pesquisa_label == "Processo"
+        else "Referência do cliente"
+    )
+    input_label = (
+        "Número do processo"
+        if tipo_pesquisa_label == "Processo"
+        else "Referência do cliente"
+    )
+
+    submitted = False
+    with col_form:
+        with st.form("pdf_search_form"):
+            col_input, col_button = st.columns([4, 1], vertical_alignment="bottom")
+            with col_input:
+                termo_pesquisa = st.text_input(
+                    input_label,
+                    key="pdf_search_term",
+                    placeholder=placeholder,
+                )
+            with col_button:
+                submitted = st.form_submit_button(
+                    "Pesquisar", type="primary", use_container_width=True
+                )
+
+    if st.button("Limpar pesquisa", key="pdf_clear_search"):
+        _reset_pdf_search_state()
+        st.rerun()
+
+    if submitted:
+        tipo_pesquisa = (
+            "processo" if tipo_pesquisa_label == "Processo" else "referencia"
+        )
+        termo = (termo_pesquisa or "").strip()
+        if not termo:
+            st.warning("Introduza um termo de pesquisa válido.")
+        else:
+            limite = 50 if tipo_pesquisa == "referencia" else 1
+            resultados = procurar_processos_por_termo(
+                termo,
+                limite=limite,
+                tipo=tipo_pesquisa,
+                match_mode="exact",
+            )
+            st.session_state.pop("pdf_process_selector", None)
+            if not resultados:
+                st.session_state.pdf_search_results = []
+                st.session_state.pdf_selected_info = None
+                st.warning("Nenhum processo encontrado para o termo indicado.")
+            else:
+                st.session_state.pdf_search_results = resultados
+                st.session_state.pdf_selected_info = resultados[0]
+
+    search_results = st.session_state.get("pdf_search_results")
+    if search_results is None:
+        options = processos
+    elif not search_results:
+        options = []
+    else:
+        options = search_results
+
+    processo_sel = None
+    if options:
+        default_info = st.session_state.get("pdf_selected_info")
+        default_index = 0
+        if default_info:
+            for idx, item in enumerate(options):
+                if item.get("id") == default_info.get("id"):
+                    default_index = idx
+                    break
+        processo_sel = st.selectbox(
+            "Selecionar Processo",
+            options=options,
+            format_func=_format_processo_item,
+            index=default_index,
+            key="pdf_process_selector",
+        )
+        st.session_state.pdf_selected_info = processo_sel
+    elif search_results == [] and not submitted:
+        st.info("Nenhum processo encontrado para os critérios indicados.")
+    elif not processos:
+        st.info("Nenhum processo disponível")
+
+    if processo_sel:
             processo_id = processo_sel["id"]
             rfqs_processo = obter_rfqs_por_processo(processo_id)
             pdf_entries = obter_pdf_storage_por_processo(processo_id)
