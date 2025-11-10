@@ -1,6 +1,7 @@
 import streamlit as st
 import sqlite3
 from datetime import datetime, date, timedelta
+from contextlib import contextmanager
 from fpdf import FPDF
 import base64
 import json
@@ -15,7 +16,7 @@ import re
 import copy
 import textwrap
 from uuid import uuid4
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Optional
 import logging
 from pypdf import PdfReader
 from PIL import Image, UnidentifiedImageError
@@ -54,6 +55,19 @@ from services.email_service import (
     save_email_layout,
     send_email,
 )
+
+
+@contextmanager
+def compat_modal(title: str, *, key: Optional[str] = None, **kwargs):
+    """Provide a fallback for ``st.modal`` when running on older Streamlit versions."""
+
+    if hasattr(st, "modal"):
+        with st.modal(title, key=key, **kwargs):
+            yield
+    else:
+        with st.expander(title, expanded=True):
+            yield
+
 
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
 
@@ -8718,7 +8732,7 @@ elif menu_option == "📦 Artigos":
         )
 
         if artigo_em_edicao and mostrar_modal_editar_artigo:
-            with st.modal(
+            with compat_modal(
                 f"Editar artigo #{artigo_em_edicao.get('id', '–')}",
                 key=f"modal_editar_artigo_{artigo_em_edicao_key}",
             ):
