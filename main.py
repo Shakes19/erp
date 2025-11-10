@@ -5049,19 +5049,6 @@ def mostrar_dialogo_editar_artigo() -> None:
         except ValueError:
             marca_index = 0
 
-        validade_atual = artigo_em_edicao.get("validade_historico")
-        validade_data: date | None = None
-        if validade_atual:
-            if isinstance(validade_atual, datetime):
-                validade_data = validade_atual.date()
-            elif isinstance(validade_atual, date):
-                validade_data = validade_atual
-            else:
-                try:
-                    validade_data = datetime.fromisoformat(str(validade_atual)).date()
-                except ValueError:
-                    validade_data = None
-
         form_key = f"form_editar_artigo_{artigo_em_edicao_key}"
         st.markdown(
             """
@@ -5125,26 +5112,6 @@ def mostrar_dialogo_editar_artigo() -> None:
                     index=marca_index,
                     key=f"marca_edit_{artigo_em_edicao_key}",
                 )
-                preco_historico_atual = artigo_em_edicao.get("preco_historico")
-                if isinstance(preco_historico_atual, (int, float)):
-                    preco_historico_padrao = f"{preco_historico_atual:.2f}"
-                else:
-                    preco_historico_padrao = preco_historico_atual or ""
-
-                preco_historico_input = st.text_input(
-                    "Preço Histórico",
-                    value=preco_historico_padrao,
-                    key=f"preco_hist_edit_{artigo_em_edicao_key}",
-                )
-                validade_padrao = (
-                    validade_data.isoformat() if isinstance(validade_data, date) else ""
-                )
-                validade_input = st.text_input(
-                    "Válido até",
-                    value=validade_padrao,
-                    placeholder="AAAA-MM-DD",
-                    key=f"validade_edit_{artigo_em_edicao_key}",
-                )
                 peso_atual = artigo_em_edicao.get("peso")
                 peso_input = st.text_input(
                     "Peso (kg)",
@@ -5189,8 +5156,8 @@ def mostrar_dialogo_editar_artigo() -> None:
                 artigo_num=artigo_em_edicao.get("artigo_num"),
                 especificacoes=notas_input,
                 marca_nome=marca_nome,
-                preco_historico=preco_historico_input,
-                validade_historico=validade_input,
+                preco_historico=artigo_em_edicao.get("preco_historico"),
+                validade_historico=artigo_em_edicao.get("validade_historico"),
                 peso=peso_input,
                 hs_code=hs_code_input,
                 pais_origem=pais_origem_input,
