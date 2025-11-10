@@ -5063,7 +5063,7 @@ def mostrar_dialogo_editar_artigo() -> None:
 
         form_key = f"form_editar_artigo_{artigo_em_edicao_key}"
         with st.form(form_key):
-            col_dados, col_extra = st.columns(2)
+            col_dados, col_extra = st.columns((1.35, 1))
             with col_dados:
                 descricao_input = st.text_area(
                     "Descrição *",
@@ -5077,6 +5077,7 @@ def mostrar_dialogo_editar_artigo() -> None:
                     height=120,
                     key=f"notas_edit_{artigo_em_edicao_key}",
                 )
+            with col_extra:
                 unidade_selecionada = st.selectbox(
                     "Unidade *",
                     unidades_opcoes,
@@ -5089,7 +5090,6 @@ def mostrar_dialogo_editar_artigo() -> None:
                     index=marca_index,
                     key=f"marca_edit_{artigo_em_edicao_key}",
                 )
-            with col_extra:
                 peso_atual = artigo_em_edicao.get("peso")
                 peso_input = st.text_input(
                     "Peso (kg)",
