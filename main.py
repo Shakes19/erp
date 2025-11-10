@@ -2031,8 +2031,11 @@ def obter_todas_cotacoes(
         params: list = []
 
         if filtro_referencia:
-            conditions.append("processo.ref_cliente LIKE ?")
-            params.append(f"%{filtro_referencia}%")
+            conditions.append(
+                "(COALESCE(processo.ref_cliente, '') LIKE ? OR COALESCE(processo.numero, '') LIKE ?)"
+            )
+            like_pattern = f"%{filtro_referencia}%"
+            params.extend([like_pattern, like_pattern])
 
         if estado:
             conditions.append(f"{estado_expr} = ?")
