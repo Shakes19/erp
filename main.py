@@ -9178,18 +9178,6 @@ elif menu_option == "⚙️ Configurações":
 
                     with col1:
                         st.markdown("### Adicionar Marca")
-                        fornecedor_sel = st.selectbox(
-                            "Selecionar Fornecedor",
-                            options=fornecedores,
-                            format_func=lambda x: x[1],
-                            key="forn_marcas",
-                        )
-
-                        if fornecedor_sel and len(fornecedor_sel) > 6 and fornecedor_sel[6]:
-                            st.info(
-                                "Este fornecedor exige País e Cliente Final nas cotações."
-                            )
-
                         with st.form("add_marca_form"):
                             nova_marca = st.text_input("Nome da Marca")
                             margem_marca = st.number_input(
@@ -9199,6 +9187,21 @@ elif menu_option == "⚙️ Configurações":
                                 value=15.0,
                                 step=0.5,
                             )
+                            fornecedor_sel = st.selectbox(
+                                "Selecionar Fornecedor",
+                                options=fornecedores,
+                                format_func=lambda x: x[1],
+                                key="forn_marcas",
+                            )
+
+                            if (
+                                fornecedor_sel
+                                and len(fornecedor_sel) > 6
+                                and fornecedor_sel[6]
+                            ):
+                                st.info(
+                                    "Este fornecedor exige País e Cliente Final nas cotações."
+                                )
 
                             if st.form_submit_button("➕ Adicionar Marca"):
                                 if not fornecedor_sel:
@@ -9351,16 +9354,15 @@ elif menu_option == "⚙️ Configurações":
 
                     with col1:
                         st.markdown("### Adicionar Comercial")
-                        empresa_sel = st.selectbox(
-                            "Selecionar Empresa",
-                            empresas,
-                            format_func=lambda x: x[1],
-                            key="empresa_comercial_sel",
-                        )
-
                         with st.form("novo_cliente_form"):
                             nome = st.text_input("Nome *")
                             email = st.text_input("Email")
+                            empresa_sel = st.selectbox(
+                                "Selecionar Empresa",
+                                empresas,
+                                format_func=lambda x: x[1],
+                                key="empresa_comercial_sel",
+                            )
                             if st.form_submit_button("➕ Adicionar"):
                                 if not empresa_sel:
                                     st.error("Selecione uma empresa.")
