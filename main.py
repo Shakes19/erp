@@ -9652,21 +9652,29 @@ elif menu_option == "⚙️ Configurações":
                 if "use_ssl" in defaults:
                     st.session_state[ssl_key] = defaults["use_ssl"]
 
-            selecao_atual = st.session_state.get(provider_key, provider_guess)
-            ultima_selecao = st.session_state.get(provider_prev_key)
-            if ultima_selecao is None:
-                st.session_state[provider_prev_key] = selecao_atual
-            elif selecao_atual != ultima_selecao:
-                _aplicar_por_provider(selecao_atual)
-                st.session_state[provider_prev_key] = selecao_atual
+            def _atualizar_provider() -> None:
+                selecao_atual = st.session_state.get(provider_key, provider_guess)
+                ultima_selecao = st.session_state.get(provider_prev_key)
+                if ultima_selecao != selecao_atual:
+                    _aplicar_por_provider(selecao_atual)
+                    st.session_state[provider_prev_key] = selecao_atual
+
+            if provider_prev_key not in st.session_state:
+                st.session_state[provider_prev_key] = st.session_state.get(provider_key, provider_guess)
+
+            st.selectbox(
+                "Fornecedor SMTP",
+                list(provider_defaults.keys()),
+                key=provider_key,
+                help="Selecione um fornecedor comum ou mantenha 'Outro' para definir valores próprios.",
+                on_change=_atualizar_provider,
+            )
+
+            # Garantir que os valores estejam sincronizados com o fornecedor selecionado
+            _atualizar_provider()
 
             with st.form("config_email_form"):
-                provider = st.selectbox(
-                    "Fornecedor SMTP",
-                    list(provider_defaults.keys()),
-                    key=provider_key,
-                    help="Selecione um fornecedor comum ou mantenha 'Outro' para definir valores próprios.",
-                )
+                provider = st.session_state.get(provider_key, provider_guess)
 
                 if provider != "Outro":
                     defaults = provider_defaults.get(provider, {})
