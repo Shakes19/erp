@@ -8692,7 +8692,7 @@ elif menu_option == "📦 Artigos":
                     with col_acao:
                         st.markdown("<div style='height: 0.5rem'></div>", unsafe_allow_html=True)
                         artigo_id = artigo.get("id") or uuid4().hex
-                        with st.popover("✏️", key=f"edit_pop_{artigo_id}", use_container_width=True):
+                        with st.popover("✏️", use_container_width=True):
                             st.markdown(f"### Editar artigo #{artigo.get('id', '–')}")
 
                             unidades_disponiveis = listar_unidades()
