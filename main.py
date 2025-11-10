@@ -15,6 +15,7 @@ import tempfile
 import re
 import copy
 import textwrap
+from html import escape
 from uuid import uuid4
 from typing import Callable, Iterable, Optional
 import logging
@@ -8826,7 +8827,17 @@ elif menu_option == "📦 Artigos":
                 with st.container(border=True):
                     col_info, col_acao = st.columns([6, 1])
                     with col_info:
-                        st.markdown(f"**{artigo['descricao']}**")
+                        descricao_artigo = escape(str(artigo.get("descricao") or "Sem descrição"))
+                        numero_artigo = escape(str(artigo.get("artigo_num") or "—"))
+                        st.markdown(
+                            """
+                            <div style="display: flex; align-items: baseline; gap: 0.75rem;">
+                                <span style="font-size: 1.6rem; font-weight: 700;">{numero}</span>
+                                <span style="font-size: 1.25rem; font-weight: 600;">{descricao}</span>
+                            </div>
+                            """.format(numero=numero_artigo, descricao=descricao_artigo),
+                            unsafe_allow_html=True,
+                        )
                         st.caption(f"ID #{artigo['id']}")
                         col_a, col_b, col_c = st.columns(3)
                         with col_a:
