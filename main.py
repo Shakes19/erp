@@ -4989,7 +4989,14 @@ def reset_pdf_management_state() -> None:
 def reset_artigos_state() -> None:
     """Reinicia filtros e pesquisas na área de artigos."""
 
-    _clear_session_state_keys(("artigos_pesquisa",))
+    _clear_session_state_keys(
+        (
+            "artigos_pesquisa",
+            "artigo_em_edicao",
+            "artigo_em_edicao_key",
+            "mostrar_modal_editar_artigo",
+        )
+    )
     try:
         listar_artigos_catalogo.clear()
     except AttributeError:
@@ -5064,11 +5071,11 @@ def mostrar_dialogo_editar_artigo() -> None:
                     height=120,
                     key=f"descricao_edit_{artigo_em_edicao_key}",
                 )
-                especificacoes_input = st.text_area(
-                    "Especificações",
+                notas_input = st.text_area(
+                    "Notas",
                     value=artigo_em_edicao.get("especificacoes") or "",
                     height=120,
-                    key=f"especificacoes_edit_{artigo_em_edicao_key}",
+                    key=f"notas_edit_{artigo_em_edicao_key}",
                 )
                 unidade_selecionada = st.selectbox(
                     "Unidade *",
@@ -5083,17 +5090,6 @@ def mostrar_dialogo_editar_artigo() -> None:
                     key=f"marca_edit_{artigo_em_edicao_key}",
                 )
             with col_extra:
-                artigo_num_input = st.text_input(
-                    "Nº Artigo",
-                    value=artigo_em_edicao.get("artigo_num") or "",
-                    key=f"num_edit_{artigo_em_edicao_key}",
-                )
-                preco_atual = artigo_em_edicao.get("preco_historico")
-                preco_input = st.text_input(
-                    "Preço Histórico (EUR)",
-                    value="" if preco_atual in (None, "") else str(preco_atual),
-                    key=f"preco_edit_{artigo_em_edicao_key}",
-                )
                 peso_atual = artigo_em_edicao.get("peso")
                 peso_input = st.text_input(
                     "Peso (kg)",
@@ -5111,19 +5107,6 @@ def mostrar_dialogo_editar_artigo() -> None:
                     key=f"pais_edit_{artigo_em_edicao_key}",
                 )
 
-                sem_validade = st.checkbox(
-                    "Sem validade histórica",
-                    value=validade_data is None,
-                    key=f"sem_validade_edit_{artigo_em_edicao_key}",
-                )
-                validade_input = None
-                if not sem_validade:
-                    validade_input = st.date_input(
-                        "Validade Histórica",
-                        value=validade_data or date.today(),
-                        key=f"validade_edit_{artigo_em_edicao_key}",
-                    )
-
             col_botoes = st.columns(2)
             with col_botoes[0]:
                 guardar = st.form_submit_button("Guardar alterações")
@@ -5140,11 +5123,11 @@ def mostrar_dialogo_editar_artigo() -> None:
                 artigo_em_edicao.get("id"),
                 descricao_input,
                 unidade_selecionada,
-                artigo_num=artigo_num_input,
-                especificacoes=especificacoes_input,
+                artigo_num=artigo_em_edicao.get("artigo_num"),
+                especificacoes=notas_input,
                 marca_nome=marca_nome,
-                preco_historico=preco_input,
-                validade_historico=None if sem_validade else validade_input,
+                preco_historico=artigo_em_edicao.get("preco_historico"),
+                validade_historico=validade_data,
                 peso=peso_input,
                 hs_code=hs_code_input,
                 pais_origem=pais_origem_input,
