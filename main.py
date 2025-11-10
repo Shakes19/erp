@@ -9172,45 +9172,55 @@ elif menu_option == "⚙️ Configurações":
                 fornecedores = listar_fornecedores()
 
                 if fornecedores:
-                    fornecedor_sel = st.selectbox(
-                        "Selecionar Fornecedor",
-                        options=fornecedores,
-                        format_func=lambda x: x[1],
-                        key="forn_marcas"
-                    )
+                    col1, col2 = st.columns(2)
 
-                    if fornecedor_sel:
-                        col1, col2 = st.columns(2)
+                    fornecedor_sel = None
 
-                        with col1:
-                            st.markdown("### Adicionar Marca")
-                            if len(fornecedor_sel) > 6 and fornecedor_sel[6]:
-                                st.info(
-                                    "Este fornecedor exige País e Cliente Final nas cotações."
-                                )
-                            with st.form("add_marca_form"):
-                                nova_marca = st.text_input("Nome da Marca")
-                                margem_marca = st.number_input(
-                                    "Margem (%)",
-                                    min_value=0.0,
-                                    max_value=100.0,
-                                    value=15.0,
-                                    step=0.5
-                                )
+                    with col1:
+                        st.markdown("### Adicionar Marca")
+                        fornecedor_sel = st.selectbox(
+                            "Selecionar Fornecedor",
+                            options=fornecedores,
+                            format_func=lambda x: x[1],
+                            key="forn_marcas",
+                        )
 
-                                if st.form_submit_button("➕ Adicionar Marca"):
-                                    if nova_marca:
-                                        if adicionar_marca_fornecedor(
-                                            fornecedor_sel[0], nova_marca
-                                        ):
-                                            configurar_margem_marca(fornecedor_sel[0], nova_marca, margem_marca)
-                                            st.success(f"Marca {nova_marca} adicionada!")
-                                            st.rerun()
-                                        else:
-                                            st.error("Marca já está associada a um fornecedor")
+                        if fornecedor_sel and len(fornecedor_sel) > 6 and fornecedor_sel[6]:
+                            st.info(
+                                "Este fornecedor exige País e Cliente Final nas cotações."
+                            )
 
-                        with col2:
-                            st.markdown("### Marcas Existentes")
+                        with st.form("add_marca_form"):
+                            nova_marca = st.text_input("Nome da Marca")
+                            margem_marca = st.number_input(
+                                "Margem (%)",
+                                min_value=0.0,
+                                max_value=100.0,
+                                value=15.0,
+                                step=0.5,
+                            )
+
+                            if st.form_submit_button("➕ Adicionar Marca"):
+                                if not fornecedor_sel:
+                                    st.error("Selecione um fornecedor.")
+                                elif nova_marca:
+                                    if adicionar_marca_fornecedor(
+                                        fornecedor_sel[0], nova_marca
+                                    ):
+                                        configurar_margem_marca(
+                                            fornecedor_sel[0], nova_marca, margem_marca
+                                        )
+                                        st.success(f"Marca {nova_marca} adicionada!")
+                                        st.rerun()
+                                    else:
+                                        st.error("Marca já está associada a um fornecedor")
+                                else:
+                                    st.error("Nome da marca é obrigatório")
+
+                    with col2:
+                        st.markdown("### Marcas Existentes")
+
+                        if fornecedor_sel:
                             marcas = obter_marcas_fornecedor(fornecedor_sel[0])
 
                             if marcas:
@@ -9276,6 +9286,8 @@ elif menu_option == "⚙️ Configurações":
                                             st.markdown("</div>", unsafe_allow_html=True)
                             else:
                                 st.info("Nenhuma marca configurada")
+                        else:
+                            st.info("Selecione um fornecedor para visualizar as marcas.")
 
         with tab_clientes:
             st.subheader("Gestão de Clientes")
@@ -9302,7 +9314,10 @@ elif menu_option == "⚙️ Configurações":
                                 st.error("Nome é obrigatório")
 
                 with emp_col2:
-                    st.markdown("### Empresas Registadas")
+                    st.markdown(
+                        "<h3 style='margin-top: 0;'>Empresas Registadas</h3>",
+                        unsafe_allow_html=True,
+                    )
                     empresas = listar_empresas()
                     for emp in empresas:
                         with st.expander(emp[1]):
@@ -9331,22 +9346,25 @@ elif menu_option == "⚙️ Configurações":
                 if not empresas:
                     st.info("Nenhuma empresa registada. Adicione uma empresa primeiro.")
                 else:
-                    empresa_sel = st.selectbox(
-                        "Selecionar Empresa",
-                        empresas,
-                        format_func=lambda x: x[1],
-                        key="empresa_comercial_sel",
-                    )
-
+                    empresa_sel = None
                     col1, col2 = st.columns(2)
 
                     with col1:
                         st.markdown("### Adicionar Comercial")
+                        empresa_sel = st.selectbox(
+                            "Selecionar Empresa",
+                            empresas,
+                            format_func=lambda x: x[1],
+                            key="empresa_comercial_sel",
+                        )
+
                         with st.form("novo_cliente_form"):
                             nome = st.text_input("Nome *")
                             email = st.text_input("Email")
                             if st.form_submit_button("➕ Adicionar"):
-                                if nome:
+                                if not empresa_sel:
+                                    st.error("Selecione uma empresa.")
+                                elif nome:
                                     inserir_cliente(nome, email, empresa_sel[0])
                                     st.success(f"Comercial {nome} adicionado!")
                                     st.rerun()
@@ -9355,42 +9373,48 @@ elif menu_option == "⚙️ Configurações":
 
                     with col2:
                         st.markdown("### Comerciais Registados")
-                        clientes = [cli for cli in listar_clientes() if cli[3] == empresa_sel[0]]
 
-                        for cli in clientes:
-                            with st.expander(cli[1]):
-                                with st.form(f"edit_cli_{cli[0]}"):
-                                    nome_edit = st.text_input("Nome", cli[1])
-                                    email_edit = st.text_input("Email", cli[2] or "")
-                                    idx_emp = 0
-                                    for idx, emp in enumerate(empresas):
-                                        if emp[0] == cli[3]:
-                                            idx_emp = idx
-                                            break
-                                    empresa_sel_edit = st.selectbox(
-                                        "Empresa *",
-                                        empresas,
-                                        index=idx_emp,
-                                        format_func=lambda x: x[1],
-                                        key=f"emp_{cli[0]}",
-                                    )
+                        if empresa_sel:
+                            clientes = [
+                                cli for cli in listar_clientes() if cli[3] == empresa_sel[0]
+                            ]
 
-                                    col_a, col_b = st.columns(2)
-                                    with col_a:
-                                        if st.form_submit_button("💾 Guardar"):
-                                            atualizar_cliente(
-                                                cli[0],
-                                                nome_edit,
-                                                email_edit,
-                                                empresa_sel_edit[0],
-                                            )
-                                            st.success("Comercial atualizado")
-                                            st.rerun()
-                                    with col_b:
-                                        if st.form_submit_button("🗑️ Eliminar"):
-                                            eliminar_cliente_db(cli[0])
-                                            st.success("Comercial eliminado")
-                                            st.rerun()
+                            for cli in clientes:
+                                with st.expander(cli[1]):
+                                    with st.form(f"edit_cli_{cli[0]}"):
+                                        nome_edit = st.text_input("Nome", cli[1])
+                                        email_edit = st.text_input("Email", cli[2] or "")
+                                        idx_emp = 0
+                                        for idx, emp in enumerate(empresas):
+                                            if emp[0] == cli[3]:
+                                                idx_emp = idx
+                                                break
+                                        empresa_sel_edit = st.selectbox(
+                                            "Empresa *",
+                                            empresas,
+                                            index=idx_emp,
+                                            format_func=lambda x: x[1],
+                                            key=f"emp_{cli[0]}",
+                                        )
+
+                                        col_a, col_b = st.columns(2)
+                                        with col_a:
+                                            if st.form_submit_button("💾 Guardar"):
+                                                atualizar_cliente(
+                                                    cli[0],
+                                                    nome_edit,
+                                                    email_edit,
+                                                    empresa_sel_edit[0],
+                                                )
+                                                st.success("Comercial atualizado")
+                                                st.rerun()
+                                        with col_b:
+                                            if st.form_submit_button("🗑️ Eliminar"):
+                                                eliminar_cliente_db(cli[0])
+                                                st.success("Comercial eliminado")
+                                                st.rerun()
+                        else:
+                            st.info("Selecione uma empresa para visualizar os comerciais.")
         with tab_users:
             if st.session_state.get("role") != "admin":
                 st.warning("Apenas administradores podem gerir utilizadores.")
