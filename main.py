@@ -8714,7 +8714,10 @@ elif menu_option == "📦 Artigos":
         artigo_em_edicao_key = st.session_state.get("artigo_em_edicao_key")
 
         if artigo_em_edicao:
-            with st.modal(f"Editar artigo #{artigo_em_edicao.get('id', '–')}"):
+            with st.container():
+                st.markdown(
+                    f"### Editar artigo #{artigo_em_edicao.get('id', '–')}"
+                )
                 unidades_disponiveis = listar_unidades()
                 marcas_disponiveis = ["Sem marca"] + listar_todas_marcas()
 
