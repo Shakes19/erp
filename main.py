@@ -8707,17 +8707,21 @@ elif menu_option == "📦 Artigos":
                         ):
                             st.session_state["artigo_em_edicao"] = artigo
                             st.session_state["artigo_em_edicao_key"] = str(artigo_id)
+                            st.session_state["mostrar_modal_editar_artigo"] = True
         elif filtro_normalizado:
             st.info("Nenhum artigo encontrado para os critérios indicados.")
 
         artigo_em_edicao = st.session_state.get("artigo_em_edicao")
         artigo_em_edicao_key = st.session_state.get("artigo_em_edicao_key")
+        mostrar_modal_editar_artigo = st.session_state.get(
+            "mostrar_modal_editar_artigo", False
+        )
 
-        if artigo_em_edicao:
-            with st.container():
-                st.markdown(
-                    f"### Editar artigo #{artigo_em_edicao.get('id', '–')}"
-                )
+        if artigo_em_edicao and mostrar_modal_editar_artigo:
+            with st.modal(
+                f"Editar artigo #{artigo_em_edicao.get('id', '–')}",
+                key=f"modal_editar_artigo_{artigo_em_edicao_key}",
+            ):
                 unidades_disponiveis = listar_unidades()
                 marcas_disponiveis = ["Sem marca"] + listar_todas_marcas()
 
@@ -8833,6 +8837,7 @@ elif menu_option == "📦 Artigos":
                 if cancelar:
                     st.session_state["artigo_em_edicao"] = None
                     st.session_state["artigo_em_edicao_key"] = None
+                    st.session_state["mostrar_modal_editar_artigo"] = False
                     st.rerun()
 
                 if guardar:
@@ -8857,6 +8862,7 @@ elif menu_option == "📦 Artigos":
                         )
                         st.session_state["artigo_em_edicao"] = None
                         st.session_state["artigo_em_edicao_key"] = None
+                        st.session_state["mostrar_modal_editar_artigo"] = False
                         st.rerun()
                     else:
                         st.error(mensagem or "Não foi possível atualizar o artigo.")
@@ -8865,6 +8871,7 @@ elif menu_option == "📦 Artigos":
                     if fechar_modal:
                         st.session_state["artigo_em_edicao"] = None
                         st.session_state["artigo_em_edicao_key"] = None
+                        st.session_state["mostrar_modal_editar_artigo"] = False
                         st.rerun()
 
 
