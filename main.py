@@ -9600,13 +9600,13 @@ elif menu_option == "⚙️ Configurações":
             }
 
             provider_defaults = {
-                "Outlook": {"server": "smtp.office365.com", "port": 587, "use_tls": True, "use_ssl": False},
                 "Gmail": {"server": "smtp.gmail.com", "port": 587, "use_tls": True, "use_ssl": False},
-                "Personalizado": {},
+                "Outlook": {"server": "smtp.office365.com", "port": 587, "use_tls": True, "use_ssl": False},
+                "Outro": {},
             }
 
             server_lower = (config_atual.get("smtp_server") or "").lower()
-            provider_guess = "Personalizado"
+            provider_guess = "Outro"
             if "gmail" in server_lower:
                 provider_guess = "Gmail"
             elif any(key in server_lower for key in ("outlook", "office365", "office")):
@@ -9665,18 +9665,33 @@ elif menu_option == "⚙️ Configurações":
                     "Fornecedor SMTP",
                     list(provider_defaults.keys()),
                     key=provider_key,
-                    help="Selecione um fornecedor comum ou mantenha 'Personalizado' para definir valores próprios.",
+                    help="Selecione um fornecedor comum ou mantenha 'Outro' para definir valores próprios.",
                 )
+
+                if provider != "Outro":
+                    defaults = provider_defaults.get(provider, {})
+                    if defaults.get("server"):
+                        st.session_state[server_key] = defaults["server"]
+                    if defaults.get("port"):
+                        st.session_state[port_key] = defaults["port"]
+                    if "use_tls" in defaults:
+                        st.session_state[tls_key] = defaults["use_tls"]
+                    if "use_ssl" in defaults:
+                        st.session_state[ssl_key] = defaults["use_ssl"]
+
+                is_custom_provider = provider == "Outro"
 
                 smtp_server = st.text_input(
                     "Servidor SMTP",
                     key=server_key,
+                    disabled=not is_custom_provider,
                 )
                 smtp_port = st.number_input(
                     "Porta SMTP",
                     min_value=1,
                     step=1,
                     key=port_key,
+                    disabled=not is_custom_provider,
                 )
 
                 col_tls, col_ssl = st.columns(2)
@@ -9685,12 +9700,14 @@ elif menu_option == "⚙️ Configurações":
                         "Usar STARTTLS",
                         value=st.session_state[tls_key],
                         key=tls_key,
+                        disabled=not is_custom_provider,
                     )
                 with col_ssl:
                     use_ssl_val = st.checkbox(
                         "Usar SSL (porta 465)",
                         value=st.session_state[ssl_key],
                         key=ssl_key,
+                        disabled=not is_custom_provider,
                     )
 
                 if use_ssl_val and use_tls_val:
