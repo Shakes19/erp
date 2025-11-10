@@ -9190,8 +9190,10 @@ elif menu_option == "⚙️ Configurações":
                             fornecedor_sel = st.selectbox(
                                 "Selecionar Fornecedor",
                                 options=fornecedores,
+                                index=None,
                                 format_func=lambda x: x[1],
                                 key="forn_marcas",
+                                placeholder="Selecione um fornecedor",
                             )
 
                             if (
@@ -9214,6 +9216,7 @@ elif menu_option == "⚙️ Configurações":
                                             fornecedor_sel[0], nova_marca, margem_marca
                                         )
                                         st.success(f"Marca {nova_marca} adicionada!")
+                                        st.session_state["forn_marcas"] = None
                                         st.rerun()
                                     else:
                                         st.error("Marca já está associada a um fornecedor")
@@ -9302,7 +9305,17 @@ elif menu_option == "⚙️ Configurações":
 
             with tab_empresas:
                 st.markdown("### Gestão de Empresas")
-                emp_col1, emp_col2 = st.columns(2)
+                st.markdown(
+                    """
+                    <style>
+                        .empresas-registadas-header {
+                            margin-top: 0 !important;
+                        }
+                    </style>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                emp_col1, emp_col2 = st.columns(2, vertical_alignment="top")
 
                 with emp_col1:
                     with st.form("nova_empresa_form"):
@@ -9318,7 +9331,7 @@ elif menu_option == "⚙️ Configurações":
 
                 with emp_col2:
                     st.markdown(
-                        "<h3 style='margin-top: 0;'>Empresas Registadas</h3>",
+                        "<h3 class='empresas-registadas-header'>Empresas Registadas</h3>",
                         unsafe_allow_html=True,
                     )
                     empresas = listar_empresas()
@@ -9360,8 +9373,10 @@ elif menu_option == "⚙️ Configurações":
                             empresa_sel = st.selectbox(
                                 "Selecionar Empresa",
                                 empresas,
+                                index=None,
                                 format_func=lambda x: x[1],
                                 key="empresa_comercial_sel",
+                                placeholder="Selecione uma empresa",
                             )
                             if st.form_submit_button("➕ Adicionar"):
                                 if not empresa_sel:
@@ -9369,6 +9384,7 @@ elif menu_option == "⚙️ Configurações":
                                 elif nome:
                                     inserir_cliente(nome, email, empresa_sel[0])
                                     st.success(f"Comercial {nome} adicionado!")
+                                    st.session_state["empresa_comercial_sel"] = None
                                     st.rerun()
                                 else:
                                     st.error("Nome é obrigatório")
