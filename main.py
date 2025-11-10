@@ -5069,7 +5069,7 @@ def mostrar_dialogo_editar_artigo() -> None:
                 descricao_input = st.text_area(
                     "Descrição *",
                     value=artigo_em_edicao.get("descricao") or "",
-                    height=120,
+                    height=162,
                     key=f"descricao_edit_{artigo_em_edicao_key}",
                 )
                 notas_input = st.text_area(
@@ -8853,7 +8853,6 @@ elif menu_option == "📦 Artigos":
                                 preco_txt = "—"
                             st.markdown(f"**Preço Histórico:** {preco_txt}")
                             validade_txt = _format_iso_date(artigo.get("validade_historico")) or "—"
-                            st.markdown(f"**Validade Preço:** {validade_txt}")
                             peso_valor = artigo.get("peso")
                             if peso_valor not in (None, ""):
                                 try:
@@ -8863,6 +8862,7 @@ elif menu_option == "📦 Artigos":
                             else:
                                 peso_txt = "—"
                             st.markdown(f"**Peso:** {peso_txt}")
+                            st.markdown(f"**Validade Preço:** {validade_txt}")
                         with col_c:
                             st.markdown(f"**HS Code:** {artigo['hs_code'] or '—'}")
                             st.markdown(f"**País Origem:** {artigo['pais_origem'] or '—'}")
@@ -8878,7 +8878,7 @@ elif menu_option == "📦 Artigos":
                         if st.button(
                             "✏️",
                             key=f"editar_artigo_{artigo_id}",
-                            use_container_width=False,
+                            use_container_width=True,
                         ):
                             st.session_state["artigo_em_edicao"] = artigo
                             st.session_state["artigo_em_edicao_key"] = str(artigo_id)
