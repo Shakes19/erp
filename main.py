@@ -8841,9 +8841,7 @@ elif menu_option == "📦 Artigos":
                         st.caption(f"ID #{artigo['id']}")
                         col_a, col_b, col_c = st.columns(3)
                         with col_a:
-                            st.markdown(f"**Nº Artigo:** {artigo['artigo_num'] or '—'}")
                             st.markdown(f"**Unidade:** {artigo['unidade'] or '—'}")
-                            st.markdown(f"**Marca:** {artigo['marca'] or '—'}")
                         with col_b:
                             preco_valor = artigo.get("preco_historico")
                             if preco_valor not in (None, ""):
@@ -8855,7 +8853,7 @@ elif menu_option == "📦 Artigos":
                                 preco_txt = "—"
                             st.markdown(f"**Preço Histórico:** {preco_txt}")
                             validade_txt = _format_iso_date(artigo.get("validade_historico")) or "—"
-                            st.markdown(f"**Validade Histórica:** {validade_txt}")
+                            st.markdown(f"**Validade Preço:** {validade_txt}")
                             peso_valor = artigo.get("peso")
                             if peso_valor not in (None, ""):
                                 try:
@@ -8872,16 +8870,20 @@ elif menu_option == "📦 Artigos":
                             st.markdown("**Especificações:**")
                             st.write(artigo["especificacoes"])
                     with col_acao:
-                        st.markdown("<div style='height: 0.5rem'></div>", unsafe_allow_html=True)
+                        st.markdown(
+                            "<div style='height: 100%; display: flex; align-items: center; justify-content: center;'>",
+                            unsafe_allow_html=True,
+                        )
                         artigo_id = artigo.get("id") or uuid4().hex
                         if st.button(
                             "✏️",
                             key=f"editar_artigo_{artigo_id}",
-                            use_container_width=True,
+                            use_container_width=False,
                         ):
                             st.session_state["artigo_em_edicao"] = artigo
                             st.session_state["artigo_em_edicao_key"] = str(artigo_id)
                             st.session_state["mostrar_modal_editar_artigo"] = True
+                        st.markdown("</div>", unsafe_allow_html=True)
         elif filtro_normalizado:
             st.info("Nenhum artigo encontrado para os critérios indicados.")
 
