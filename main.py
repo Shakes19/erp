@@ -5063,13 +5063,47 @@ def mostrar_dialogo_editar_artigo() -> None:
                     validade_data = None
 
         form_key = f"form_editar_artigo_{artigo_em_edicao_key}"
+        st.markdown(
+            """
+            <style>
+            div[data-testid="stDialog"] div[data-testid="stFormSubmitButton"]
+                button[aria-label="Guardar alterações"] {
+                background-color: #2e7d32;
+                color: #ffffff;
+                border-color: #1b5e20;
+            }
+            div[data-testid="stDialog"] div[data-testid="stFormSubmitButton"]
+                button[aria-label="Guardar alterações"]:hover,
+            div[data-testid="stDialog"] div[data-testid="stFormSubmitButton"]
+                button[aria-label="Guardar alterações"]:focus {
+                background-color: #27662a;
+                border-color: #1b5e20;
+            }
+            div[data-testid="stDialog"] div[data-testid="stFormSubmitButton"]
+                button[aria-label="Cancelar"] {
+                background-color: #c62828;
+                color: #ffffff;
+                border-color: #8e0000;
+            }
+            div[data-testid="stDialog"] div[data-testid="stFormSubmitButton"]
+                button[aria-label="Cancelar"]:hover,
+            div[data-testid="stDialog"] div[data-testid="stFormSubmitButton"]
+                button[aria-label="Cancelar"]:focus {
+                background-color: #ad2020;
+                border-color: #7f0000;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
         with st.form(form_key):
             col_dados, col_extra = st.columns((1.35, 1))
             with col_dados:
                 descricao_input = st.text_area(
                     "Descrição *",
                     value=artigo_em_edicao.get("descricao") or "",
-                    height=162,
+                    height=205,
                     key=f"descricao_edit_{artigo_em_edicao_key}",
                 )
                 notas_input = st.text_area(
@@ -5091,6 +5125,26 @@ def mostrar_dialogo_editar_artigo() -> None:
                     index=marca_index,
                     key=f"marca_edit_{artigo_em_edicao_key}",
                 )
+                preco_historico_atual = artigo_em_edicao.get("preco_historico")
+                if isinstance(preco_historico_atual, (int, float)):
+                    preco_historico_padrao = f"{preco_historico_atual:.2f}"
+                else:
+                    preco_historico_padrao = preco_historico_atual or ""
+
+                preco_historico_input = st.text_input(
+                    "Preço Histórico",
+                    value=preco_historico_padrao,
+                    key=f"preco_hist_edit_{artigo_em_edicao_key}",
+                )
+                validade_padrao = (
+                    validade_data.isoformat() if isinstance(validade_data, date) else ""
+                )
+                validade_input = st.text_input(
+                    "Válido até",
+                    value=validade_padrao,
+                    placeholder="AAAA-MM-DD",
+                    key=f"validade_edit_{artigo_em_edicao_key}",
+                )
                 peso_atual = artigo_em_edicao.get("peso")
                 peso_input = st.text_input(
                     "Peso (kg)",
@@ -5110,9 +5164,17 @@ def mostrar_dialogo_editar_artigo() -> None:
 
             col_botoes = st.columns(2)
             with col_botoes[0]:
-                guardar = st.form_submit_button("Guardar alterações")
+                cancelar = st.form_submit_button(
+                    "Cancelar",
+                    type="secondary",
+                    use_container_width=True,
+                )
             with col_botoes[1]:
-                cancelar = st.form_submit_button("Cancelar", type="secondary")
+                guardar = st.form_submit_button(
+                    "Guardar alterações",
+                    type="primary",
+                    use_container_width=True,
+                )
 
         if cancelar:
             _limpar_estado_dialogo()
@@ -5127,8 +5189,8 @@ def mostrar_dialogo_editar_artigo() -> None:
                 artigo_num=artigo_em_edicao.get("artigo_num"),
                 especificacoes=notas_input,
                 marca_nome=marca_nome,
-                preco_historico=artigo_em_edicao.get("preco_historico"),
-                validade_historico=validade_data,
+                preco_historico=preco_historico_input,
+                validade_historico=validade_input,
                 peso=peso_input,
                 hs_code=hs_code_input,
                 pais_origem=pais_origem_input,
