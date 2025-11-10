@@ -8616,10 +8616,6 @@ elif menu_option == "📦 Artigos":
     ])
 
     with tab_pesquisar:
-        if "artigo_edicao_modal" not in st.session_state:
-            st.session_state["artigo_edicao_modal"] = False
-        if "artigo_edicao_dados" not in st.session_state:
-            st.session_state["artigo_edicao_dados"] = None
         if "artigo_edicao_feedback" not in st.session_state:
             st.session_state["artigo_edicao_feedback"] = None
 
@@ -8695,143 +8691,142 @@ elif menu_option == "📦 Artigos":
                             st.write(artigo["especificacoes"])
                     with col_acao:
                         st.markdown("<div style='height: 0.5rem'></div>", unsafe_allow_html=True)
-                        if st.button("✏️", key=f"edit_{artigo['id']}", use_container_width=True):
-                            st.session_state["artigo_edicao_modal"] = True
-                            st.session_state["artigo_edicao_dados"] = artigo.copy()
-                            st.rerun()
+                        artigo_id = artigo.get("id") or uuid4().hex
+                        with st.popover("✏️", key=f"edit_pop_{artigo_id}", use_container_width=True):
+                            st.markdown(f"### Editar artigo #{artigo.get('id', '–')}")
+
+                            unidades_disponiveis = listar_unidades()
+                            marcas_disponiveis = ["Sem marca"] + listar_todas_marcas()
+
+                            if not unidades_disponiveis:
+                                st.warning(
+                                    "Não existem unidades configuradas. Adicione unidades nas configurações antes de editar artigos.",
+                                )
+                            else:
+                                unidades_opcoes = [unidade[1] for unidade in unidades_disponiveis]
+                                unidade_atual = artigo.get("unidade") or ""
+                                try:
+                                    unidade_index = unidades_opcoes.index(unidade_atual)
+                                except ValueError:
+                                    unidade_index = 0
+
+                                marca_atual = artigo.get("marca") or "Sem marca"
+                                try:
+                                    marca_index = marcas_disponiveis.index(marca_atual)
+                                except ValueError:
+                                    marca_index = 0
+
+                                validade_atual = artigo.get("validade_historico")
+                                validade_data: date | None = None
+                                if validade_atual:
+                                    if isinstance(validade_atual, datetime):
+                                        validade_data = validade_atual.date()
+                                    elif isinstance(validade_atual, date):
+                                        validade_data = validade_atual
+                                    else:
+                                        try:
+                                            validade_data = datetime.fromisoformat(str(validade_atual)).date()
+                                        except ValueError:
+                                            validade_data = None
+
+                                form_key = f"form_editar_artigo_{artigo_id}"
+                                with st.form(form_key):
+                                    col_dados, col_extra = st.columns(2)
+                                    with col_dados:
+                                        descricao_input = st.text_area(
+                                            "Descrição *",
+                                            value=artigo.get("descricao") or "",
+                                            height=120,
+                                            key=f"descricao_edit_{artigo_id}",
+                                        )
+                                        especificacoes_input = st.text_area(
+                                            "Especificações",
+                                            value=artigo.get("especificacoes") or "",
+                                            height=120,
+                                            key=f"especificacoes_edit_{artigo_id}",
+                                        )
+                                        unidade_selecionada = st.selectbox(
+                                            "Unidade *",
+                                            unidades_opcoes,
+                                            index=unidade_index if unidades_opcoes else 0,
+                                            key=f"unidade_edit_{artigo_id}",
+                                        )
+                                        marca_selecionada = st.selectbox(
+                                            "Marca",
+                                            marcas_disponiveis,
+                                            index=marca_index,
+                                            key=f"marca_edit_{artigo_id}",
+                                        )
+                                    with col_extra:
+                                        artigo_num_input = st.text_input(
+                                            "Nº Artigo",
+                                            value=artigo.get("artigo_num") or "",
+                                            key=f"num_edit_{artigo_id}",
+                                        )
+                                        preco_atual = artigo.get("preco_historico")
+                                        preco_input = st.text_input(
+                                            "Preço Histórico (EUR)",
+                                            value="" if preco_atual in (None, "") else str(preco_atual),
+                                            key=f"preco_edit_{artigo_id}",
+                                        )
+                                        peso_atual = artigo.get("peso")
+                                        peso_input = st.text_input(
+                                            "Peso (kg)",
+                                            value="" if peso_atual in (None, "") else str(peso_atual),
+                                            key=f"peso_edit_{artigo_id}",
+                                        )
+                                        hs_code_input = st.text_input(
+                                            "HS Code",
+                                            value=artigo.get("hs_code") or "",
+                                            key=f"hs_code_edit_{artigo_id}",
+                                        )
+                                        pais_origem_input = st.text_input(
+                                            "País de Origem",
+                                            value=artigo.get("pais_origem") or "",
+                                            key=f"pais_edit_{artigo_id}",
+                                        )
+
+                                        sem_validade = st.checkbox(
+                                            "Sem validade histórica",
+                                            value=validade_data is None,
+                                            key=f"sem_validade_edit_{artigo_id}",
+                                        )
+                                        validade_input = None
+                                        if not sem_validade:
+                                            validade_input = st.date_input(
+                                                "Validade Histórica",
+                                                value=validade_data or date.today(),
+                                                key=f"validade_edit_{artigo_id}",
+                                            )
+
+                                    guardar = st.form_submit_button("Guardar alterações")
+
+                                if guardar:
+                                    marca_nome = None if marca_selecionada == "Sem marca" else marca_selecionada
+                                    sucesso, mensagem = atualizar_artigo_catalogo(
+                                        artigo.get("id"),
+                                        descricao_input,
+                                        unidade_selecionada,
+                                        artigo_num=artigo_num_input,
+                                        especificacoes=especificacoes_input,
+                                        marca_nome=marca_nome,
+                                        preco_historico=preco_input,
+                                        validade_historico=None if sem_validade else validade_input,
+                                        peso=peso_input,
+                                        hs_code=hs_code_input,
+                                        pais_origem=pais_origem_input,
+                                    )
+                                    if sucesso:
+                                        st.session_state["artigo_edicao_feedback"] = (
+                                            "success",
+                                            "Artigo atualizado com sucesso.",
+                                        )
+                                        st.rerun()
+                                    else:
+                                        st.error(mensagem or "Não foi possível atualizar o artigo.")
         else:
             st.info("Nenhum artigo encontrado para os critérios indicados.")
 
-        artigo_edicao = st.session_state.get("artigo_edicao_dados")
-        if st.session_state.get("artigo_edicao_modal") and artigo_edicao:
-            with st.modal("Editar artigo"):
-                unidades_disponiveis = listar_unidades()
-                marcas_disponiveis = ["Sem marca"] + listar_todas_marcas()
-
-                if not unidades_disponiveis:
-                    st.warning(
-                        "Não existem unidades configuradas. Adicione unidades nas configurações antes de editar artigos."
-                    )
-                else:
-                    unidades_opcoes = [unidade[1] for unidade in unidades_disponiveis]
-                    try:
-                        unidade_index = unidades_opcoes.index(artigo_edicao.get("unidade") or "")
-                    except ValueError:
-                        unidade_index = 0
-
-                    marca_atual = artigo_edicao.get("marca") or "Sem marca"
-                    try:
-                        marca_index = marcas_disponiveis.index(marca_atual)
-                    except ValueError:
-                        marca_index = 0
-
-                    validade_atual = artigo_edicao.get("validade_historico")
-                    validade_data: date | None = None
-                    if validade_atual:
-                        if isinstance(validade_atual, datetime):
-                            validade_data = validade_atual.date()
-                        elif isinstance(validade_atual, date):
-                            validade_data = validade_atual
-                        else:
-                            try:
-                                validade_data = datetime.fromisoformat(str(validade_atual)).date()
-                            except ValueError:
-                                validade_data = None
-
-                    with st.form("form_editar_artigo"):
-                        col_dados, col_extra = st.columns(2)
-                        with col_dados:
-                            descricao_input = st.text_area(
-                                "Descrição *",
-                                value=artigo_edicao.get("descricao") or "",
-                                height=120,
-                            )
-                            especificacoes_input = st.text_area(
-                                "Especificações",
-                                value=artigo_edicao.get("especificacoes") or "",
-                                height=120,
-                            )
-                            unidade_selecionada = st.selectbox(
-                                "Unidade *",
-                                unidades_opcoes,
-                                index=unidade_index if unidades_opcoes else 0,
-                            )
-                            marca_selecionada = st.selectbox(
-                                "Marca",
-                                marcas_disponiveis,
-                                index=marca_index,
-                            )
-                        with col_extra:
-                            artigo_num_input = st.text_input(
-                                "Nº Artigo",
-                                value=artigo_edicao.get("artigo_num") or "",
-                            )
-                            preco_atual = artigo_edicao.get("preco_historico")
-                            preco_input = st.text_input(
-                                "Preço Histórico (EUR)",
-                                value="" if preco_atual in (None, "") else str(preco_atual),
-                            )
-                            peso_atual = artigo_edicao.get("peso")
-                            peso_input = st.text_input(
-                                "Peso (kg)",
-                                value="" if peso_atual in (None, "") else str(peso_atual),
-                            )
-                            hs_code_input = st.text_input(
-                                "HS Code",
-                                value=artigo_edicao.get("hs_code") or "",
-                            )
-                            pais_origem_input = st.text_input(
-                                "País de Origem",
-                                value=artigo_edicao.get("pais_origem") or "",
-                            )
-
-                            sem_validade = st.checkbox(
-                                "Sem validade histórica",
-                                value=validade_data is None,
-                            )
-                            validade_input = None
-                            if not sem_validade:
-                                validade_input = st.date_input(
-                                    "Validade Histórica",
-                                    value=validade_data or date.today(),
-                                )
-
-                        col_guardar, col_cancelar = st.columns([1, 1])
-                        with col_guardar:
-                            guardar = st.form_submit_button("Guardar alterações")
-                        with col_cancelar:
-                            cancelar = st.form_submit_button("Cancelar", type="secondary")
-
-                        if cancelar:
-                            st.session_state["artigo_edicao_modal"] = False
-                            st.session_state["artigo_edicao_dados"] = None
-                            st.rerun()
-
-                        if guardar:
-                            marca_nome = None if marca_selecionada == "Sem marca" else marca_selecionada
-                            sucesso, mensagem = atualizar_artigo_catalogo(
-                                artigo_edicao.get("id"),
-                                descricao_input,
-                                unidade_selecionada,
-                                artigo_num=artigo_num_input,
-                                especificacoes=especificacoes_input,
-                                marca_nome=marca_nome,
-                                preco_historico=preco_input,
-                                validade_historico=None if sem_validade else validade_input,
-                                peso=peso_input,
-                                hs_code=hs_code_input,
-                                pais_origem=pais_origem_input,
-                            )
-                            if sucesso:
-                                st.session_state["artigo_edicao_feedback"] = (
-                                    "success",
-                                    "Artigo atualizado com sucesso.",
-                                )
-                                st.session_state["artigo_edicao_modal"] = False
-                                st.session_state["artigo_edicao_dados"] = None
-                                st.rerun()
-                            else:
-                                st.error(mensagem or "Não foi possível atualizar o artigo.")
 
     with tab_criar:
         st.subheader("Criar novo artigo")
