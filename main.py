@@ -9867,50 +9867,63 @@ elif menu_option == "⚙️ Configurações":
         
         with tab_backup:
             st.subheader("Backup e Restauro")
-            
-            if st.button("💾 Criar Backup"):
-                backup_path = backup_database()
-                if backup_path:
-                    st.success(f"Backup criado: {backup_path}")
-                    
-                    # Ler o ficheiro de backup para download
-                    with open(backup_path, 'rb') as f:
-                        backup_data = f.read()
-                    
-                    st.download_button(
-                        "⬇️ Download Backup",
-                        data=backup_data,
-                        file_name=backup_path,
-                        mime="application/octet-stream"
-                    )
-            
-            st.markdown("---")
-            
-            st.warning("⚠️ Restaurar backup irá substituir todos os dados atuais!")
-            
-            uploaded_backup = st.file_uploader(
-                "Selecionar ficheiro de backup",
-                type=['db']
-            )
-            
-            if uploaded_backup:
-                if st.button("⚠️ Restaurar Backup", type="secondary"):
+
+            create_col, restore_col = st.columns(2)
+
+            with create_col:
+                create_col.subheader("Backup")
+
+                if create_col.button("💾 Criar Backup", use_container_width=True):
+                    backup_path = backup_database()
+                    if backup_path:
+                        create_col.success(f"Backup criado: {backup_path}")
+
+                        # Ler o ficheiro de backup para download
+                        with open(backup_path, 'rb') as f:
+                            backup_data = f.read()
+
+                        create_col.download_button(
+                            "⬇️ Download Backup",
+                            data=backup_data,
+                            file_name=backup_path,
+                            mime="application/octet-stream",
+                            use_container_width=True,
+                        )
+
+            with restore_col:
+                restore_col.subheader("Restauro")
+
+                uploaded_backup = restore_col.file_uploader(
+                    "Selecionar ficheiro de backup",
+                    type=['db']
+                )
+
+                restore_disabled = uploaded_backup is None
+
+                if restore_col.button(
+                    "⚠️ Restaurar Backup",
+                    type="secondary",
+                    disabled=restore_disabled,
+                    use_container_width=True,
+                ) and uploaded_backup:
                     # Guardar ficheiro temporário
                     temp_path = "temp_restore.db"
                     with open(temp_path, 'wb') as f:
                         f.write(uploaded_backup.getvalue())
-    
+
                     # Fazer backup atual antes de restaurar
                     backup_database("backup_antes_restauro.db")
-    
+
                     # Restaurar
                     try:
                         shutil.copy2(temp_path, DB_PATH)
                         os.remove(temp_path)
-                        st.success("Backup restaurado com sucesso!")
+                        restore_col.success("Backup restaurado com sucesso!")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Erro ao restaurar: {e}")
+                        restore_col.error(f"Erro ao restaurar: {e}")
+
+                restore_col.warning("⚠️ Restaurar backup irá substituir todos os dados atuais!")
     
         with tab_layout:
             st.subheader("Layout dos PDFs")
