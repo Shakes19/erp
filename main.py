@@ -9305,16 +9305,6 @@ elif menu_option == "⚙️ Configurações":
 
             with tab_empresas:
                 st.markdown("### Gestão de Empresas")
-                st.markdown(
-                    """
-                    <style>
-                        .empresas-registadas-header {
-                            margin-top: 0 !important;
-                        }
-                    </style>
-                    """,
-                    unsafe_allow_html=True,
-                )
                 emp_col1, emp_col2 = st.columns(2, vertical_alignment="top")
 
                 with emp_col1:
@@ -9330,10 +9320,7 @@ elif menu_option == "⚙️ Configurações":
                                 st.error("Nome é obrigatório")
 
                 with emp_col2:
-                    st.markdown(
-                        "<h3 class='empresas-registadas-header'>Empresas Registadas</h3>",
-                        unsafe_allow_html=True,
-                    )
+                    st.subheader("Empresas Registadas")
                     empresas = listar_empresas()
                     for emp in empresas:
                         with st.expander(emp[1]):
