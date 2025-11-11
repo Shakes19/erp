@@ -9033,6 +9033,31 @@ elif menu_option == "⚙️ Configurações":
         st.error("Sem permissão para aceder a esta área")
     else:
         st.title("⚙️ Configurações do Sistema")
+
+        if "_config_buttons_css" not in st.session_state:
+            st.markdown(
+                """
+                <style>
+                .configuracoes-container div[data-testid="stFormSubmitButton"]:has(button[aria-label*="Guardar"]),
+                .configuracoes-container div[data-testid="stButton"]:has(button[aria-label*="Guardar"]) {
+                    display: flex;
+                    justify-content: flex-end;
+                    width: 100%;
+                }
+                .configuracoes-container div[data-testid="stFormSubmitButton"]:has(button[aria-label*="Cancelar"]),
+                .configuracoes-container div[data-testid="stButton"]:has(button[aria-label*="Cancelar"]) {
+                    display: flex;
+                    justify-content: flex-start;
+                    width: 100%;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.session_state["_config_buttons_css"] = True
+
+        st.markdown('<div class="configuracoes-container">', unsafe_allow_html=True)
+
         (
             tab_gestao_fornecedores,
             tab_clientes,
@@ -9136,29 +9161,32 @@ elif menu_option == "⚙️ Configurações":
                                     help="Quando ativo, o sistema solicitará estes dados antes de enviar o pedido.",
                                 )
 
-                                col_a, col_b = st.columns(2)
-                                with col_a:
-                                    if st.form_submit_button("💾 Guardar"):
-                                        if atualizar_fornecedor(
-                                            forn[0],
-                                            nome_edit,
-                                            email_edit,
-                                            telefone_edit,
-                                            morada_edit,
-                                            nif_edit,
-                                            requer_info_edit,
-                                        ):
-                                            st.success("Fornecedor atualizado")
-                                            st.rerun()
-                                        else:
-                                            st.error("Erro ao atualizar fornecedor")
-                                with col_b:
-                                    if st.form_submit_button("🗑️ Eliminar"):
-                                        if eliminar_fornecedor_db(forn[0]):
-                                            st.success("Fornecedor eliminado")
-                                            st.rerun()
-                                        else:
-                                            st.error("Erro ao eliminar fornecedor")
+                                col_eliminar, col_guardar = st.columns(2)
+                                with col_guardar:
+                                    guardar_fornecedor = st.form_submit_button("💾 Guardar")
+                                with col_eliminar:
+                                    eliminar_fornecedor_btn = st.form_submit_button("🗑️ Eliminar")
+
+                                if guardar_fornecedor:
+                                    if atualizar_fornecedor(
+                                        forn[0],
+                                        nome_edit,
+                                        email_edit,
+                                        telefone_edit,
+                                        morada_edit,
+                                        nif_edit,
+                                        requer_info_edit,
+                                    ):
+                                        st.success("Fornecedor atualizado")
+                                        st.rerun()
+                                    else:
+                                        st.error("Erro ao atualizar fornecedor")
+                                if eliminar_fornecedor_btn:
+                                    if eliminar_fornecedor_db(forn[0]):
+                                        st.success("Fornecedor eliminado")
+                                        st.rerun()
+                                    else:
+                                        st.error("Erro ao eliminar fornecedor")
 
                             marcas = obter_marcas_fornecedor(forn[0])
                             if marcas:
@@ -9356,19 +9384,22 @@ elif menu_option == "⚙️ Configurações":
                                 cond_pag_edit = st.text_input(
                                     "Condições Pagamento", emp[3] or "",
                                 )
-                                col_a, col_b = st.columns(2)
-                                with col_a:
-                                    if st.form_submit_button("💾 Guardar"):
-                                        atualizar_empresa(
-                                            emp[0], nome_edit, morada_edit, cond_pag_edit
-                                        )
-                                        st.success("Empresa atualizada")
-                                        st.rerun()
-                                with col_b:
-                                    if st.form_submit_button("🗑️ Eliminar"):
-                                        eliminar_empresa_db(emp[0])
-                                        st.success("Empresa eliminada")
-                                        st.rerun()
+                                col_eliminar, col_guardar = st.columns(2)
+                                with col_guardar:
+                                    guardar_empresa = st.form_submit_button("💾 Guardar")
+                                with col_eliminar:
+                                    eliminar_empresa = st.form_submit_button("🗑️ Eliminar")
+
+                                if guardar_empresa:
+                                    atualizar_empresa(
+                                        emp[0], nome_edit, morada_edit, cond_pag_edit
+                                    )
+                                    st.success("Empresa atualizada")
+                                    st.rerun()
+                                if eliminar_empresa:
+                                    eliminar_empresa_db(emp[0])
+                                    st.success("Empresa eliminada")
+                                    st.rerun()
 
             with tab_comerciais:
                 empresas = listar_empresas()
@@ -9445,22 +9476,25 @@ elif menu_option == "⚙️ Configurações":
                                             key=f"emp_{cli[0]}",
                                         )
 
-                                        col_a, col_b = st.columns(2)
-                                        with col_a:
-                                            if st.form_submit_button("💾 Guardar"):
-                                                atualizar_cliente(
-                                                    cli[0],
-                                                    nome_edit,
-                                                    email_edit,
-                                                    empresa_sel_edit[0],
-                                                )
-                                                st.success("Comercial atualizado")
-                                                st.rerun()
-                                        with col_b:
-                                            if st.form_submit_button("🗑️ Eliminar"):
-                                                eliminar_cliente_db(cli[0])
-                                                st.success("Comercial eliminado")
-                                                st.rerun()
+                                        col_eliminar, col_guardar = st.columns(2)
+                                        with col_guardar:
+                                            guardar_cliente = st.form_submit_button("💾 Guardar")
+                                        with col_eliminar:
+                                            eliminar_cliente = st.form_submit_button("🗑️ Eliminar")
+
+                                        if guardar_cliente:
+                                            atualizar_cliente(
+                                                cli[0],
+                                                nome_edit,
+                                                email_edit,
+                                                empresa_sel_edit[0],
+                                            )
+                                            st.success("Comercial atualizado")
+                                            st.rerun()
+                                        if eliminar_cliente:
+                                            eliminar_cliente_db(cli[0])
+                                            st.success("Comercial eliminado")
+                                            st.rerun()
                         else:
                             st.info("Selecione uma empresa para visualizar os comerciais.")
         with tab_users:
@@ -9517,29 +9551,32 @@ elif menu_option == "⚙️ Configurações":
                                 )
                                 password_edit = st.text_input("Palavra-passe", type="password")
     
-                                col_a, col_b = st.columns(2)
-                                with col_a:
-                                    if st.form_submit_button("💾 Guardar"):
-                                        if atualizar_utilizador(
-                                            user[0],
-                                            username_edit,
-                                            nome_edit,
-                                            email_edit,
-                                            role_edit,
-                                            password_edit or None,
-                                            email_pw_edit or None,
-                                        ):
-                                            st.success("Utilizador atualizado")
-                                            st.rerun()
-                                        else:
-                                            st.error("Erro ao atualizar utilizador")
-                                with col_b:
-                                    if st.form_submit_button("🗑️ Eliminar"):
-                                        if eliminar_utilizador(user[0]):
-                                            st.success("Utilizador eliminado")
-                                            st.rerun()
-                                        else:
-                                            st.error("Erro ao eliminar utilizador")
+                                col_eliminar, col_guardar = st.columns(2)
+                                with col_guardar:
+                                    guardar_utilizador = st.form_submit_button("💾 Guardar")
+                                with col_eliminar:
+                                    eliminar_utilizador_btn = st.form_submit_button("🗑️ Eliminar")
+
+                                if guardar_utilizador:
+                                    if atualizar_utilizador(
+                                        user[0],
+                                        username_edit,
+                                        nome_edit,
+                                        email_edit,
+                                        role_edit,
+                                        password_edit or None,
+                                        email_pw_edit or None,
+                                    ):
+                                        st.success("Utilizador atualizado")
+                                        st.rerun()
+                                    else:
+                                        st.error("Erro ao atualizar utilizador")
+                                if eliminar_utilizador_btn:
+                                    if eliminar_utilizador(user[0]):
+                                        st.success("Utilizador eliminado")
+                                        st.rerun()
+                                    else:
+                                        st.error("Erro ao eliminar utilizador")
 
         with tab_unidades:
             st.subheader("Gestão de Unidades")
@@ -9590,25 +9627,29 @@ elif menu_option == "⚙️ Configurações":
                         with st.expander(titulo_expander):
                             with st.form(f"editar_unidade_{unidade_id}"):
                                 nome_editado = st.text_input("Nome", unidade_nome)
-                                col_salvar, col_eliminar = st.columns(2)
+                                col_eliminar, col_guardar = st.columns(2)
 
-                                with col_salvar:
-                                    if st.form_submit_button("💾 Guardar"):
-                                        if atualizar_unidade(unidade_id, nome_editado):
-                                            st.success("Unidade atualizada")
-                                            st.rerun()
-                                        else:
-                                            st.error("Não foi possível atualizar a unidade.")
+                                with col_guardar:
+                                    guardar_unidade = st.form_submit_button("💾 Guardar")
 
                                 with col_eliminar:
-                                    if st.form_submit_button("🗑️ Eliminar"):
-                                        if eliminar_unidade(unidade_id):
-                                            st.success("Unidade eliminada")
-                                            st.rerun()
-                                        else:
-                                            st.error(
-                                                "Não é possível eliminar a unidade enquanto estiver em uso."
-                                            )
+                                    eliminar_unidade_btn = st.form_submit_button("🗑️ Eliminar")
+
+                                if guardar_unidade:
+                                    if atualizar_unidade(unidade_id, nome_editado):
+                                        st.success("Unidade atualizada")
+                                        st.rerun()
+                                    else:
+                                        st.error("Não foi possível atualizar a unidade.")
+
+                                if eliminar_unidade_btn:
+                                    if eliminar_unidade(unidade_id):
+                                        st.success("Unidade eliminada")
+                                        st.rerun()
+                                    else:
+                                        st.error(
+                                            "Não é possível eliminar a unidade enquanto estiver em uso."
+                                        )
                 else:
                     st.info("Nenhuma unidade registada.")
 
@@ -9988,6 +10029,8 @@ elif menu_option == "⚙️ Configurações":
                     conn.close()
                     obter_config_empresa.clear()
                     st.success("Dados da empresa guardados!")
+
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # Footer
 st.markdown("---")
