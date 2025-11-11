@@ -4856,11 +4856,26 @@ def exibir_pdf(
                         let fixed = false;
                         const stickyTop = {sticky_offset};
 
+                        const getScrollContainer = (element) => {{
+                            let current = element;
+                            while (current && current !== document.body && current !== document.documentElement) {{
+                                const style = window.getComputedStyle(current);
+                                const overflowY = style.overflowY;
+                                if (overflowY === 'auto' || overflowY === 'scroll') {{
+                                    return current;
+                                }}
+                                current = current.parentElement;
+                            }}
+                            return window;
+                        }};
+
+                        const scrollContainer = getScrollContainer(parent);
+
                         const updateFixedMetrics = () => {{
                             if (!fixed) return;
-                            const placeholderRect = placeholder.getBoundingClientRect();
-                            container.style.setProperty('--pdf-fixed-left', `${{placeholderRect.left}}px`);
-                            container.style.setProperty('--pdf-fixed-width', `${{placeholderRect.width}}px`);
+                            const referenceRect = placeholder.getBoundingClientRect();
+                            container.style.setProperty('--pdf-fixed-left', `${{referenceRect.left}}px`);
+                            container.style.setProperty('--pdf-fixed-width', `${{referenceRect.width}}px`);
                         }};
 
                         const release = () => {{
@@ -4900,10 +4915,23 @@ def exibir_pdf(
 
                         const debouncedEvaluate = () => window.requestAnimationFrame(evaluatePosition);
 
-                        window.addEventListener('scroll', debouncedEvaluate, {{ passive: true }});
+                        const addScrollListener = (el) => {{
+                            if (!el) return;
+                            const target = el === window ? window : el;
+                            target.addEventListener('scroll', debouncedEvaluate, {{ passive: true }});
+                        }};
+
+                        addScrollListener(window);
+                        if (scrollContainer && scrollContainer !== window) {{
+                            addScrollListener(scrollContainer);
+                        }}
+
                         window.addEventListener('resize', () => {{
                             if (fixed) {{
-                                placeholder.style.width = `${{placeholder.parentElement.getBoundingClientRect().width}}px`;
+                                const parentRect = placeholder.parentElement ? placeholder.parentElement.getBoundingClientRect() : null;
+                                if (parentRect) {{
+                                    placeholder.style.width = `${{parentRect.width}}px`;
+                                }}
                             }}
                             debouncedEvaluate();
                         }});
