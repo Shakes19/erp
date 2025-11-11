@@ -4794,6 +4794,13 @@ def exibir_pdf(
                         z-index: 2;
                         align-self: flex-start;
                     }}
+                    #{container_id}.pdf-fixed-active {{
+                        position: fixed !important;
+                        top: {sticky_offset}px !important;
+                        z-index: 12 !important;
+                        left: var(--pdf-fixed-left, 0px) !important;
+                        width: var(--pdf-fixed-width, auto) !important;
+                    }}
                     #{container_id} .pdf-title {{
                         font-weight: 600;
                         margin-bottom: 0.5rem;
@@ -4806,6 +4813,10 @@ def exibir_pdf(
                         min-height: min({height}px, {scrollable_height_css});
                         overflow-y: auto;
                         overflow-x: hidden;
+                    }}
+                    #{container_id}.pdf-fixed-active .pdf-wrapper {{
+                        height: calc(100vh - {sticky_offset + 40}px);
+                        max-height: calc(100vh - {sticky_offset + 40}px);
                     }}
                     #{container_id} .pdf-wrapper .embedded-pdf-object,
                     #{container_id} .pdf-wrapper .embedded-pdf-iframe {{
@@ -4821,12 +4832,85 @@ def exibir_pdf(
             st.markdown(
                 textwrap.dedent(
                     f"""
-                    <div id="{container_id}">
+                    <div id="{container_id}" class="pdf-sticky-container">
                         <div class="pdf-title">{label}</div>
                         <div class="pdf-wrapper">
                             {pdf_object}
                         </div>
                     </div>
+                    """
+                ).strip(),
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                textwrap.dedent(
+                    f"""
+                    <script>
+                    (function() {{
+                        const container = document.getElementById('{container_id}');
+                        if (!container) return;
+                        const parent = container.parentElement;
+                        if (!parent) return;
+                        const placeholder = document.createElement('div');
+                        placeholder.className = 'pdf-sticky-placeholder';
+                        let fixed = false;
+                        const stickyTop = {sticky_offset};
+
+                        const updateFixedMetrics = () => {{
+                            if (!fixed) return;
+                            const placeholderRect = placeholder.getBoundingClientRect();
+                            container.style.setProperty('--pdf-fixed-left', `${{placeholderRect.left}}px`);
+                            container.style.setProperty('--pdf-fixed-width', `${{placeholderRect.width}}px`);
+                        }};
+
+                        const release = () => {{
+                            if (!fixed) return;
+                            container.classList.remove('pdf-fixed-active');
+                            container.style.removeProperty('--pdf-fixed-left');
+                            container.style.removeProperty('--pdf-fixed-width');
+                            if (placeholder.parentElement === parent) {{
+                                parent.removeChild(placeholder);
+                            }}
+                            fixed = false;
+                        }};
+
+                        const fix = () => {{
+                            if (fixed) return;
+                            const rect = container.getBoundingClientRect();
+                            placeholder.style.height = `${{rect.height}}px`;
+                            placeholder.style.width = `${{rect.width}}px`;
+                            placeholder.style.marginBottom = getComputedStyle(container).marginBottom;
+                            parent.insertBefore(placeholder, container);
+                            fixed = true;
+                            updateFixedMetrics();
+                            container.classList.add('pdf-fixed-active');
+                        }};
+
+                        const evaluatePosition = () => {{
+                            const targetRect = fixed ? placeholder.getBoundingClientRect() : container.getBoundingClientRect();
+                            if (!fixed && targetRect.top <= stickyTop) {{
+                                fix();
+                                updateFixedMetrics();
+                            }} else if (fixed && targetRect.top > stickyTop) {{
+                                release();
+                            }} else if (fixed) {{
+                                updateFixedMetrics();
+                            }}
+                        }};
+
+                        const debouncedEvaluate = () => window.requestAnimationFrame(evaluatePosition);
+
+                        window.addEventListener('scroll', debouncedEvaluate, {{ passive: true }});
+                        window.addEventListener('resize', () => {{
+                            if (fixed) {{
+                                placeholder.style.width = `${{placeholder.parentElement.getBoundingClientRect().width}}px`;
+                            }}
+                            debouncedEvaluate();
+                        }});
+
+                        debouncedEvaluate();
+                    }})();
+                    </script>
                     """
                 ).strip(),
                 unsafe_allow_html=True,
