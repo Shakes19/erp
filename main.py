@@ -9989,12 +9989,21 @@ elif menu_option == "⚙️ Configurações":
             with st.form("empresa_form"):
                 nome_emp = st.text_input("Nome", dados[0] if dados else "")
                 morada_emp = st.text_area("Morada", dados[1] if dados else "")
-                nif_emp = st.text_input("NIF", dados[2] if dados else "")
-                iban_emp = st.text_input("IBAN", dados[3] if dados else "")
-                banco_emp = st.text_input("Banco", dados[4] if dados else "")
-                telefone_emp = st.text_input("Telefone", dados[5] if dados else "")
-                email_emp = st.text_input("Email", dados[6] if dados else "")
-                website_emp = st.text_input("Website", dados[7] if dados else "")
+                col_nif, col_iban, col_banco = st.columns(3)
+                with col_nif:
+                    nif_emp = st.text_input("NIF", dados[2] if dados else "")
+                with col_iban:
+                    iban_emp = st.text_input("IBAN", dados[3] if dados else "")
+                with col_banco:
+                    banco_emp = st.text_input("Banco", dados[4] if dados else "")
+
+                col_tel, col_email, col_site = st.columns(3)
+                with col_tel:
+                    telefone_emp = st.text_input("Telefone", dados[5] if dados else "")
+                with col_email:
+                    email_emp = st.text_input("Email", dados[6] if dados else "")
+                with col_site:
+                    website_emp = st.text_input("Website", dados[7] if dados else "")
                 logo_guardado = dados[8] if dados and len(dados) > 8 else None
                 logo_bytes = logo_guardado
                 logo_upload = st.file_uploader(
