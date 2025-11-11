@@ -9390,9 +9390,23 @@ elif menu_option == "⚙️ Configurações":
                                 )
                                 col_eliminar, col_guardar = st.columns(2)
                                 with col_guardar:
-                                    guardar_empresa = st.form_submit_button("💾 Guardar")
+                                    st.markdown(
+                                        "<div style='display:flex; justify-content:center;'>",
+                                        unsafe_allow_html=True,
+                                    )
+                                    guardar_empresa = st.form_submit_button(
+                                        "💾 Guardar", use_container_width=True
+                                    )
+                                    st.markdown("</div>", unsafe_allow_html=True)
                                 with col_eliminar:
-                                    eliminar_empresa = st.form_submit_button("🗑️ Eliminar")
+                                    st.markdown(
+                                        "<div style='display:flex; justify-content:center;'>",
+                                        unsafe_allow_html=True,
+                                    )
+                                    eliminar_empresa = st.form_submit_button(
+                                        "🗑️ Eliminar", use_container_width=True
+                                    )
+                                    st.markdown("</div>", unsafe_allow_html=True)
 
                                 if guardar_empresa:
                                     atualizar_empresa(
