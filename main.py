@@ -9073,7 +9073,7 @@ elif menu_option == "⚙️ Configurações":
             tab_layout,
             tab_empresa,
         ) = st.tabs([
-            "Gestão de Fornecedores",
+            "Fornecedores",
             "Clientes",
             "Utilizadores",
             "Unidades",
@@ -9086,8 +9086,6 @@ elif menu_option == "⚙️ Configurações":
 
 
         with tab_gestao_fornecedores:
-            st.subheader("Gestão de Fornecedores")
-
             sub_tab_fornecedores, sub_tab_marcas = st.tabs([
                 "Fornecedores",
                 "Marcas e Margens",
@@ -9243,7 +9241,7 @@ elif menu_option == "⚙️ Configurações":
                             btn_add_marca_cols = st.columns([1, 0.4])
                             with btn_add_marca_cols[1]:
                                 adicionar_marca = st.form_submit_button(
-                                    "➕ Adicionar Marca",
+                                    "➕ Adicionar",
                                     use_container_width=True,
                                 )
 
@@ -9347,18 +9345,16 @@ elif menu_option == "⚙️ Configurações":
                             st.info("Selecione um fornecedor para visualizar as marcas.")
 
         with tab_clientes:
-            st.subheader("Gestão de Clientes")
-
             tab_empresas, tab_comerciais = st.tabs([
                 "Adicionar Empresa",
                 "Adicionar Comercial",
             ])
 
             with tab_empresas:
-                st.markdown("### Gestão de Empresas")
                 emp_col1, emp_col2 = st.columns(2, vertical_alignment="top")
 
                 with emp_col1:
+                    st.markdown("### Gestão de Empresas")
                     with st.form("nova_empresa_form"):
                         nome_emp = st.text_input("Nome Empresa *")
                         morada_emp = st.text_input("Morada")
@@ -9366,7 +9362,7 @@ elif menu_option == "⚙️ Configurações":
                         btn_add_empresa_cols = st.columns([1, 0.4])
                         with btn_add_empresa_cols[1]:
                             adicionar_empresa = st.form_submit_button(
-                                "➕ Adicionar Empresa",
+                                "➕ Adicionar",
                                 use_container_width=True,
                             )
 
@@ -9519,8 +9515,6 @@ elif menu_option == "⚙️ Configurações":
             if st.session_state.get("role") != "admin":
                 st.warning("Apenas administradores podem gerir utilizadores.")
             else:
-                st.subheader("Gestão de Utilizadores")
-    
                 col1, col2 = st.columns(2)
     
                 with col1:
@@ -9597,8 +9591,6 @@ elif menu_option == "⚙️ Configurações":
                                         st.error("Erro ao eliminar utilizador")
 
         with tab_unidades:
-            st.subheader("Gestão de Unidades")
-
             col_add, col_list = st.columns(2)
 
             with col_add:
