@@ -9100,9 +9100,12 @@ elif menu_option == "⚙️ Configurações":
                     with st.form("novo_fornecedor_form"):
                         nome = st.text_input("Nome *")
                         email = st.text_input("Email")
-                        telefone = st.text_input("Telefone")
+                        col_tel, col_nif = st.columns(2)
+                        with col_tel:
+                            telefone = st.text_input("Telefone")
+                        with col_nif:
+                            nif = st.text_input("NIF")
                         morada = st.text_area("Morada")
-                        nif = st.text_input("NIF")
                         requer_info = st.checkbox(
                             "Requer País e Cliente Final?",
                             help="Assinale quando este fornecedor exige estas informações em cada pedido.",
@@ -9154,9 +9157,14 @@ elif menu_option == "⚙️ Configurações":
                             with st.form(f"edit_forn_{forn[0]}"):
                                 nome_edit = st.text_input("Nome", forn[1])
                                 email_edit = st.text_input("Email", forn[2] or "")
-                                telefone_edit = st.text_input("Telefone", forn[3] or "")
+                                col_tel_edit, col_nif_edit = st.columns(2)
+                                with col_tel_edit:
+                                    telefone_edit = st.text_input(
+                                        "Telefone", forn[3] or ""
+                                    )
+                                with col_nif_edit:
+                                    nif_edit = st.text_input("NIF", forn[5] or "")
                                 morada_edit = st.text_area("Morada", forn[4] or "")
-                                nif_edit = st.text_input("NIF", forn[5] or "")
                                 requer_info_edit = st.checkbox(
                                     "Requer País e Cliente Final?",
                                     value=bool(forn[6]) if len(forn) > 6 else False,
@@ -9358,7 +9366,7 @@ elif menu_option == "⚙️ Configurações":
                     st.markdown("### Gestão de Empresas")
                     with st.form("nova_empresa_form"):
                         nome_emp = st.text_input("Nome Empresa *")
-                        morada_emp = st.text_input("Morada")
+                        morada_emp = st.text_area("Morada", height=120)
                         cond_pag_emp = st.text_input("Condições Pagamento")
                         btn_add_empresa_cols = st.columns([1, 0.4])
                         with btn_add_empresa_cols[1]:
@@ -9381,7 +9389,7 @@ elif menu_option == "⚙️ Configurações":
                         with st.expander(emp[1]):
                             with st.form(f"edit_emp_{emp[0]}"):
                                 nome_edit = st.text_input("Nome", emp[1])
-                                morada_edit = st.text_input("Morada", emp[2] or "")
+                                morada_edit = st.text_area("Morada", emp[2] or "", height=120)
                                 cond_pag_edit = st.text_input(
                                     "Condições Pagamento", emp[3] or "",
                                 )
