@@ -8963,7 +8963,7 @@ elif menu_option == "📦 Artigos":
                     help="Selecione uma marca já registada ou escolha 'Sem marca'.",
                 )
 
-                submitted = st.form_submit_button("Criar artigo")
+                submitted = st.form_submit_button("➕ Adicionar")
 
         if submitted:
             marca_nome = None if marca_selecionada == "Sem marca" else marca_selecionada
