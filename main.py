@@ -291,18 +291,6 @@ st.set_page_config(
     layout="wide",
 )
 
-# Oculta o botão "Deploy" padrão exibido no cabeçalho do Streamlit.
-st.markdown(
-    """
-    <style>
-    button[data-testid="baseButton-headerDeployButton"] {
-        display: none !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
 # ========================== GESTÃO DA BASE DE DADOS ==========================
 
 
