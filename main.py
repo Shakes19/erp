@@ -9371,7 +9371,8 @@ elif menu_option == "⚙️ Configurações":
                                 elif nome:
                                     inserir_cliente(nome, email, empresa_sel[0])
                                     st.success(f"Comercial {nome} adicionado!")
-                                    st.session_state["empresa_comercial_sel"] = None
+                                    # Reset the selectbox selection by removing the key
+                                    st.session_state.pop("empresa_comercial_sel", None)
                                     st.rerun()
                                 else:
                                     st.error("Nome é obrigatório")
