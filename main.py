@@ -9038,17 +9038,20 @@ elif menu_option == "⚙️ Configurações":
             st.markdown(
                 """
                 <style>
-                .configuracoes-container div[data-testid="stFormSubmitButton"]:has(button[aria-label*="Guardar"]),
-                .configuracoes-container div[data-testid="stButton"]:has(button[aria-label*="Guardar"]) {
+                .configuracoes-container div[data-testid="stFormSubmitButton"],
+                .configuracoes-container div[data-testid="stButton"] {
                     display: flex;
-                    justify-content: flex-end;
                     width: 100%;
                 }
-                .configuracoes-container div[data-testid="stFormSubmitButton"]:has(button[aria-label*="Cancelar"]),
-                .configuracoes-container div[data-testid="stButton"]:has(button[aria-label*="Cancelar"]) {
-                    display: flex;
-                    justify-content: flex-start;
-                    width: 100%;
+
+                .configuracoes-container div[data-testid="stFormSubmitButton"] button[aria-label*="Guardar"],
+                .configuracoes-container div[data-testid="stButton"] button[aria-label*="Guardar"] {
+                    margin-left: auto;
+                }
+
+                .configuracoes-container div[data-testid="stFormSubmitButton"] button[aria-label*="Cancelar"],
+                .configuracoes-container div[data-testid="stButton"] button[aria-label*="Cancelar"] {
+                    margin-right: auto;
                 }
                 </style>
                 """,
