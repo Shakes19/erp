@@ -8874,6 +8874,7 @@ elif menu_option == "📦 Artigos":
                         col_a, col_b, col_c = st.columns(3)
                         with col_a:
                             st.markdown(f"**Unidade:** {artigo['unidade'] or '—'}")
+                            st.markdown(f"**HS Code:** {artigo['hs_code'] or '—'}")
                         with col_b:
                             preco_valor = artigo.get("preco_historico")
                             if preco_valor not in (None, ""):
@@ -8894,9 +8895,9 @@ elif menu_option == "📦 Artigos":
                             else:
                                 peso_txt = "—"
                             st.markdown(f"**Peso:** {peso_txt}")
-                            st.markdown(f"**Validade Preço:** {validade_txt}")
+                            
                         with col_c:
-                            st.markdown(f"**HS Code:** {artigo['hs_code'] or '—'}")
+                            st.markdown(f"**Validade Preço:** {validade_txt}")
                             st.markdown(f"**País Origem:** {artigo['pais_origem'] or '—'}")
                         if artigo.get("especificacoes"):
                             st.markdown("**Especificações:**")
