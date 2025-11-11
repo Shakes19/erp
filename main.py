@@ -7458,25 +7458,26 @@ elif menu_option == "📩 Process Center":
         else:
             st.info("Não há cotações pendentes")
 
-        st.markdown("---")
-        st.write(
-            f"Página {st.session_state.cotacoes_pend_page + 1} de {total_paginas_pend}"
-        )
-        nav_prev, nav_next = st.columns(2)
-        if nav_prev.button(
-            "⬅️ Anterior",
-            key="pend_prev",
-            disabled=st.session_state.cotacoes_pend_page == 0,
-        ):
-            st.session_state.cotacoes_pend_page -= 1
-            st.rerun()
-        if nav_next.button(
-            "Próximo ➡️",
-            key="pend_next",
-            disabled=st.session_state.cotacoes_pend_page >= total_paginas_pend - 1,
-        ):
-            st.session_state.cotacoes_pend_page += 1
-            st.rerun()
+        if total_paginas_pend > 1:
+            st.markdown("---")
+            st.write(
+                f"Página {st.session_state.cotacoes_pend_page + 1} de {total_paginas_pend}"
+            )
+            nav_prev, nav_next = st.columns(2)
+            if nav_prev.button(
+                "⬅️ Anterior",
+                key="pend_prev",
+                disabled=st.session_state.cotacoes_pend_page == 0,
+            ):
+                st.session_state.cotacoes_pend_page -= 1
+                st.rerun()
+            if nav_next.button(
+                "Próximo ➡️",
+                key="pend_next",
+                disabled=st.session_state.cotacoes_pend_page >= total_paginas_pend - 1,
+            ):
+                st.session_state.cotacoes_pend_page += 1
+                st.rerun()
 
     with tab_respondidas:
         # Filtros
@@ -7614,25 +7615,26 @@ elif menu_option == "📩 Process Center":
         else:
             st.info("Não há cotações respondidas")
 
-        st.markdown("---")
-        st.write(
-            f"Página {st.session_state.cotacoes_resp_page + 1} de {total_paginas_resp}"
-        )
-        nav_prev_r, nav_next_r = st.columns(2)
-        if nav_prev_r.button(
-            "⬅️ Anterior",
-            key="resp_prev",
-            disabled=st.session_state.cotacoes_resp_page == 0,
-        ):
-            st.session_state.cotacoes_resp_page -= 1
-            st.rerun()
-        if nav_next_r.button(
-            "Próximo ➡️",
-            key="resp_next",
-            disabled=st.session_state.cotacoes_resp_page >= total_paginas_resp - 1,
-        ):
-            st.session_state.cotacoes_resp_page += 1
-            st.rerun()
+        if total_paginas_resp > 1:
+            st.markdown("---")
+            st.write(
+                f"Página {st.session_state.cotacoes_resp_page + 1} de {total_paginas_resp}"
+            )
+            nav_prev_r, nav_next_r = st.columns(2)
+            if nav_prev_r.button(
+                "⬅️ Anterior",
+                key="resp_prev",
+                disabled=st.session_state.cotacoes_resp_page == 0,
+            ):
+                st.session_state.cotacoes_resp_page -= 1
+                st.rerun()
+            if nav_next_r.button(
+                "Próximo ➡️",
+                key="resp_next",
+                disabled=st.session_state.cotacoes_resp_page >= total_paginas_resp - 1,
+            ):
+                st.session_state.cotacoes_resp_page += 1
+                st.rerun()
 
     with tab_arquivados:
         # Filtros
@@ -7695,25 +7697,26 @@ elif menu_option == "📩 Process Center":
         else:
             st.info("Não há cotações arquivadas")
 
-        st.markdown("---")
-        st.write(
-            f"Página {st.session_state.cotacoes_arq_page + 1} de {total_paginas_arq}"
-        )
-        nav_prev_a, nav_next_a = st.columns(2)
-        if nav_prev_a.button(
-            "⬅️ Anterior",
-            key="arq_prev",
-            disabled=st.session_state.cotacoes_arq_page == 0,
-        ):
-            st.session_state.cotacoes_arq_page -= 1
-            st.rerun()
-        if nav_next_a.button(
-            "Próximo ➡️",
-            key="arq_next",
-            disabled=st.session_state.cotacoes_arq_page >= total_paginas_arq - 1,
-        ):
-            st.session_state.cotacoes_arq_page += 1
-            st.rerun()
+        if total_paginas_arq > 1:
+            st.markdown("---")
+            st.write(
+                f"Página {st.session_state.cotacoes_arq_page + 1} de {total_paginas_arq}"
+            )
+            nav_prev_a, nav_next_a = st.columns(2)
+            if nav_prev_a.button(
+                "⬅️ Anterior",
+                key="arq_prev",
+                disabled=st.session_state.cotacoes_arq_page == 0,
+            ):
+                st.session_state.cotacoes_arq_page -= 1
+                st.rerun()
+            if nav_next_a.button(
+                "Próximo ➡️",
+                key="arq_next",
+                disabled=st.session_state.cotacoes_arq_page >= total_paginas_arq - 1,
+            ):
+                st.session_state.cotacoes_arq_page += 1
+                st.rerun()
 
     with tab_process_center:
         def _on_process_center_tipo_change() -> None:
