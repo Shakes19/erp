@@ -4794,13 +4794,6 @@ def exibir_pdf(
                         z-index: 2;
                         align-self: flex-start;
                     }}
-                    #{container_id}.pdf-fixed-active {{
-                        position: fixed !important;
-                        top: {sticky_offset}px !important;
-                        z-index: 12 !important;
-                        left: var(--pdf-fixed-left, 0px) !important;
-                        width: var(--pdf-fixed-width, auto) !important;
-                    }}
                     #{container_id} .pdf-title {{
                         font-weight: 600;
                         margin-bottom: 0.5rem;
@@ -4813,10 +4806,6 @@ def exibir_pdf(
                         min-height: min({height}px, {scrollable_height_css});
                         overflow-y: auto;
                         overflow-x: hidden;
-                    }}
-                    #{container_id}.pdf-fixed-active .pdf-wrapper {{
-                        height: calc(100vh - {sticky_offset + 40}px);
-                        max-height: calc(100vh - {sticky_offset + 40}px);
                     }}
                     #{container_id} .pdf-wrapper .embedded-pdf-object,
                     #{container_id} .pdf-wrapper .embedded-pdf-iframe {{
@@ -4832,113 +4821,12 @@ def exibir_pdf(
             st.markdown(
                 textwrap.dedent(
                     f"""
-                    <div id="{container_id}" class="pdf-sticky-container">
+                    <div id="{container_id}">
                         <div class="pdf-title">{label}</div>
                         <div class="pdf-wrapper">
                             {pdf_object}
                         </div>
                     </div>
-                    """
-                ).strip(),
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                textwrap.dedent(
-                    f"""
-                    <script>
-                    (function() {{
-                        const container = document.getElementById('{container_id}');
-                        if (!container) return;
-                        const parent = container.parentElement;
-                        if (!parent) return;
-                        const placeholder = document.createElement('div');
-                        placeholder.className = 'pdf-sticky-placeholder';
-                        let fixed = false;
-                        const stickyTop = {sticky_offset};
-
-                        const getScrollContainer = (element) => {{
-                            let current = element;
-                            while (current && current !== document.body && current !== document.documentElement) {{
-                                const style = window.getComputedStyle(current);
-                                const overflowY = style.overflowY;
-                                if (overflowY === 'auto' || overflowY === 'scroll') {{
-                                    return current;
-                                }}
-                                current = current.parentElement;
-                            }}
-                            return window;
-                        }};
-
-                        const scrollContainer = getScrollContainer(parent);
-
-                        const updateFixedMetrics = () => {{
-                            if (!fixed) return;
-                            const referenceRect = placeholder.getBoundingClientRect();
-                            container.style.setProperty('--pdf-fixed-left', `${{referenceRect.left}}px`);
-                            container.style.setProperty('--pdf-fixed-width', `${{referenceRect.width}}px`);
-                        }};
-
-                        const release = () => {{
-                            if (!fixed) return;
-                            container.classList.remove('pdf-fixed-active');
-                            container.style.removeProperty('--pdf-fixed-left');
-                            container.style.removeProperty('--pdf-fixed-width');
-                            if (placeholder.parentElement === parent) {{
-                                parent.removeChild(placeholder);
-                            }}
-                            fixed = false;
-                        }};
-
-                        const fix = () => {{
-                            if (fixed) return;
-                            const rect = container.getBoundingClientRect();
-                            placeholder.style.height = `${{rect.height}}px`;
-                            placeholder.style.width = `${{rect.width}}px`;
-                            placeholder.style.marginBottom = getComputedStyle(container).marginBottom;
-                            parent.insertBefore(placeholder, container);
-                            fixed = true;
-                            updateFixedMetrics();
-                            container.classList.add('pdf-fixed-active');
-                        }};
-
-                        const evaluatePosition = () => {{
-                            const targetRect = fixed ? placeholder.getBoundingClientRect() : container.getBoundingClientRect();
-                            if (!fixed && targetRect.top <= stickyTop) {{
-                                fix();
-                                updateFixedMetrics();
-                            }} else if (fixed && targetRect.top > stickyTop) {{
-                                release();
-                            }} else if (fixed) {{
-                                updateFixedMetrics();
-                            }}
-                        }};
-
-                        const debouncedEvaluate = () => window.requestAnimationFrame(evaluatePosition);
-
-                        const addScrollListener = (el) => {{
-                            if (!el) return;
-                            const target = el === window ? window : el;
-                            target.addEventListener('scroll', debouncedEvaluate, {{ passive: true }});
-                        }};
-
-                        addScrollListener(window);
-                        if (scrollContainer && scrollContainer !== window) {{
-                            addScrollListener(scrollContainer);
-                        }}
-
-                        window.addEventListener('resize', () => {{
-                            if (fixed) {{
-                                const parentRect = placeholder.parentElement ? placeholder.parentElement.getBoundingClientRect() : null;
-                                if (parentRect) {{
-                                    placeholder.style.width = `${{parentRect.width}}px`;
-                                }}
-                            }}
-                            debouncedEvaluate();
-                        }});
-
-                        debouncedEvaluate();
-                    }})();
-                    </script>
                     """
                 ).strip(),
                 unsafe_allow_html=True,
