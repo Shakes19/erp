@@ -8577,15 +8577,33 @@ elif menu_option == "📄 PDFs":
         st.session_state.pop("pdf_process_selector", None)
         st.session_state.pdf_search_term = ""
 
-    col_tipo, col_form = st.columns([2, 5], vertical_alignment="top")
+    col_tipo, col_form = st.columns([2, 5], vertical_alignment="center")
 
     with col_tipo:
+        st.markdown(
+            """
+            <style>
+                .pdf-search-type-label {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    height: 100%;
+                    font-weight: 600;
+                    text-align: center;
+                }
+            </style>
+            <div class="pdf-search-type-label">Tipo de pesquisa</div>
+            """,
+            unsafe_allow_html=True,
+        )
+
         tipo_pesquisa_label = st.radio(
             "Tipo de pesquisa",
             ("Processo", "Referência cliente"),
             key="pdf_search_tipo",
             horizontal=True,
             on_change=_reset_pdf_search_state,
+            label_visibility="collapsed",
         )
 
     placeholder_numero = f"QT{datetime.now().year % 100:02d}-0001"
