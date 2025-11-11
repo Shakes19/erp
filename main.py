@@ -9866,8 +9866,6 @@ elif menu_option == "⚙️ Configurações":
             )
         
         with tab_backup:
-            st.subheader("Backup e Restauro")
-
             create_col, restore_col = st.columns(2)
 
             with create_col:
