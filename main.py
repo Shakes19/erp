@@ -625,6 +625,9 @@ def criar_artigo_catalogo(
     artigo_num: str | None = None,
     especificacoes: str | None = None,
     marca_nome: str | None = None,
+    peso: str | float | int | None = None,
+    hs_code: str | None = None,
+    pais_origem: str | None = None,
 ) -> tuple[bool, str | None]:
     """Inserir um novo artigo na tabela ``artigo``."""
 
@@ -638,6 +641,27 @@ def criar_artigo_catalogo(
 
     artigo_num_db = (artigo_num or "").strip() or None
     especificacoes_db = (especificacoes or "").strip() or None
+    hs_code_db = (hs_code or "").strip() or None
+    pais_origem_db = (pais_origem or "").strip() or None
+
+    def _parse_optional_float(valor: str | float | int | None, campo: str) -> float | None:
+        if valor is None:
+            return None
+        if isinstance(valor, (int, float)):
+            return float(valor)
+        texto = str(valor).strip()
+        if not texto:
+            return None
+        texto_normalizado = texto.replace(",", ".")
+        try:
+            return float(texto_normalizado)
+        except ValueError:
+            raise ValueError(f"O campo '{campo}' deve ser numérico.")
+
+    try:
+        peso_db = _parse_optional_float(peso, "Peso")
+    except ValueError as exc:
+        return False, str(exc)
 
     conn = obter_conexao()
     cursor = conn.cursor()
@@ -658,11 +682,23 @@ def criar_artigo_catalogo(
                 descricao,
                 unidade_id,
                 especificacoes,
-                marca_id
+                marca_id,
+                peso,
+                hs_code,
+                pais_origem
             )
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (artigo_num_db, descricao_limpa, unidade_id, especificacoes_db, marca_id),
+            (
+                artigo_num_db,
+                descricao_limpa,
+                unidade_id,
+                especificacoes_db,
+                marca_id,
+                peso_db,
+                hs_code_db,
+                pais_origem_db,
+            ),
         )
         conn.commit()
         listar_artigos_catalogo.clear()
@@ -683,6 +719,9 @@ def criar_artigo_catalogo(
                 artigo_num=artigo_num or "",
                 especificacoes=especificacoes or "",
                 marca_nome=marca_nome,
+                peso=peso,
+                hs_code=hs_code,
+                pais_origem=pais_origem,
             )
         raise
     finally:
@@ -8944,10 +8983,18 @@ elif menu_option == "📦 Artigos":
                 with col_artigo:
                     artigo_num_input = st.text_input("Nº Artigo (opcional)")
                 with col_unidade:
+                    default_unidade_index = next(
+                        (
+                            idx
+                            for idx, nome in enumerate(unidades_opcoes)
+                            if nome and nome.strip().casefold() == "peças"
+                        ),
+                        0,
+                    )
                     unidade_selecionada = st.selectbox(
                         "Unidade *",
                         unidades_opcoes,
-                        index=0,
+                        index=default_unidade_index,
                         help="Unidade em que o artigo será registado.",
                     )
 
@@ -8956,6 +9003,22 @@ elif menu_option == "📦 Artigos":
                     "Especificações (opcional)",
                     help="Informações adicionais ou notas técnicas do artigo.",
                 )
+                col_peso, col_hs, col_pais = st.columns(3)
+                with col_peso:
+                    peso_input = st.text_input(
+                        "Peso (kg) (opcional)",
+                        help="Indique o peso unitário em quilogramas, se aplicável.",
+                    )
+                with col_hs:
+                    hs_code_input = st.text_input(
+                        "HS Code (opcional)",
+                        help="Código harmonizado do artigo.",
+                    )
+                with col_pais:
+                    pais_origem_input = st.text_input(
+                        "País de origem (opcional)",
+                        help="Informe o país de origem do artigo.",
+                    )
                 marca_selecionada = st.selectbox(
                     "Marca (opcional)",
                     marca_opcoes,
@@ -8963,7 +9026,11 @@ elif menu_option == "📦 Artigos":
                     help="Selecione uma marca já registada ou escolha 'Sem marca'.",
                 )
 
-                submitted = st.form_submit_button("➕ Adicionar")
+                _, col_submit = st.columns([1, 0.3])
+                with col_submit:
+                    submitted = st.form_submit_button(
+                        "➕ Adicionar", use_container_width=True
+                    )
 
         if submitted:
             marca_nome = None if marca_selecionada == "Sem marca" else marca_selecionada
@@ -8973,6 +9040,9 @@ elif menu_option == "📦 Artigos":
                 artigo_num=artigo_num_input,
                 especificacoes=especificacoes_input,
                 marca_nome=marca_nome,
+                peso=peso_input,
+                hs_code=hs_code_input,
+                pais_origem=pais_origem_input,
             )
             if sucesso:
                 st.success("Artigo criado com sucesso.")
