@@ -9080,35 +9080,42 @@ elif menu_option == "⚙️ Configurações":
                             help="Assinale quando este fornecedor exige estas informações em cada pedido.",
                         )
 
-                        if st.form_submit_button("➕ Adicionar"):
-                            nome_limpo = (nome or "").strip()
-                            if nome_limpo:
-                                fornecedores_existentes = listar_fornecedores()
-                                nome_normalizado = nome_limpo.casefold()
-                                existe_fornecedor = any(
-                                    (fornecedor[1] or "").strip().casefold()
-                                    == nome_normalizado
-                                    for fornecedor in fornecedores_existentes
-                                )
+                        btn_add_forn_cols = st.columns([1, 0.4])
+                        with btn_add_forn_cols[1]:
+                            adicionar_fornecedor = st.form_submit_button(
+                                "➕ Adicionar",
+                                use_container_width=True,
+                            )
 
-                                if existe_fornecedor:
-                                    st.warning("Este fornecedor já está registado.")
-                                else:
-                                    forn_id = inserir_fornecedor(
-                                        nome_limpo,
-                                        email,
-                                        telefone,
-                                        morada,
-                                        nif,
-                                        requer_info,
-                                    )
-                                    if forn_id:
-                                        st.success(f"Fornecedor {nome_limpo} adicionado!")
-                                        st.rerun()
-                                    else:
-                                        st.error("Não foi possível adicionar o fornecedor.")
+                    if adicionar_fornecedor:
+                        nome_limpo = (nome or "").strip()
+                        if nome_limpo:
+                            fornecedores_existentes = listar_fornecedores()
+                            nome_normalizado = nome_limpo.casefold()
+                            existe_fornecedor = any(
+                                (fornecedor[1] or "").strip().casefold()
+                                == nome_normalizado
+                                for fornecedor in fornecedores_existentes
+                            )
+
+                            if existe_fornecedor:
+                                st.warning("Este fornecedor já está registado.")
                             else:
-                                st.error("Nome é obrigatório")
+                                forn_id = inserir_fornecedor(
+                                    nome_limpo,
+                                    email,
+                                    telefone,
+                                    morada,
+                                    nif,
+                                    requer_info,
+                                )
+                                if forn_id:
+                                    st.success(f"Fornecedor {nome_limpo} adicionado!")
+                                    st.rerun()
+                                else:
+                                    st.error("Não foi possível adicionar o fornecedor.")
+                        else:
+                            st.error("Nome é obrigatório")
 
                 with col2:
                     st.markdown("### Fornecedores Registados")
@@ -9167,14 +9174,10 @@ elif menu_option == "⚙️ Configurações":
                                 st.write("**Marcas:** Nenhuma")
 
             with sub_tab_marcas:
-                st.subheader("Configuração de Marcas e Margens")
-
                 fornecedores = listar_fornecedores()
 
                 if fornecedores:
                     col1, col2 = st.columns(2)
-
-                    fornecedor_sel = None
 
                     with col1:
                         st.markdown("### Adicionar Marca")
@@ -9205,29 +9208,45 @@ elif menu_option == "⚙️ Configurações":
                                     "Este fornecedor exige País e Cliente Final nas cotações."
                                 )
 
-                            if st.form_submit_button("➕ Adicionar Marca"):
-                                if not fornecedor_sel:
-                                    st.error("Selecione um fornecedor.")
-                                elif nova_marca:
-                                    if adicionar_marca_fornecedor(
-                                        fornecedor_sel[0], nova_marca
-                                    ):
-                                        configurar_margem_marca(
-                                            fornecedor_sel[0], nova_marca, margem_marca
-                                        )
-                                        st.success(f"Marca {nova_marca} adicionada!")
-                                        st.session_state["forn_marcas"] = None
-                                        st.rerun()
-                                    else:
-                                        st.error("Marca já está associada a um fornecedor")
+                            btn_add_marca_cols = st.columns([1, 0.4])
+                            with btn_add_marca_cols[1]:
+                                adicionar_marca = st.form_submit_button(
+                                    "➕ Adicionar Marca",
+                                    use_container_width=True,
+                                )
+
+                        if adicionar_marca:
+                            if not fornecedor_sel:
+                                st.error("Selecione um fornecedor.")
+                            elif nova_marca:
+                                if adicionar_marca_fornecedor(
+                                    fornecedor_sel[0], nova_marca
+                                ):
+                                    configurar_margem_marca(
+                                        fornecedor_sel[0], nova_marca, margem_marca
+                                    )
+                                    st.success(f"Marca {nova_marca} adicionada!")
+                                    st.session_state["forn_marcas"] = None
+                                    st.rerun()
                                 else:
-                                    st.error("Nome da marca é obrigatório")
+                                    st.error("Marca já está associada a um fornecedor")
+                            else:
+                                st.error("Nome da marca é obrigatório")
 
                     with col2:
                         st.markdown("### Marcas Existentes")
 
-                        if fornecedor_sel:
-                            marcas = obter_marcas_fornecedor(fornecedor_sel[0])
+                        fornecedor_visualizacao = st.selectbox(
+                            "Selecionar Fornecedor",
+                            options=fornecedores,
+                            index=None,
+                            format_func=lambda x: x[1],
+                            key="forn_marcas_visualizacao",
+                            placeholder="Selecione um fornecedor",
+                        )
+
+                        if fornecedor_visualizacao:
+                            marcas = obter_marcas_fornecedor(fornecedor_visualizacao[0])
 
                             if marcas:
                                 for info in marcas:
@@ -9235,7 +9254,7 @@ elif menu_option == "⚙️ Configurações":
                                     if not nome_marca:
                                         continue
                                     margem = obter_margem_para_marca(
-                                        fornecedor_sel[0], nome_marca
+                                        fornecedor_visualizacao[0], nome_marca
                                     )
                                     titulo_expander = f"{nome_marca} - {margem:.1f}%"
 
@@ -9246,7 +9265,7 @@ elif menu_option == "⚙️ Configurações":
                                             max_value=100.0,
                                             value=margem,
                                             step=0.5,
-                                            key=f"margem_{fornecedor_sel[0]}_{nome_marca}"
+                                            key=f"margem_{fornecedor_visualizacao[0]}_{nome_marca}"
                                         )
 
                                         col1, col2 = st.columns(2)
@@ -9258,14 +9277,14 @@ elif menu_option == "⚙️ Configurações":
                                             )
                                             if st.button(
                                                 "💾 Atualizar",
-                                                key=f"upd_{fornecedor_sel[0]}_{nome_marca}",
+                                                key=f"upd_{fornecedor_visualizacao[0]}_{nome_marca}",
                                             ):
                                                 margem_alterada = abs(nova_margem - margem) > 1e-6
                                                 if not margem_alterada:
                                                     st.info("Nenhuma alteração para guardar.")
                                                 else:
                                                     if configurar_margem_marca(
-                                                        fornecedor_sel[0],
+                                                        fornecedor_visualizacao[0],
                                                         nome_marca,
                                                         nova_margem,
                                                     ):
@@ -9282,10 +9301,10 @@ elif menu_option == "⚙️ Configurações":
                                             )
                                             if st.button(
                                                 "🗑️ Remover",
-                                                key=f"del_{fornecedor_sel[0]}_{nome_marca}"
+                                                key=f"del_{fornecedor_visualizacao[0]}_{nome_marca}"
                                             ):
                                                 if remover_marca_fornecedor(
-                                                    fornecedor_sel[0], nome_marca
+                                                    fornecedor_visualizacao[0], nome_marca
                                                 ):
                                                     st.success("Marca removida!")
                                                     st.rerun()
@@ -9312,15 +9331,22 @@ elif menu_option == "⚙️ Configurações":
                         nome_emp = st.text_input("Nome Empresa *")
                         morada_emp = st.text_input("Morada")
                         cond_pag_emp = st.text_input("Condições Pagamento")
-                        if st.form_submit_button("➕ Adicionar Empresa"):
-                            if nome_emp:
-                                inserir_empresa(nome_emp, morada_emp, cond_pag_emp)
-                                st.success(f"Empresa {nome_emp} adicionada!")
-                            else:
-                                st.error("Nome é obrigatório")
+                        btn_add_empresa_cols = st.columns([1, 0.4])
+                        with btn_add_empresa_cols[1]:
+                            adicionar_empresa = st.form_submit_button(
+                                "➕ Adicionar Empresa",
+                                use_container_width=True,
+                            )
+
+                    if adicionar_empresa:
+                        if nome_emp:
+                            inserir_empresa(nome_emp, morada_emp, cond_pag_emp)
+                            st.success(f"Empresa {nome_emp} adicionada!")
+                        else:
+                            st.error("Nome é obrigatório")
 
                 with emp_col2:
-                    st.subheader("Empresas Registadas")
+                    st.markdown("### Empresas Registadas")
                     empresas = listar_empresas()
                     for emp in empresas:
                         with st.expander(emp[1]):
@@ -9349,7 +9375,6 @@ elif menu_option == "⚙️ Configurações":
                 if not empresas:
                     st.info("Nenhuma empresa registada. Adicione uma empresa primeiro.")
                 else:
-                    empresa_sel = None
                     col1, col2 = st.columns(2)
 
                     with col1:
@@ -9357,7 +9382,7 @@ elif menu_option == "⚙️ Configurações":
                         with st.form("novo_cliente_form"):
                             nome = st.text_input("Nome *")
                             email = st.text_input("Email")
-                            empresa_sel = st.selectbox(
+                            empresa_sel_form = st.selectbox(
                                 "Selecionar Empresa",
                                 empresas,
                                 index=None,
@@ -9365,24 +9390,41 @@ elif menu_option == "⚙️ Configurações":
                                 key="empresa_comercial_sel",
                                 placeholder="Selecione uma empresa",
                             )
-                            if st.form_submit_button("➕ Adicionar"):
-                                if not empresa_sel:
-                                    st.error("Selecione uma empresa.")
-                                elif nome:
-                                    inserir_cliente(nome, email, empresa_sel[0])
-                                    st.success(f"Comercial {nome} adicionado!")
-                                    # Reset the selectbox selection by removing the key
-                                    st.session_state.pop("empresa_comercial_sel", None)
-                                    st.rerun()
-                                else:
-                                    st.error("Nome é obrigatório")
+                            btn_add_comercial_cols = st.columns([1, 0.4])
+                            with btn_add_comercial_cols[1]:
+                                adicionar_comercial = st.form_submit_button(
+                                    "➕ Adicionar",
+                                    use_container_width=True,
+                                )
+
+                        if adicionar_comercial:
+                            if not empresa_sel_form:
+                                st.error("Selecione uma empresa.")
+                            elif nome:
+                                inserir_cliente(nome, email, empresa_sel_form[0])
+                                st.success(f"Comercial {nome} adicionado!")
+                                st.session_state.pop("empresa_comercial_sel", None)
+                                st.rerun()
+                            else:
+                                st.error("Nome é obrigatório")
 
                     with col2:
                         st.markdown("### Comerciais Registados")
 
-                        if empresa_sel:
+                        empresa_visualizacao = st.selectbox(
+                            "Filtrar por Empresa",
+                            empresas,
+                            index=None,
+                            format_func=lambda x: x[1],
+                            key="empresa_comercial_filtro",
+                            placeholder="Selecione uma empresa",
+                        )
+
+                        if empresa_visualizacao:
                             clientes = [
-                                cli for cli in listar_clientes() if cli[3] == empresa_sel[0]
+                                cli
+                                for cli in listar_clientes()
+                                if cli[3] == empresa_visualizacao[0]
                             ]
 
                             for cli in clientes:
@@ -9438,17 +9480,24 @@ elif menu_option == "⚙️ Configurações":
                         role = st.selectbox("Role", ["admin", "gestor", "user"])
                         password = st.text_input("Palavra-passe *", type="password")
 
-                        if st.form_submit_button("➕ Adicionar"):
-                            if username and password:
-                                if inserir_utilizador(
-                                    username, password, nome, email_user, role
-                                ):
-                                    st.success(f"Utilizador {username} adicionado!")
-                                    st.rerun()
-                                else:
-                                    st.error("Erro ao adicionar utilizador")
+                        btn_add_user_cols = st.columns([1, 0.4])
+                        with btn_add_user_cols[1]:
+                            adicionar_utilizador = st.form_submit_button(
+                                "➕ Adicionar",
+                                use_container_width=True,
+                            )
+
+                    if adicionar_utilizador:
+                        if username and password:
+                            if inserir_utilizador(
+                                username, password, nome, email_user, role
+                            ):
+                                st.success(f"Utilizador {username} adicionado!")
+                                st.rerun()
                             else:
-                                st.error("Username e palavra-passe são obrigatórios")
+                                st.error("Erro ao adicionar utilizador")
+                        else:
+                            st.error("Username e palavra-passe são obrigatórios")
     
                 with col2:
                     st.markdown("### Utilizadores Registados")
@@ -9501,7 +9550,12 @@ elif menu_option == "⚙️ Configurações":
                 st.markdown("### Adicionar Unidade")
                 with st.form("nova_unidade_form"):
                     nome_unidade = st.text_input("Nome da Unidade *")
-                    adicionar_unidade = st.form_submit_button("➕ Adicionar")
+                    btn_add_unidade_cols = st.columns([1, 0.4])
+                    with btn_add_unidade_cols[1]:
+                        adicionar_unidade = st.form_submit_button(
+                            "➕ Adicionar",
+                            use_container_width=True,
+                        )
 
                 if adicionar_unidade:
                     nome_unidade_limpo = (nome_unidade or "").strip()
