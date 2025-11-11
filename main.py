@@ -9042,6 +9042,7 @@ elif menu_option == "⚙️ Configurações":
                 .configuracoes-container div[data-testid="stButton"] {
                     display: flex;
                     width: 100%;
+                    justify-content: flex-end;
                 }
 
                 .configuracoes-container div[data-testid="stFormSubmitButton"] button[aria-label*="Guardar"],
@@ -9807,7 +9808,7 @@ elif menu_option == "⚙️ Configurações":
                 if use_ssl_val and use_tls_val:
                     st.warning("SSL e STARTTLS não devem estar ativos em simultâneo. Será utilizada a opção SSL.")
 
-                if st.form_submit_button("💾 Guardar Configuração"):
+                if st.form_submit_button("💾 Guardar"):
                     conn = obter_conexao()
                     c = conn.cursor()
 
@@ -9906,7 +9907,7 @@ elif menu_option == "⚙️ Configurações":
                 height=400,
                 key=f"layout_{tipo_layout}"
             )
-            if st.button("💾 Guardar Layout"):
+            if st.button("💾 Guardar"):
                 try:
                     nova_config = json.loads(config_texto)
                     save_pdf_config(tipo_layout, nova_config)
@@ -9968,7 +9969,7 @@ elif menu_option == "⚙️ Configurações":
                     "Variáveis disponíveis: "
                     + (variaveis_disponiveis or "—")
                 )
-                submit_email_layout = st.form_submit_button("💾 Guardar Layout de Email")
+                submit_email_layout = st.form_submit_button("💾 Guardar")
 
             if submit_email_layout:
                 save_email_layout(
