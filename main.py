@@ -9111,13 +9111,7 @@ elif menu_option == "📦 Artigos":
         elif artigos_catalogo:
             for artigo in artigos_catalogo:
                 with st.container(border=True):
-                    artigo_id_val = artigo.get("id") or uuid4().hex
-                    artigo_id = str(artigo_id_val)
-                    detalhes_state_key = f"artigo_detalhes_visiveis_{artigo_id}"
-                    if detalhes_state_key not in st.session_state:
-                        st.session_state[detalhes_state_key] = False
-
-                    col_info, col_dropdown, col_acao = st.columns([6, 1, 1])
+                    col_info, col_acao = st.columns([6, 1])
                     with col_info:
                         descricao_artigo = escape(str(artigo.get("descricao") or "Sem descrição"))
                         numero_artigo = escape(str(artigo.get("artigo_num") or "—"))
@@ -9130,40 +9124,7 @@ elif menu_option == "📦 Artigos":
                             """.format(numero=numero_artigo, descricao=descricao_artigo),
                             unsafe_allow_html=True,
                         )
-
-                    with col_dropdown:
-                        st.markdown(
-                            "<div style='height: 100%; display: flex; align-items: center; justify-content: center;'>",
-                            unsafe_allow_html=True,
-                        )
-                        if st.button(
-                            "▼",
-                            key=f"toggle_detalhes_{artigo_id}",
-                            use_container_width=True,
-                            help="Mostrar ou ocultar detalhes do artigo.",
-                        ):
-                            st.session_state[detalhes_state_key] = not st.session_state[
-                                detalhes_state_key
-                            ]
-                        st.markdown("</div>", unsafe_allow_html=True)
-
-                    with col_acao:
-                        st.markdown(
-                            "<div style='height: 100%; display: flex; align-items: center; justify-content: center;'>",
-                            unsafe_allow_html=True,
-                        )
-                        if st.button(
-                            "✏️",
-                            key=f"editar_artigo_{artigo_id}",
-                            use_container_width=True,
-                        ):
-                            st.session_state["artigo_em_edicao"] = artigo
-                            st.session_state["artigo_em_edicao_key"] = str(artigo_id)
-                            st.session_state["mostrar_modal_editar_artigo"] = True
-                        st.markdown("</div>", unsafe_allow_html=True)
-
-                    if st.session_state.get(detalhes_state_key):
-                        st.caption(f"ID #{artigo.get('id', artigo_id)}")
+                        st.caption(f"ID #{artigo['id']}")
                         col_a, col_b, col_c = st.columns(3)
                         with col_a:
                             st.markdown(f"**Unidade:** {artigo['unidade'] or '—'}")
@@ -9188,13 +9149,28 @@ elif menu_option == "📦 Artigos":
                             else:
                                 peso_txt = "—"
                             st.markdown(f"**Peso:** {peso_txt}")
-
+                            
                         with col_c:
                             st.markdown(f"**Validade Preço:** {validade_txt}")
                             st.markdown(f"**País Origem:** {artigo['pais_origem'] or '—'}")
                         if artigo.get("especificacoes"):
                             st.markdown("**Especificações:**")
                             st.write(artigo["especificacoes"])
+                    with col_acao:
+                        st.markdown(
+                            "<div style='height: 100%; display: flex; align-items: center; justify-content: center;'>",
+                            unsafe_allow_html=True,
+                        )
+                        artigo_id = artigo.get("id") or uuid4().hex
+                        if st.button(
+                            "✏️",
+                            key=f"editar_artigo_{artigo_id}",
+                            use_container_width=True,
+                        ):
+                            st.session_state["artigo_em_edicao"] = artigo
+                            st.session_state["artigo_em_edicao_key"] = str(artigo_id)
+                            st.session_state["mostrar_modal_editar_artigo"] = True
+                        st.markdown("</div>", unsafe_allow_html=True)
         elif filtro_normalizado:
             st.info("Nenhum artigo encontrado para os critérios indicados.")
 
