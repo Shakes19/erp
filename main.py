@@ -6742,37 +6742,55 @@ elif menu_option == "📝 Nova Cotação":
                     [3, 1.5, 1, 0.5], vertical_alignment="bottom"
                 )
 
+                numero_key = f"nova_art_num_{i}"
+                descricao_key = f"nova_desc_{i}"
+                unidade_key = f"nova_unidade_{i}"
+                marca_key = f"nova_marca_{i}"
+                last_lookup_key = f"{numero_key}__last_lookup"
+
+                st.session_state.setdefault(numero_key, artigo.get("artigo_num", ""))
+                st.session_state.setdefault(descricao_key, artigo.get("descricao", ""))
+                st.session_state.setdefault(unidade_key, artigo.get("unidade", "Peças"))
+                st.session_state.setdefault(marca_key, artigo.get("marca", ""))
+                st.session_state.setdefault(f"{unidade_key}__disabled", False)
+                st.session_state.setdefault(f"{marca_key}__disabled", False)
+
+                numero_atual = st.session_state.get(numero_key, "")
+                if st.session_state.get(last_lookup_key) != numero_atual:
+                    atualizar_campos_artigo_catalogo(
+                        numero_key=numero_key,
+                        descricao_key=descricao_key,
+                        unidade_key=unidade_key,
+                        marca_key=marca_key,
+                    )
+                    st.session_state[last_lookup_key] = numero_atual
+
                 with col_desc:
                     artigo['descricao'] = st.text_area(
                         "Descrição *",
-                        value=artigo['descricao'],
-                        key=f"nova_desc_{i}",
+                        value=st.session_state.get(descricao_key, artigo['descricao']),
+                        key=descricao_key,
                         height=120,
                     )
 
                 with col_id:
                     artigo['artigo_num'] = st.text_input(
                         "Nº Artigo",
-                        value=artigo['artigo_num'],
-                        key=f"nova_art_num_{i}",
-                        on_change=atualizar_campos_artigo_catalogo,
-                        kwargs={
-                            "numero_key": f"nova_art_num_{i}",
-                            "descricao_key": f"nova_desc_{i}",
-                            "unidade_key": f"nova_unidade_{i}",
-                            "marca_key": f"nova_marca_{i}",
-                        },
+                        value=st.session_state.get(numero_key, artigo['artigo_num']),
+                        key=numero_key,
                     )
+                    st.session_state[last_lookup_key] = st.session_state.get(numero_key, "")
                     marca_opcoes = ["Selecione"] + [m for m in marcas if m]
-                    if artigo.get('marca') and artigo['marca'] not in marca_opcoes:
-                        marca_opcoes.append(artigo['marca'])
+                    marca_valor = st.session_state.get(marca_key, artigo.get('marca', ""))
+                    if marca_valor and marca_valor not in marca_opcoes:
+                        marca_opcoes.append(marca_valor)
                     artigo['marca'] = st.selectbox(
                         "Marca *",
                         marca_opcoes,
-                        index=marca_opcoes.index(artigo['marca']) if artigo.get('marca') in marca_opcoes else 0,
-                        key=f"nova_marca_{i}",
+                        index=marca_opcoes.index(marca_valor) if marca_valor in marca_opcoes else 0,
+                        key=marca_key,
                         disabled=st.session_state.get(
-                            f"nova_marca_{i}__disabled", False
+                            f"{marca_key}__disabled", False
                         ),
                     )
 
@@ -6788,14 +6806,19 @@ elif menu_option == "📝 Nova Cotação":
                     unidade_atual = artigo.get('unidade') or (opcoes_unidade[0] if opcoes_unidade else "Peças")
                     if unidade_atual not in opcoes_unidade:
                         opcoes_unidade = [*opcoes_unidade, unidade_atual]
-                    indice_unidade = opcoes_unidade.index(unidade_atual) if unidade_atual in opcoes_unidade else 0
+                    unidade_valor = st.session_state.get(unidade_key, unidade_atual)
+                    indice_unidade = (
+                        opcoes_unidade.index(unidade_valor)
+                        if unidade_valor in opcoes_unidade
+                        else 0
+                    )
                     artigo['unidade'] = st.selectbox(
                         "Unidade",
                         opcoes_unidade,
                         index=indice_unidade,
-                        key=f"nova_unidade_{i}",
+                        key=unidade_key,
                         disabled=st.session_state.get(
-                            f"nova_unidade_{i}__disabled", False
+                            f"{unidade_key}__disabled", False
                         ),
                     )
 
