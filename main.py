@@ -9118,8 +9118,28 @@ elif menu_option == "📦 Artigos":
                         margin-top: 0.75rem;
                         padding-top: 0.75rem;
                         border-top: 1px solid rgba(49, 51, 63, 0.2);
+                    }
+                    .artigo-detalhes--collapsed {
                         max-height: 240px;
                         overflow: hidden;
+                        position: relative;
+                    }
+                    .artigo-detalhes--collapsed::after {
+                        content: "";
+                        position: absolute;
+                        bottom: 0;
+                        left: 0;
+                        right: 0;
+                        height: 2.5rem;
+                        pointer-events: none;
+                        background: linear-gradient(
+                            rgba(255, 255, 255, 0),
+                            var(--background-color, #ffffff)
+                        );
+                    }
+                    .artigo-detalhes--expanded {
+                        max-height: none;
+                        overflow: visible;
                     }
                     .artigo-detalhes__id {
                         font-size: 0.8rem;
@@ -9168,6 +9188,25 @@ elif menu_option == "📦 Artigos":
                             unsafe_allow_html=True,
                         )
 
+                        toggle_state_key = f"artigo_expandido_{artigo_key}"
+                        if toggle_state_key not in st.session_state:
+                            st.session_state[toggle_state_key] = False
+
+                        artigo_expandido = bool(st.session_state.get(toggle_state_key))
+                        toggle_label = (
+                            "Esconder detalhes"
+                            if artigo_expandido
+                            else "Mostrar detalhes"
+                        )
+
+                        if st.button(
+                            toggle_label,
+                            key=f"toggle_artigo_{artigo_key}",
+                            type="secondary",
+                        ):
+                            st.session_state[toggle_state_key] = not artigo_expandido
+                            artigo_expandido = not artigo_expandido
+
                     with col_editar:
                         if st.button(
                             "✏️",
@@ -9209,7 +9248,7 @@ elif menu_option == "📦 Artigos":
                         )
 
                     detalhes_html = """
-                        <div class="artigo-detalhes">
+                        <div class="{classe_detalhes}">
                             <div class="artigo-detalhes__id">ID #{id_display}</div>
                             <div class="artigo-detalhes__grid">
                                 <div>
@@ -9228,6 +9267,10 @@ elif menu_option == "📦 Artigos":
                             {especificacoes}
                         </div>
                     """.format(
+                        classe_detalhes=
+                            "artigo-detalhes artigo-detalhes--expanded"
+                            if artigo_expandido
+                            else "artigo-detalhes artigo-detalhes--collapsed",
                         id_display=artigo_id_display if artigo_id_display is not None else "—",
                         unidade=escape(str(artigo.get("unidade") or "—")),
                         hs_code=escape(str(artigo.get("hs_code") or "—")),
