@@ -9109,9 +9109,16 @@ elif menu_option == "📦 Artigos":
         if not filtro_normalizado:
             st.info("Introduza um termo de pesquisa para listar artigos.")
         elif artigos_catalogo:
-            for artigo in artigos_catalogo:
+            for index, artigo in enumerate(artigos_catalogo):
+                artigo_key = str(artigo.get("id") or index)
+                expandido_key = f"artigo_expandido_{artigo_key}"
+                if expandido_key not in st.session_state:
+                    st.session_state[expandido_key] = False
+                expandido = st.session_state[expandido_key]
+
                 with st.container(border=True):
-                    col_info, col_acao = st.columns([6, 1])
+                    col_info, col_toggle, col_editar = st.columns([6, 1.5, 1])
+
                     with col_info:
                         descricao_artigo = escape(str(artigo.get("descricao") or "Sem descrição"))
                         numero_artigo = escape(str(artigo.get("artigo_num") or "—"))
@@ -9124,53 +9131,66 @@ elif menu_option == "📦 Artigos":
                             """.format(numero=numero_artigo, descricao=descricao_artigo),
                             unsafe_allow_html=True,
                         )
-                        st.caption(f"ID #{artigo['id']}")
-                        col_a, col_b, col_c = st.columns(3)
-                        with col_a:
-                            st.markdown(f"**Unidade:** {artigo['unidade'] or '—'}")
-                            st.markdown(f"**HS Code:** {artigo['hs_code'] or '—'}")
-                        with col_b:
-                            preco_valor = artigo.get("preco_historico")
-                            if preco_valor not in (None, ""):
-                                try:
-                                    preco_txt = f"€ {float(preco_valor):.2f}"
-                                except (TypeError, ValueError):
-                                    preco_txt = str(preco_valor)
-                            else:
-                                preco_txt = "—"
-                            st.markdown(f"**Preço Histórico:** {preco_txt}")
-                            validade_txt = _format_iso_date(artigo.get("validade_historico")) or "—"
-                            peso_valor = artigo.get("peso")
-                            if peso_valor not in (None, ""):
-                                try:
-                                    peso_txt = f"{float(peso_valor):.3f} kg"
-                                except (TypeError, ValueError):
-                                    peso_txt = f"{peso_valor} kg"
-                            else:
-                                peso_txt = "—"
-                            st.markdown(f"**Peso:** {peso_txt}")
-                            
-                        with col_c:
-                            st.markdown(f"**Validade Preço:** {validade_txt}")
-                            st.markdown(f"**País Origem:** {artigo['pais_origem'] or '—'}")
-                        if artigo.get("especificacoes"):
-                            st.markdown("**Especificações:**")
-                            st.write(artigo["especificacoes"])
-                    with col_acao:
-                        st.markdown(
-                            "<div style='height: 100%; display: flex; align-items: center; justify-content: center;'>",
-                            unsafe_allow_html=True,
-                        )
-                        artigo_id = artigo.get("id") or uuid4().hex
+                        detalhes_placeholder = st.container()
+
+                    with col_toggle:
+                        rotulo_toggle = "Ocultar detalhes" if expandido else "Mostrar detalhes"
+                        if st.button(
+                            rotulo_toggle,
+                            key=f"alternar_detalhes_{artigo_key}",
+                            use_container_width=True,
+                        ):
+                            expandido = not expandido
+                            st.session_state[expandido_key] = expandido
+
+                    with col_editar:
                         if st.button(
                             "✏️",
-                            key=f"editar_artigo_{artigo_id}",
+                            key=f"editar_artigo_{artigo_key}",
                             use_container_width=True,
                         ):
                             st.session_state["artigo_em_edicao"] = artigo
-                            st.session_state["artigo_em_edicao_key"] = str(artigo_id)
+                            st.session_state["artigo_em_edicao_key"] = artigo_key
                             st.session_state["mostrar_modal_editar_artigo"] = True
-                        st.markdown("</div>", unsafe_allow_html=True)
+
+                    with detalhes_placeholder:
+                        if expandido:
+                            artigo_id_display = artigo.get("id")
+                            st.caption(f"ID #{artigo_id_display if artigo_id_display is not None else '—'}")
+                            col_a, col_b, col_c = st.columns(3)
+                            with col_a:
+                                st.markdown(f"**Unidade:** {artigo['unidade'] or '—'}")
+                                st.markdown(f"**HS Code:** {artigo['hs_code'] or '—'}")
+
+                            with col_b:
+                                preco_valor = artigo.get("preco_historico")
+                                if preco_valor not in (None, ""):
+                                    try:
+                                        preco_txt = f"€ {float(preco_valor):.2f}"
+                                    except (TypeError, ValueError):
+                                        preco_txt = str(preco_valor)
+                                else:
+                                    preco_txt = "—"
+                                st.markdown(f"**Preço Histórico:** {preco_txt}")
+
+                                peso_valor = artigo.get("peso")
+                                if peso_valor not in (None, ""):
+                                    try:
+                                        peso_txt = f"{float(peso_valor):.3f} kg"
+                                    except (TypeError, ValueError):
+                                        peso_txt = f"{peso_valor} kg"
+                                else:
+                                    peso_txt = "—"
+                                st.markdown(f"**Peso:** {peso_txt}")
+
+                            with col_c:
+                                validade_txt = _format_iso_date(artigo.get("validade_historico")) or "—"
+                                st.markdown(f"**Validade Preço:** {validade_txt}")
+                                st.markdown(f"**País Origem:** {artigo['pais_origem'] or '—'}")
+
+                            if artigo.get("especificacoes"):
+                                st.markdown("**Especificações:**")
+                                st.write(artigo["especificacoes"])
         elif filtro_normalizado:
             st.info("Nenhum artigo encontrado para os critérios indicados.")
 
