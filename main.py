@@ -9376,6 +9376,10 @@ elif menu_option == "⚙️ Configurações":
 
                     with col1:
                         st.markdown("### Adicionar Marca")
+
+                        if st.session_state.pop("reset_forn_marcas", False):
+                            st.session_state["forn_marcas"] = None
+
                         with st.form("add_marca_form"):
                             nova_marca = st.text_input("Nome da Marca")
                             margem_marca = st.number_input(
@@ -9421,7 +9425,7 @@ elif menu_option == "⚙️ Configurações":
                                         fornecedor_sel[0], nova_marca, margem_marca
                                     )
                                     st.success(f"Marca {nova_marca} adicionada!")
-                                    st.session_state["forn_marcas"] = None
+                                    st.session_state["reset_forn_marcas"] = True
                                     st.rerun()
                                 else:
                                     st.error("Marca já está associada a um fornecedor")
