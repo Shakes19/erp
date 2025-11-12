@@ -9124,38 +9124,40 @@ elif menu_option == "📦 Artigos":
                             """.format(numero=numero_artigo, descricao=descricao_artigo),
                             unsafe_allow_html=True,
                         )
-                        st.caption(f"ID #{artigo['id']}")
-                        col_a, col_b, col_c = st.columns(3)
-                        with col_a:
-                            st.markdown(f"**Unidade:** {artigo['unidade'] or '—'}")
-                            st.markdown(f"**HS Code:** {artigo['hs_code'] or '—'}")
-                        with col_b:
-                            preco_valor = artigo.get("preco_historico")
-                            if preco_valor not in (None, ""):
-                                try:
-                                    preco_txt = f"€ {float(preco_valor):.2f}"
-                                except (TypeError, ValueError):
-                                    preco_txt = str(preco_valor)
-                            else:
-                                preco_txt = "—"
-                            st.markdown(f"**Preço Histórico:** {preco_txt}")
-                            validade_txt = _format_iso_date(artigo.get("validade_historico")) or "—"
-                            peso_valor = artigo.get("peso")
-                            if peso_valor not in (None, ""):
-                                try:
-                                    peso_txt = f"{float(peso_valor):.3f} kg"
-                                except (TypeError, ValueError):
-                                    peso_txt = f"{peso_valor} kg"
-                            else:
-                                peso_txt = "—"
-                            st.markdown(f"**Peso:** {peso_txt}")
-                            
-                        with col_c:
-                            st.markdown(f"**Validade Preço:** {validade_txt}")
-                            st.markdown(f"**País Origem:** {artigo['pais_origem'] or '—'}")
-                        if artigo.get("especificacoes"):
-                            st.markdown("**Especificações:**")
-                            st.write(artigo["especificacoes"])
+
+                        with st.expander("Detalhes do artigo"):
+                            st.caption(f"ID #{artigo['id']}")
+                            col_a, col_b, col_c = st.columns(3)
+                            with col_a:
+                                st.markdown(f"**Unidade:** {artigo['unidade'] or '—'}")
+                                st.markdown(f"**HS Code:** {artigo['hs_code'] or '—'}")
+                            with col_b:
+                                preco_valor = artigo.get("preco_historico")
+                                if preco_valor not in (None, ""):
+                                    try:
+                                        preco_txt = f"€ {float(preco_valor):.2f}"
+                                    except (TypeError, ValueError):
+                                        preco_txt = str(preco_valor)
+                                else:
+                                    preco_txt = "—"
+                                st.markdown(f"**Preço Histórico:** {preco_txt}")
+                                validade_txt = _format_iso_date(artigo.get("validade_historico")) or "—"
+                                peso_valor = artigo.get("peso")
+                                if peso_valor not in (None, ""):
+                                    try:
+                                        peso_txt = f"{float(peso_valor):.3f} kg"
+                                    except (TypeError, ValueError):
+                                        peso_txt = f"{peso_valor} kg"
+                                else:
+                                    peso_txt = "—"
+                                st.markdown(f"**Peso:** {peso_txt}")
+
+                            with col_c:
+                                st.markdown(f"**Validade Preço:** {validade_txt}")
+                                st.markdown(f"**País Origem:** {artigo['pais_origem'] or '—'}")
+                            if artigo.get("especificacoes"):
+                                st.markdown("**Especificações:**")
+                                st.write(artigo["especificacoes"])
                     with col_acao:
                         st.markdown(
                             "<div style='height: 100%; display: flex; align-items: center; justify-content: center;'>",
