@@ -6778,6 +6778,13 @@ elif menu_option == "📝 Nova Cotação":
                         "Nº Artigo",
                         value=st.session_state.get(numero_key, artigo['artigo_num']),
                         key=numero_key,
+                        on_change=atualizar_campos_artigo_catalogo,
+                        kwargs={
+                            "numero_key": numero_key,
+                            "descricao_key": descricao_key,
+                            "unidade_key": unidade_key,
+                            "marca_key": marca_key,
+                        },
                     )
                     st.session_state[last_lookup_key] = st.session_state.get(numero_key, "")
                     marca_opcoes = ["Selecione"] + [m for m in marcas if m]
