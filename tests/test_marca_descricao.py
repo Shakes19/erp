@@ -108,3 +108,42 @@ def test_callback_marca_manual_define_flag():
         for key in (index_key, manual_key):
             if key in st.session_state:
                 st.session_state.pop(key)
+
+
+def test_selecao_manual_nao_e_revertida_por_sugestoes():
+    marca_key = "smart_artigos_0_marca"
+    manual_key = f"{marca_key}_manual"
+    index_key = f"{marca_key}_index"
+
+    marcas_disponiveis = ["Balluff", "Bosch", "Turck"]
+    marca_options = [None, *marcas_disponiveis]
+    marcas_disponiveis_normalizadas = {
+        marca.casefold(): marca for marca in marcas_disponiveis
+    }
+    marcas_disponiveis_por_inicial = main.agrupar_marcas_por_inicial(
+        marcas_disponiveis
+    )
+
+    try:
+        st.session_state[manual_key] = True
+        st.session_state[index_key] = 2  # Seleção manual de "Bosch"
+        st.session_state[marca_key] = "Bosch"
+
+        main.sincronizar_marca_smart_artigo(
+            "Balluff sensor indutivo",
+            marca_key,
+            manual_key,
+            index_key,
+            marca_options,
+            marcas_disponiveis,
+            marcas_disponiveis_normalizadas,
+            marcas_disponiveis_por_inicial,
+        )
+
+        assert st.session_state[marca_key] == "Bosch"
+        assert st.session_state[index_key] == 2
+        assert st.session_state[manual_key] is True
+    finally:
+        for key in (marca_key, manual_key, index_key):
+            if key in st.session_state:
+                st.session_state.pop(key)
