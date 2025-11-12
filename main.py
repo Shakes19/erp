@@ -5324,6 +5324,12 @@ def sugerir_marca_por_primeira_letra(
 
     return ""
 
+
+def _marcar_marca_manual(widget_key: str, manual_key: str) -> None:
+    """Assinala que a seleção de marca foi alterada manualmente pelo utilizador."""
+
+    st.session_state[manual_key] = True
+
 @st.dialog("Responder Cotação", width="large")
 def responder_cotacao_dialog(cotacao):
     st.markdown(
@@ -6898,6 +6904,9 @@ elif menu_option == "🤖 Smart Quotation":
                     marca_key = f"smart_artigos_{idx}_marca"
                     st.session_state[marca_key] = marca_correspondente
 
+                    marca_manual_key = f"{marca_key}_manual"
+                    st.session_state[marca_manual_key] = False
+
                     marca_index_key = f"{marca_key}_index"
                     if marca_correspondente:
                         try:
@@ -6905,9 +6914,11 @@ elif menu_option == "🤖 Smart Quotation":
                         except ValueError:
                             marca_idx_val = 0
                             st.session_state[marca_key] = ""
+                            st.session_state[marca_manual_key] = False
                         st.session_state[marca_index_key] = marca_idx_val
                     else:
                         st.session_state[marca_index_key] = 0
+                        st.session_state[marca_manual_key] = False
 
 
                 cliente_extraido = (dados.get("cliente") or "").strip().lower()
@@ -6962,17 +6973,24 @@ elif menu_option == "🤖 Smart Quotation":
 
                     marca_valor_guardado = st.session_state.get(marca_key)
                     marca_registada = (marca_valor_guardado or "").strip()
+                    marca_manual_key = f"{marca_key}_manual"
+                    if marca_manual_key not in st.session_state:
+                        st.session_state[marca_manual_key] = False
+                    marca_selecao_manual = st.session_state.get(marca_manual_key, False)
 
                     if marca_registada:
                         if marca_valor_guardado != marca_registada:
                             st.session_state[marca_key] = marca_registada
                     else:
-                        marca_sugerida = sugerir_marca_por_primeira_letra(
-                            descricao_atual, marcas_disponiveis_por_inicial
-                        )
-                        if marca_sugerida:
-                            st.session_state[marca_key] = marca_sugerida
-                            marca_registada = marca_sugerida
+                        if not marca_selecao_manual:
+                            marca_sugerida = sugerir_marca_por_primeira_letra(
+                                descricao_atual, marcas_disponiveis_por_inicial
+                            )
+                            if marca_sugerida:
+                                st.session_state[marca_key] = marca_sugerida
+                                st.session_state[marca_manual_key] = False
+                                marca_selecao_manual = False
+                                marca_registada = marca_sugerida
 
                     col_art, col_qtd, col_uni, col_marca = st.columns([1.4, 1, 1, 1.6])
                     with col_art:
@@ -7011,16 +7029,23 @@ elif menu_option == "🤖 Smart Quotation":
                                 if marca_existente != marca_registada:
                                     marca_registada = marca_existente
                                     st.session_state[marca_key] = marca_existente
+                                    st.session_state[marca_manual_key] = False
+                                    marca_selecao_manual = False
                             else:
                                 marca_registada = ""
                                 st.session_state[marca_key] = ""
+                                st.session_state[marca_manual_key] = False
+                                marca_selecao_manual = False
                         if not marca_registada:
-                            marca_sugerida = sugerir_marca_por_primeira_letra(
-                                descricao_atual, marcas_disponiveis_por_inicial
-                            )
-                            if marca_sugerida:
-                                marca_registada = marca_sugerida
-                                st.session_state[marca_key] = marca_sugerida
+                            if not marca_selecao_manual:
+                                marca_sugerida = sugerir_marca_por_primeira_letra(
+                                    descricao_atual, marcas_disponiveis_por_inicial
+                                )
+                                if marca_sugerida:
+                                    marca_registada = marca_sugerida
+                                    st.session_state[marca_key] = marca_sugerida
+                                    st.session_state[marca_manual_key] = False
+                                    marca_selecao_manual = False
 
                         marca_idx = 0
                         if marca_registada:
@@ -7030,6 +7055,8 @@ elif menu_option == "🤖 Smart Quotation":
                                 marca_idx = 0
                                 marca_registada = ""
                                 st.session_state[marca_key] = ""
+                                st.session_state[marca_manual_key] = False
+                                marca_selecao_manual = False
 
                         indice_guardado = st.session_state.get(marca_index_key)
                         if (
@@ -7052,6 +7079,11 @@ elif menu_option == "🤖 Smart Quotation":
                                 "A marca é sugerida automaticamente com base na descrição, "
                                 "mas pode ser editada."
                             ),
+                            on_change=_marcar_marca_manual,
+                            kwargs={
+                                "widget_key": marca_index_key,
+                                "manual_key": marca_manual_key,
+                            },
                         )
                         st.session_state[marca_key] = marca_options[selecao_marca_idx] or ""
 
