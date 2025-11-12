@@ -5284,6 +5284,16 @@ def extrair_primeiro_caractere_alfanumerico(texto: str) -> str:
     return correspondencia.group(0) if correspondencia else ""
 
 
+def extrair_primeira_palavra_alfanumerica(texto: str) -> str:
+    """Retorna a primeira palavra composta por caracteres alfanuméricos."""
+
+    if not texto:
+        return ""
+
+    correspondencia = re.search(r"[0-9A-Za-zÀ-ÿ]+", texto.strip())
+    return correspondencia.group(0) if correspondencia else ""
+
+
 def agrupar_marcas_por_inicial(marcas: list[str]) -> dict[str, list[str]]:
     """Agrupa marcas pela sua primeira letra alfanumérica."""
 
@@ -5304,9 +5314,13 @@ def agrupar_marcas_por_inicial(marcas: list[str]) -> dict[str, list[str]]:
 def sugerir_marca_por_primeira_letra(
     descricao: str, marcas_por_inicial: dict[str, list[str]]
 ) -> str:
-    """Sugere uma marca a partir da primeira letra da descrição."""
+    """Sugere uma marca quando a primeira palavra da descrição coincide."""
 
-    primeira_letra = extrair_primeiro_caractere_alfanumerico(descricao)
+    primeira_palavra = extrair_primeira_palavra_alfanumerica(descricao)
+    if not primeira_palavra:
+        return ""
+
+    primeira_letra = extrair_primeiro_caractere_alfanumerico(primeira_palavra)
     if not primeira_letra:
         return ""
 
@@ -5314,12 +5328,9 @@ def sugerir_marca_por_primeira_letra(
     if not candidatos:
         return ""
 
-    if len(candidatos) == 1:
-        return candidatos[0]
-
-    descricao_normalizada = (descricao or "").strip().casefold()
+    primeira_palavra_normalizada = primeira_palavra.casefold()
     for marca in candidatos:
-        if descricao_normalizada.startswith(marca.casefold()):
+        if marca.casefold() == primeira_palavra_normalizada:
             return marca
 
     return ""
@@ -6837,8 +6848,20 @@ elif menu_option == "🤖 Smart Quotation":
 
                     unidade_item = (item.get("unidade") or unidade_padrao).strip() or unidade_padrao
                     marca_item = (item.get("marca") or marca_padrao_pdf).strip()
+                    if marca_item:
+                        marca_existente = marcas_disponiveis_normalizadas.get(
+                            marca_item.casefold()
+                        )
+                        marca_item = marca_existente or ""
                     if not marca_item and descricao_item:
-                        marca_item = descricao_item.split()[0]
+                        primeira_palavra = extrair_primeira_palavra_alfanumerica(
+                            descricao_item
+                        )
+                        if primeira_palavra:
+                            marca_correspondente = marcas_disponiveis_normalizadas.get(
+                                primeira_palavra.casefold()
+                            )
+                            marca_item = marca_correspondente or ""
 
                     artigos_extraidos.append(
                         {
