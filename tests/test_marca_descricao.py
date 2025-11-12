@@ -67,30 +67,28 @@ def test_criar_processo_preserva_descricao_original():
     assert (marca_db or "Turck").startswith("Turck")
 
 
-def test_sugerir_marca_por_primeira_letra_quando_inicial_unica():
+def test_sugerir_marca_por_primeira_palavra_quando_corresponde():
     agrupar = main.agrupar_marcas_por_inicial
     sugerir = main.sugerir_marca_por_primeira_letra
 
-    marcas = ["Turck", "Balluff", "Phoenix Contact"]
+    marcas = ["Turck", "Balluff", "Wago"]
     mapa = agrupar(marcas)
 
-    assert sugerir("Transformador monofásico", mapa) == "Turck"
-    assert sugerir("Ball bearing", mapa) == "Balluff"
-    assert sugerir("Phoenix conector", mapa) == "Phoenix Contact"
+    assert sugerir("Turck sensor indutivo", mapa) == "Turck"
+    assert sugerir("balluff sensor", mapa) == "Balluff"
+    assert sugerir("Wago borne", mapa) == "Wago"
 
 
-def test_sugerir_marca_por_primeira_letra_ambigua_retorna_vazio():
+def test_sugerir_marca_por_primeira_palavra_sem_correspondencia():
     agrupar = main.agrupar_marcas_por_inicial
     sugerir = main.sugerir_marca_por_primeira_letra
 
     marcas = ["Bosch", "Balluff", "Baumer"]
     mapa = agrupar(marcas)
 
-    # Sem correspondência direta pelo início da descrição, permanece vazio
+    # Sem correspondência direta, a marca permanece vazia
     assert sugerir("Bomba hidráulica", mapa) == ""
-
-    # Com correspondência direta, a marca correta é escolhida
-    assert sugerir("Baumer sensor", mapa) == "Baumer"
+    assert sugerir("Rexroth Bosch válvula", mapa) == ""
 
 
 def test_callback_marca_manual_define_flag():
