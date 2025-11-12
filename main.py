@@ -1316,7 +1316,7 @@ def mostrar_dialogo_referencia_duplicada(origem: str):
             f"Já existe uma cotação com a referência '{referencia}'{cliente_info}."
         )
         st.write("Deseja criar a cotação mesmo assim?")
-        col_cancel, _, col_ok = st.columns([1, 4, 1])
+        col_ok, col_cancel = st.columns(2)
         if col_ok.button("Sim, criar mesmo assim"):
             st.session_state["duplicated_ref_force"] = origem
             st.session_state["show_duplicate_ref_dialog"] = False
@@ -5697,15 +5697,15 @@ def responder_cotacao_dialog(cotacao):
                 key=f"custo_emb_{cotacao['id']}"
             )
 
-        col_cancelar, _, col_enviar = st.columns([1, 4, 1])
+        col1, col2 = st.columns(2)
 
-        with col_cancelar:
+        with col1:
+            submeter = st.form_submit_button("💾 Submeter Preço", type="primary")
+
+        with col2:
             cancelar = st.form_submit_button("❌ Cancelar")
 
-        with col_enviar:
-            criar_enviar = st.form_submit_button("Criar e Enviar", type="primary")
-
-    if criar_enviar:
+    if submeter:
         respostas_validas = [r for r in respostas if r[1] > 0]
 
         if respostas_validas:
@@ -6839,7 +6839,7 @@ elif menu_option == "📝 Nova Cotação":
             adicionar_artigo = st.form_submit_button("➕ Adicionar Artigo")
 
         st.markdown("### 📎 Pedido do cliente")
-        col_upload, col_offset = st.columns([3, 1.2])
+        col_upload, col_submit = st.columns([3, 1.2])
 
         with col_upload:
             upload_pedido_cliente = st.file_uploader(
@@ -6855,23 +6855,19 @@ elif menu_option == "📝 Nova Cotação":
                 for idx, (nome_pdf, pdf_bytes) in enumerate(st.session_state.pedido_cliente_anexos, start=1):
                     exibir_pdf(f"👁️ PDF carregado {idx} - {nome_pdf}", pdf_bytes, expanded=idx == 1)
 
-        with col_offset:
+        with col_submit:
             st.markdown(
                 "<div style='height: 20px;'></div>",
                 unsafe_allow_html=True,
             )
-
-        col_processo, _, col_cotacao = st.columns([1, 4, 1])
-
-        with col_processo:
-            criar_processo_sem_email = st.form_submit_button(
-                "📁 Criar Processo (sem email)"
-            )
-
-        with col_cotacao:
             criar_cotacao = st.form_submit_button(
                 "✅ Criar Cotação",
                 type="primary",
+                use_container_width=True,
+            )
+            criar_processo_sem_email = st.form_submit_button(
+                "📁 Criar Processo (sem email)",
+                use_container_width=True,
             )
     
     # Processar ações
