@@ -9109,72 +9109,9 @@ elif menu_option == "📦 Artigos":
         if not filtro_normalizado:
             st.info("Introduza um termo de pesquisa para listar artigos.")
         elif artigos_catalogo:
-            if "_artigos_detalhes_css" not in st.session_state:
-                st.session_state["_artigos_detalhes_css"] = True
-                st.markdown(
-                    """
-                    <style>
-                    .artigo-detalhes {
-                        margin-top: 0.75rem;
-                        padding-top: 0.75rem;
-                        border-top: 1px solid rgba(49, 51, 63, 0.2);
-                    }
-                    .artigo-detalhes--collapsed {
-                        max-height: 240px;
-                        overflow: hidden;
-                        position: relative;
-                    }
-                    .artigo-detalhes--collapsed::after {
-                        content: "";
-                        position: absolute;
-                        bottom: 0;
-                        left: 0;
-                        right: 0;
-                        height: 2.5rem;
-                        pointer-events: none;
-                        background: linear-gradient(
-                            rgba(255, 255, 255, 0),
-                            var(--background-color, #ffffff)
-                        );
-                    }
-                    .artigo-detalhes--expanded {
-                        max-height: none;
-                        overflow: visible;
-                    }
-                    .artigo-detalhes__id {
-                        font-size: 0.8rem;
-                        color: inherit;
-                        opacity: 0.75;
-                        margin-bottom: 0.5rem;
-                    }
-                    .artigo-detalhes__grid {
-                        display: grid;
-                        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-                        gap: 0.75rem 1.5rem;
-                    }
-                    .artigo-detalhes__grid p {
-                        margin: 0;
-                        font-size: 0.95rem;
-                    }
-                    .artigo-detalhes__section {
-                        margin-top: 0.75rem;
-                        font-size: 0.95rem;
-                    }
-                    .artigo-detalhes__texto {
-                        margin-top: 0.35rem;
-                        white-space: pre-wrap;
-                    }
-                    </style>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-            for index, artigo in enumerate(artigos_catalogo):
-                artigo_key = str(artigo.get("id") or index)
-
+            for artigo in artigos_catalogo:
                 with st.container(border=True):
-                    col_info, col_editar = st.columns([6, 1])
-
+                    col_info, col_acao = st.columns([6, 1])
                     with col_info:
                         descricao_artigo = escape(str(artigo.get("descricao") or "Sem descrição"))
                         numero_artigo = escape(str(artigo.get("artigo_num") or "—"))
@@ -9187,101 +9124,53 @@ elif menu_option == "📦 Artigos":
                             """.format(numero=numero_artigo, descricao=descricao_artigo),
                             unsafe_allow_html=True,
                         )
-
-                        toggle_state_key = f"artigo_expandido_{artigo_key}"
-                        if toggle_state_key not in st.session_state:
-                            st.session_state[toggle_state_key] = False
-
-                        artigo_expandido = bool(st.session_state.get(toggle_state_key))
-                        toggle_label = (
-                            "Esconder detalhes"
-                            if artigo_expandido
-                            else "Mostrar detalhes"
+                        st.caption(f"ID #{artigo['id']}")
+                        col_a, col_b, col_c = st.columns(3)
+                        with col_a:
+                            st.markdown(f"**Unidade:** {artigo['unidade'] or '—'}")
+                            st.markdown(f"**HS Code:** {artigo['hs_code'] or '—'}")
+                        with col_b:
+                            preco_valor = artigo.get("preco_historico")
+                            if preco_valor not in (None, ""):
+                                try:
+                                    preco_txt = f"€ {float(preco_valor):.2f}"
+                                except (TypeError, ValueError):
+                                    preco_txt = str(preco_valor)
+                            else:
+                                preco_txt = "—"
+                            st.markdown(f"**Preço Histórico:** {preco_txt}")
+                            validade_txt = _format_iso_date(artigo.get("validade_historico")) or "—"
+                            peso_valor = artigo.get("peso")
+                            if peso_valor not in (None, ""):
+                                try:
+                                    peso_txt = f"{float(peso_valor):.3f} kg"
+                                except (TypeError, ValueError):
+                                    peso_txt = f"{peso_valor} kg"
+                            else:
+                                peso_txt = "—"
+                            st.markdown(f"**Peso:** {peso_txt}")
+                            
+                        with col_c:
+                            st.markdown(f"**Validade Preço:** {validade_txt}")
+                            st.markdown(f"**País Origem:** {artigo['pais_origem'] or '—'}")
+                        if artigo.get("especificacoes"):
+                            st.markdown("**Especificações:**")
+                            st.write(artigo["especificacoes"])
+                    with col_acao:
+                        st.markdown(
+                            "<div style='height: 100%; display: flex; align-items: center; justify-content: center;'>",
+                            unsafe_allow_html=True,
                         )
-
-                        if st.button(
-                            toggle_label,
-                            key=f"toggle_artigo_{artigo_key}",
-                            type="secondary",
-                        ):
-                            st.session_state[toggle_state_key] = not artigo_expandido
-                            artigo_expandido = not artigo_expandido
-
-                    with col_editar:
+                        artigo_id = artigo.get("id") or uuid4().hex
                         if st.button(
                             "✏️",
-                            key=f"editar_artigo_{artigo_key}",
+                            key=f"editar_artigo_{artigo_id}",
                             use_container_width=True,
                         ):
                             st.session_state["artigo_em_edicao"] = artigo
-                            st.session_state["artigo_em_edicao_key"] = artigo_key
+                            st.session_state["artigo_em_edicao_key"] = str(artigo_id)
                             st.session_state["mostrar_modal_editar_artigo"] = True
-
-                    artigo_id_display = artigo.get("id")
-                    preco_valor = artigo.get("preco_historico")
-                    if preco_valor not in (None, ""):
-                        try:
-                            preco_txt = f"€ {float(preco_valor):.2f}"
-                        except (TypeError, ValueError):
-                            preco_txt = str(preco_valor)
-                    else:
-                        preco_txt = "—"
-
-                    peso_valor = artigo.get("peso")
-                    if peso_valor not in (None, ""):
-                        try:
-                            peso_txt = f"{float(peso_valor):.3f} kg"
-                        except (TypeError, ValueError):
-                            peso_txt = f"{peso_valor} kg"
-                    else:
-                        peso_txt = "—"
-
-                    validade_txt = _format_iso_date(artigo.get("validade_historico")) or "—"
-                    especificacoes = artigo.get("especificacoes")
-                    especificacoes_html = ""
-                    if especificacoes:
-                        especificacoes_texto = escape(str(especificacoes)).replace("\n", "<br>")
-                        especificacoes_html = (
-                            "<div class='artigo-detalhes__section'><strong>Especificações:</strong>"
-                            f"<div class='artigo-detalhes__texto'>{especificacoes_texto}</div>"
-                            "</div>"
-                        )
-
-                    detalhes_html = """
-                        <div class="{classe_detalhes}">
-                            <div class="artigo-detalhes__id">ID #{id_display}</div>
-                            <div class="artigo-detalhes__grid">
-                                <div>
-                                    <p><strong>Unidade:</strong> {unidade}</p>
-                                    <p><strong>HS Code:</strong> {hs_code}</p>
-                                </div>
-                                <div>
-                                    <p><strong>Preço Histórico:</strong> {preco}</p>
-                                    <p><strong>Peso:</strong> {peso}</p>
-                                </div>
-                                <div>
-                                    <p><strong>Validade Preço:</strong> {validade}</p>
-                                    <p><strong>País Origem:</strong> {pais_origem}</p>
-                                </div>
-                            </div>
-                            {especificacoes}
-                        </div>
-                    """.format(
-                        classe_detalhes=
-                            "artigo-detalhes artigo-detalhes--expanded"
-                            if artigo_expandido
-                            else "artigo-detalhes artigo-detalhes--collapsed",
-                        id_display=artigo_id_display if artigo_id_display is not None else "—",
-                        unidade=escape(str(artigo.get("unidade") or "—")),
-                        hs_code=escape(str(artigo.get("hs_code") or "—")),
-                        preco=escape(preco_txt),
-                        peso=escape(peso_txt),
-                        validade=escape(validade_txt),
-                        pais_origem=escape(str(artigo.get("pais_origem") or "—")),
-                        especificacoes=especificacoes_html,
-                    )
-
-                    st.markdown(detalhes_html, unsafe_allow_html=True)
+                        st.markdown("</div>", unsafe_allow_html=True)
         elif filtro_normalizado:
             st.info("Nenhum artigo encontrado para os critérios indicados.")
 
