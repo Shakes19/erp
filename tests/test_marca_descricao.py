@@ -26,6 +26,36 @@ def teardown_module(module):
         os.remove("test_marca_descricao.db")
 
 
+def _inserir_artigo_catalogo(db_module, numero, descricao, unidade="Peças", marca=None):
+    if marca is None:
+        marca = f"Marca {numero}"
+
+    conn = db_module.get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("INSERT INTO fornecedor (nome) VALUES (?)", (f"Fornecedor {numero}",))
+        fornecedor_id = cursor.lastrowid
+        cursor.execute(
+            """
+            INSERT INTO marca (fornecedor_id, marca, marca_normalizada, margem)
+            VALUES (?, ?, ?, 0.0)
+            """,
+            (fornecedor_id, marca, marca.casefold()),
+        )
+        marca_id = cursor.lastrowid
+        unidade_id = db_module.ensure_unidade(unidade, cursor=cursor)
+        cursor.execute(
+            """
+            INSERT INTO artigo (artigo_num, descricao, unidade_id, marca_id)
+            VALUES (?, ?, ?, ?)
+            """,
+            (numero, descricao, unidade_id, marca_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def test_criar_processo_preserva_descricao_original():
     artigos = [
         {
@@ -147,3 +177,107 @@ def test_selecao_manual_nao_e_revertida_por_sugestoes():
         for key in (marca_key, manual_key, index_key):
             if key in st.session_state:
                 st.session_state.pop(key)
+
+
+def test_atualizar_campos_catalogo_preenche_e_bloqueia_nova_cotacao():
+    numero = "CAT-001"
+    descricao_catalogo = "Artigo Catálogo 001"
+    unidade_catalogo = "Caixa"
+    marca_catalogo = "Marca Cat001"
+
+    _inserir_artigo_catalogo(db, numero, descricao_catalogo, unidade_catalogo, marca_catalogo)
+
+    numero_key = "nova_art_num_1"
+    descricao_key = "nova_desc_1"
+    unidade_key = "nova_unidade_1"
+    marca_key = "nova_marca_1"
+
+    try:
+        st.session_state[descricao_key] = "Manual"
+        st.session_state[unidade_key] = "Peças"
+        st.session_state[marca_key] = "Outra"
+        st.session_state[numero_key] = numero
+
+        main.atualizar_campos_artigo_catalogo(
+            numero_key=numero_key,
+            descricao_key=descricao_key,
+            unidade_key=unidade_key,
+            marca_key=marca_key,
+        )
+
+        assert st.session_state[descricao_key] == descricao_catalogo
+        assert st.session_state[unidade_key] == unidade_catalogo
+        assert st.session_state[marca_key] == marca_catalogo
+        assert st.session_state.get(f"{unidade_key}__disabled") is True
+        assert st.session_state.get(f"{marca_key}__disabled") is True
+    finally:
+        st.session_state.clear()
+
+
+def test_atualizar_campos_catalogo_desbloqueia_quando_artigo_inexistente():
+    numero_key = "nova_art_num_1"
+    descricao_key = "nova_desc_1"
+    unidade_key = "nova_unidade_1"
+    marca_key = "nova_marca_1"
+
+    try:
+        st.session_state[descricao_key] = "Descrição manual"
+        st.session_state[unidade_key] = "Peças"
+        st.session_state[marca_key] = "Marca manual"
+        st.session_state[numero_key] = "INEXISTENTE"
+        st.session_state[f"{unidade_key}__disabled"] = True
+        st.session_state[f"{marca_key}__disabled"] = True
+
+        main.atualizar_campos_artigo_catalogo(
+            numero_key=numero_key,
+            descricao_key=descricao_key,
+            unidade_key=unidade_key,
+            marca_key=marca_key,
+        )
+
+        assert st.session_state[descricao_key] == "Descrição manual"
+        assert st.session_state[unidade_key] == "Peças"
+        assert st.session_state[marca_key] == "Marca manual"
+        assert st.session_state.get(f"{unidade_key}__disabled") is False
+        assert st.session_state.get(f"{marca_key}__disabled") is False
+    finally:
+        st.session_state.clear()
+
+
+def test_atualizar_campos_catalogo_preenche_smart_e_reset_manual():
+    numero = "CAT-002"
+    descricao_catalogo = "Artigo Catálogo 002"
+    unidade_catalogo = "Unidade"
+    marca_catalogo = "Marca Cat002"
+
+    _inserir_artigo_catalogo(db, numero, descricao_catalogo, unidade_catalogo, marca_catalogo)
+
+    numero_key = "smart_artigos_0_artigo_num"
+    descricao_key = "smart_artigos_0_descricao"
+    unidade_key = "smart_artigos_0_unidade"
+    marca_key = "smart_artigos_0_marca"
+    marca_manual_key = f"{marca_key}_manual"
+
+    try:
+        st.session_state[descricao_key] = "Descrição manual"
+        st.session_state[unidade_key] = "Peças"
+        st.session_state[marca_key] = "Marca manual"
+        st.session_state[marca_manual_key] = True
+        st.session_state[numero_key] = numero
+
+        main.atualizar_campos_artigo_catalogo(
+            numero_key=numero_key,
+            descricao_key=descricao_key,
+            unidade_key=unidade_key,
+            marca_key=marca_key,
+            marca_manual_key=marca_manual_key,
+        )
+
+        assert st.session_state[descricao_key] == descricao_catalogo
+        assert st.session_state[unidade_key] == unidade_catalogo
+        assert st.session_state[marca_key] == marca_catalogo
+        assert st.session_state.get(f"{unidade_key}__disabled") is True
+        assert st.session_state.get(f"{marca_key}__disabled") is True
+        assert st.session_state.get(marca_manual_key) is False
+    finally:
+        st.session_state.clear()

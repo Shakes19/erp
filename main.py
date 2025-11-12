@@ -70,6 +70,84 @@ def compat_modal(title: str, *, key: Optional[str] = None, **kwargs):
             yield
 
 
+# ========================== CONSULTA DE ARTIGOS ==========================
+
+def obter_detalhes_artigo_por_numero(artigo_num: str) -> dict[str, str] | None:
+    """Return the description, unit and brand for ``artigo_num`` if it exists."""
+
+    artigo_num_limpo = (artigo_num or "").strip()
+    if not artigo_num_limpo:
+        return None
+
+    row = fetch_one(
+        """
+        SELECT a.descricao,
+               u.nome AS unidade,
+               m.marca AS marca
+          FROM artigo AS a
+          LEFT JOIN unidade AS u ON u.id = a.unidade_id
+          LEFT JOIN marca AS m ON m.id = a.marca_id
+         WHERE PYCASEFOLD(COALESCE(a.artigo_num, '')) = PYCASEFOLD(?)
+        """,
+        (artigo_num_limpo,),
+    )
+
+    if not row:
+        return None
+
+    descricao, unidade, marca = row
+    return {
+        "descricao": descricao or "",
+        "unidade": unidade or "",
+        "marca": marca or "",
+    }
+
+
+def atualizar_campos_artigo_catalogo(
+    *,
+    numero_key: str,
+    descricao_key: str,
+    unidade_key: str,
+    marca_key: str,
+    marca_manual_key: str | None = None,
+) -> None:
+    """Lookup ``numero_key`` in the catalogue and update dependent widgets."""
+
+    numero_atual = (st.session_state.get(numero_key) or "").strip()
+    info = obter_detalhes_artigo_por_numero(numero_atual)
+
+    unidade_disabled_key = f"{unidade_key}__disabled"
+    marca_disabled_key = f"{marca_key}__disabled"
+
+    if info:
+        descricao = info.get("descricao")
+        if descricao is not None:
+            st.session_state[descricao_key] = descricao
+
+        unidade = info.get("unidade")
+        if unidade:
+            st.session_state[unidade_key] = unidade
+        elif unidade_key not in st.session_state:
+            st.session_state[unidade_key] = ""
+
+        marca = info.get("marca")
+        if marca:
+            st.session_state[marca_key] = marca
+        elif marca_key not in st.session_state:
+            st.session_state[marca_key] = ""
+
+        st.session_state[unidade_disabled_key] = True
+        st.session_state[marca_disabled_key] = True
+
+        if marca_manual_key:
+            st.session_state[marca_manual_key] = False
+    else:
+        st.session_state[unidade_disabled_key] = False
+        st.session_state[marca_disabled_key] = False
+
+        if marca_manual_key and marca_manual_key not in st.session_state:
+            st.session_state[marca_manual_key] = False
+
 # ========================== CONFIGURAÇÃO GLOBAL ==========================
 
 def _format_iso_date(value):
@@ -6677,6 +6755,13 @@ elif menu_option == "📝 Nova Cotação":
                         "Nº Artigo",
                         value=artigo['artigo_num'],
                         key=f"nova_art_num_{i}",
+                        on_change=atualizar_campos_artigo_catalogo,
+                        kwargs={
+                            "numero_key": f"nova_art_num_{i}",
+                            "descricao_key": f"nova_desc_{i}",
+                            "unidade_key": f"nova_unidade_{i}",
+                            "marca_key": f"nova_marca_{i}",
+                        },
                     )
                     marca_opcoes = ["Selecione"] + [m for m in marcas if m]
                     if artigo.get('marca') and artigo['marca'] not in marca_opcoes:
@@ -6686,6 +6771,9 @@ elif menu_option == "📝 Nova Cotação":
                         marca_opcoes,
                         index=marca_opcoes.index(artigo['marca']) if artigo.get('marca') in marca_opcoes else 0,
                         key=f"nova_marca_{i}",
+                        disabled=st.session_state.get(
+                            f"nova_marca_{i}__disabled", False
+                        ),
                     )
 
                 with col_qty:
@@ -6706,6 +6794,9 @@ elif menu_option == "📝 Nova Cotação":
                         opcoes_unidade,
                         index=indice_unidade,
                         key=f"nova_unidade_{i}",
+                        disabled=st.session_state.get(
+                            f"nova_unidade_{i}__disabled", False
+                        ),
                     )
 
                 with col_del:
@@ -7075,15 +7166,26 @@ elif menu_option == "🤖 Smart Quotation":
                     st.markdown(f"**Artigo {idx + 1}**")
                     descricao_key = f"smart_artigos_{idx}_descricao"
                     marca_key = f"smart_artigos_{idx}_marca"
+                    unidade_key = f"smart_artigos_{idx}_unidade"
+                    numero_key = f"smart_artigos_{idx}_artigo_num"
                     descricao_atual = st.session_state.get(descricao_key, "")
 
                     marca_manual_key = f"{marca_key}_manual"
+                    marca_index_key = f"{marca_key}_index"
 
                     col_art, col_qtd, col_uni, col_marca = st.columns([1.4, 1, 1, 1.6])
                     with col_art:
                         st.text_input(
                             "Nº Artigo",
-                            key=f"smart_artigos_{idx}_artigo_num",
+                            key=numero_key,
+                            on_change=atualizar_campos_artigo_catalogo,
+                            kwargs={
+                                "numero_key": numero_key,
+                                "descricao_key": descricao_key,
+                                "unidade_key": unidade_key,
+                                "marca_key": marca_key,
+                                "marca_manual_key": marca_manual_key,
+                            },
                         )
                     with col_qtd:
                         st.text_input(
@@ -7091,7 +7193,6 @@ elif menu_option == "🤖 Smart Quotation":
                             key=f"smart_artigos_{idx}_quantidade",
                         )
                     with col_uni:
-                        unidade_key = f"smart_artigos_{idx}_unidade"
                         unidade_atual = st.session_state.get(unidade_key, unidade_padrao)
                         opcoes_unidade = [*unidades_padrao]
                         if unidade_atual not in opcoes_unidade:
@@ -7103,10 +7204,12 @@ elif menu_option == "🤖 Smart Quotation":
                             if unidade_atual in opcoes_unidade
                             else 0,
                             key=unidade_key,
+                            disabled=st.session_state.get(
+                                f"{unidade_key}__disabled", False
+                            ),
                         )
                     with col_marca:
                         marca_options = [None, *marcas_disponiveis]
-                        marca_index_key = f"{marca_key}_index"
                         sincronizar_marca_smart_artigo(
                             descricao_atual,
                             marca_key,
@@ -7134,6 +7237,9 @@ elif menu_option == "🤖 Smart Quotation":
                                 "widget_key": marca_index_key,
                                 "manual_key": marca_manual_key,
                             },
+                            disabled=st.session_state.get(
+                                f"{marca_key}__disabled", False
+                            ),
                         )
                         st.session_state[marca_key] = marca_options[selecao_marca_idx] or ""
 
