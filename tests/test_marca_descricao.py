@@ -2,6 +2,8 @@ import os
 import sys
 import importlib
 
+import streamlit as st
+
 # Ensure project root in path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -89,3 +91,22 @@ def test_sugerir_marca_por_primeira_letra_ambigua_retorna_vazio():
 
     # Com correspondência direta, a marca correta é escolhida
     assert sugerir("Baumer sensor", mapa) == "Baumer"
+
+
+def test_callback_marca_manual_define_flag():
+    marca_key = "smart_artigos_0_marca"
+    manual_key = f"{marca_key}_manual"
+    index_key = f"{marca_key}_index"
+
+    try:
+        st.session_state[index_key] = 1
+        if manual_key in st.session_state:
+            st.session_state.pop(manual_key)
+
+        main._marcar_marca_manual(index_key, manual_key)
+
+        assert st.session_state.get(manual_key) is True
+    finally:
+        for key in (index_key, manual_key):
+            if key in st.session_state:
+                st.session_state.pop(key)
