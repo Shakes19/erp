@@ -24,16 +24,7 @@ def teardown_module(module):
         os.remove("test_marca_descricao.db")
 
 
-def test_garantir_marca_primeira_palavra_normaliza_descricao():
-    func = main.garantir_marca_primeira_palavra
-
-    assert func("Sensor indutivo BI2", "Turck") == "Turck Sensor indutivo BI2"
-    assert func("turck Sensor indutivo", "Turck") == "Turck Sensor indutivo"
-    assert func("Turck Sensor indutivo", "Turck") == "Turck Sensor indutivo"
-    assert func("Sensor TURCK BI2", "Turck") == "Turck Sensor BI2"
-
-
-def test_criar_processo_grava_descricao_com_marca_primeira_palavra():
+def test_criar_processo_preserva_descricao_original():
     artigos = [
         {
             "artigo_num": "2167704",
@@ -49,8 +40,7 @@ def test_criar_processo_grava_descricao_com_marca_primeira_palavra():
     assert processo_id > 0
     assert processo_artigos
     descricao_retornada = processo_artigos[0]["descricao"]
-    assert descricao_retornada.startswith("Turck ")
-    assert "Sensor indutivo" in descricao_retornada
+    assert descricao_retornada == "Sensor indutivo BI2-G08-VP6X-0,15-PSG4S"
 
     conn = db.get_connection()
     try:
@@ -71,6 +61,31 @@ def test_criar_processo_grava_descricao_com_marca_primeira_palavra():
         conn.close()
 
     assert artigo_num_db == "2167704"
-    assert descricao_db is not None
-    assert descricao_db.startswith("Turck ")
+    assert descricao_db == "Sensor indutivo BI2-G08-VP6X-0,15-PSG4S"
     assert (marca_db or "Turck").startswith("Turck")
+
+
+def test_sugerir_marca_por_primeira_letra_quando_inicial_unica():
+    agrupar = main.agrupar_marcas_por_inicial
+    sugerir = main.sugerir_marca_por_primeira_letra
+
+    marcas = ["Turck", "Balluff", "Phoenix Contact"]
+    mapa = agrupar(marcas)
+
+    assert sugerir("Transformador monofásico", mapa) == "Turck"
+    assert sugerir("Ball bearing", mapa) == "Balluff"
+    assert sugerir("Phoenix conector", mapa) == "Phoenix Contact"
+
+
+def test_sugerir_marca_por_primeira_letra_ambigua_retorna_vazio():
+    agrupar = main.agrupar_marcas_por_inicial
+    sugerir = main.sugerir_marca_por_primeira_letra
+
+    marcas = ["Bosch", "Balluff", "Baumer"]
+    mapa = agrupar(marcas)
+
+    # Sem correspondência direta pelo início da descrição, permanece vazio
+    assert sugerir("Bomba hidráulica", mapa) == ""
+
+    # Com correspondência direta, a marca correta é escolhida
+    assert sugerir("Baumer sensor", mapa) == "Baumer"

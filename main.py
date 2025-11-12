@@ -1761,9 +1761,7 @@ def criar_processo_com_artigos(artigos, cliente_id: int | None = None):
         for ordem, art in enumerate(artigos, 1):
             artigo_num = (art.get("artigo_num") or "").strip()
             marca_artigo = (art.get("marca") or "").strip()
-            descricao_artigo = garantir_marca_primeira_palavra(
-                art.get("descricao", ""), marca_artigo
-            )
+            descricao_artigo = (art.get("descricao") or "").strip()
             quantidade_artigo = art.get("quantidade", 1)
             unidade_artigo = art.get("unidade", "Peças") or "Peças"
             try:
@@ -1931,9 +1929,7 @@ def criar_rfq(
             for ordem, art in enumerate(artigos, 1):
                 if art.get("descricao", "").strip():
                     marca_art = (art.get("marca") or "").strip()
-                    descricao_art = garantir_marca_primeira_palavra(
-                        art.get("descricao", ""), marca_art
-                    )
+                    descricao_art = (art.get("descricao") or "").strip()
                     art["descricao"] = descricao_art
                     art["marca"] = marca_art
                     art["artigo_num"] = (art.get("artigo_num") or "").strip()
@@ -5278,56 +5274,55 @@ def descricao_tem_conteudo(texto: str) -> bool:
     return bool(texto_sem_tags.strip())
 
 
-def extrair_primeira_palavra(texto: str) -> str:
-    """Obtém a primeira palavra alfanumérica presente no texto fornecido."""
+def extrair_primeiro_caractere_alfanumerico(texto: str) -> str:
+    """Obtém o primeiro carácter alfanumérico encontrado no texto."""
 
     if not texto:
         return ""
 
-    texto_limpo = texto.strip()
-    if not texto_limpo:
-        return ""
-
-    correspondencia = re.search(r"[\wÀ-ÿ0-9][\wÀ-ÿ0-9\-/]*", texto_limpo)
+    correspondencia = re.search(r"[\wÀ-ÿ0-9]", texto.strip())
     return correspondencia.group(0) if correspondencia else ""
 
 
-def garantir_marca_primeira_palavra(descricao: str, marca: str) -> str:
-    """Garante que a marca aparece como primeira palavra da descrição.
+def agrupar_marcas_por_inicial(marcas: list[str]) -> dict[str, list[str]]:
+    """Agrupa marcas pela sua primeira letra alfanumérica."""
 
-    Caso a descrição não comece pela marca fornecida, esta função remove
-    ocorrências posteriores (ignorando maiúsculas/minúsculas) e coloca a
-    marca no início.  Espaços supérfluos são também normalizados para
-    evitar duplicações indesejadas.
-    """
+    mapa: dict[str, list[str]] = {}
+    for marca in marcas:
+        if not marca:
+            continue
+        inicial = extrair_primeiro_caractere_alfanumerico(marca)
+        if not inicial:
+            continue
+        chave = inicial.casefold()
+        if chave not in mapa:
+            mapa[chave] = []
+        mapa[chave].append(marca)
+    return mapa
 
-    descricao_limpa = (descricao or "").strip()
-    marca_limpa = (marca or "").strip()
 
-    if not marca_limpa:
-        return descricao_limpa
+def sugerir_marca_por_primeira_letra(
+    descricao: str, marcas_por_inicial: dict[str, list[str]]
+) -> str:
+    """Sugere uma marca a partir da primeira letra da descrição."""
 
-    if not descricao_limpa:
-        return marca_limpa
+    primeira_letra = extrair_primeiro_caractere_alfanumerico(descricao)
+    if not primeira_letra:
+        return ""
 
-    # Normalizar espaços para facilitar a comparação
-    descricao_limpa = re.sub(r"\s+", " ", descricao_limpa)
+    candidatos = marcas_por_inicial.get(primeira_letra.casefold()) or []
+    if not candidatos:
+        return ""
 
-    padrao_inicio = re.compile(rf"^{re.escape(marca_limpa)}\b", re.IGNORECASE)
-    if padrao_inicio.search(descricao_limpa):
-        # Substituir a primeira palavra pela marca limpa para manter o
-        # formato consistente (ex.: capitalização definida pelo utilizador).
-        resto = padrao_inicio.sub("", descricao_limpa, count=1).lstrip()
-        return f"{marca_limpa}{(' ' + resto) if resto else ''}".strip()
+    if len(candidatos) == 1:
+        return candidatos[0]
 
-    padrao = re.compile(rf"\b{re.escape(marca_limpa)}\b", re.IGNORECASE)
-    descricao_sem_marca = padrao.sub("", descricao_limpa).strip()
-    descricao_sem_marca = re.sub(r"\s+", " ", descricao_sem_marca)
+    descricao_normalizada = (descricao or "").strip().casefold()
+    for marca in candidatos:
+        if descricao_normalizada.startswith(marca.casefold()):
+            return marca
 
-    if descricao_sem_marca:
-        return f"{marca_limpa} {descricao_sem_marca}".strip()
-
-    return marca_limpa
+    return ""
 
 @st.dialog("Responder Cotação", width="large")
 def responder_cotacao_dialog(cotacao):
@@ -6716,12 +6711,9 @@ elif menu_option == "📝 Nova Cotação":
                     continue
                 if quantidade_valor.is_integer():
                     quantidade_valor = int(quantidade_valor)
-                descricao_normalizada = garantir_marca_primeira_palavra(
-                    descricao, marca
-                )
                 artigos_validos.append({
                     "artigo_num": (art.get('artigo_num', '') or '').strip(),
-                    "descricao": descricao_normalizada,
+                    "descricao": descricao,
                     "quantidade": quantidade_valor,
                     "unidade": art.get('unidade', 'Peças'),
                     "marca": marca,
@@ -6784,6 +6776,7 @@ elif menu_option == "🤖 Smart Quotation":
     marcas_disponiveis_normalizadas = {
         marca.casefold(): marca for marca in marcas_disponiveis
     }
+    marcas_disponiveis_por_inicial = agrupar_marcas_por_inicial(marcas_disponiveis)
 
     if st.session_state.pop("reset_smart_pdf_uploader", False):
         st.session_state.pop("smart_pdf", None)
@@ -6899,13 +6892,8 @@ elif menu_option == "🤖 Smart Quotation":
                     st.session_state[f"smart_artigos_{idx}_unidade"] = artigo.get(
                         "unidade", unidade_padrao
                     ) or unidade_padrao
-                    marca_extraida = extrair_primeira_palavra(descricao_guardada)
-                    if not marca_extraida:
-                        marca_extraida = artigo.get("marca", "") or ""
-
-                    marca_normalizada = marca_extraida.casefold()
-                    marca_correspondente = marcas_disponiveis_normalizadas.get(
-                        marca_normalizada, ""
+                    marca_correspondente = sugerir_marca_por_primeira_letra(
+                        descricao_guardada, marcas_disponiveis_por_inicial
                     )
                     marca_key = f"smart_artigos_{idx}_marca"
                     st.session_state[marca_key] = marca_correspondente
@@ -6979,15 +6967,12 @@ elif menu_option == "🤖 Smart Quotation":
                         if marca_valor_guardado != marca_registada:
                             st.session_state[marca_key] = marca_registada
                     else:
-                        marca_detectada = extrair_primeira_palavra(descricao_atual)
-                        if marca_detectada:
-                            marca_detectada_normalizada = marca_detectada.casefold()
-                            marca_existente = marcas_disponiveis_normalizadas.get(
-                                marca_detectada_normalizada
-                            )
-                            if marca_existente:
-                                st.session_state[marca_key] = marca_existente
-                                marca_registada = marca_existente
+                        marca_sugerida = sugerir_marca_por_primeira_letra(
+                            descricao_atual, marcas_disponiveis_por_inicial
+                        )
+                        if marca_sugerida:
+                            st.session_state[marca_key] = marca_sugerida
+                            marca_registada = marca_sugerida
 
                     col_art, col_qtd, col_uni, col_marca = st.columns([1.4, 1, 1, 1.6])
                     with col_art:
@@ -7030,14 +7015,12 @@ elif menu_option == "🤖 Smart Quotation":
                                 marca_registada = ""
                                 st.session_state[marca_key] = ""
                         if not marca_registada:
-                            marca_detectada = extrair_primeira_palavra(descricao_atual)
-                            if marca_detectada:
-                                marca_existente = marcas_disponiveis_normalizadas.get(
-                                    marca_detectada.casefold()
-                                )
-                                if marca_existente:
-                                    marca_registada = marca_existente
-                                    st.session_state[marca_key] = marca_existente
+                            marca_sugerida = sugerir_marca_por_primeira_letra(
+                                descricao_atual, marcas_disponiveis_por_inicial
+                            )
+                            if marca_sugerida:
+                                marca_registada = marca_sugerida
+                                st.session_state[marca_key] = marca_sugerida
 
                         marca_idx = 0
                         if marca_registada:
@@ -7194,8 +7177,8 @@ elif menu_option == "🤖 Smart Quotation":
                                     except ValueError:
                                         quantidade_valor = quantidade_str
 
-                            descricao_normalizada = garantir_marca_primeira_palavra(
-                                normalizar_quebras_linha(descricao_input), marca_val
+                            descricao_normalizada = normalizar_quebras_linha(
+                                descricao_input
                             )
 
                             artigos_final.append(
