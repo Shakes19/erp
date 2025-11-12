@@ -17,7 +17,7 @@ import copy
 import textwrap
 from html import escape
 from uuid import uuid4
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, Optional, Sequence
 import logging
 from pypdf import PdfReader
 from PIL import Image, UnidentifiedImageError
@@ -5336,6 +5336,89 @@ def sugerir_marca_por_primeira_letra(
     return ""
 
 
+def sincronizar_marca_smart_artigo(
+    descricao_atual: str,
+    marca_key: str,
+    marca_manual_key: str,
+    marca_index_key: str,
+    marca_options: Sequence[Optional[str]],
+    marcas_disponiveis: Sequence[str],
+    marcas_disponiveis_normalizadas: dict[str, str],
+    marcas_disponiveis_por_inicial: dict[str, list[str]],
+) -> tuple[str, bool, int]:
+    """Atualiza o estado da marca de um artigo Smart Quotation."""
+
+    if marca_manual_key not in st.session_state:
+        st.session_state[marca_manual_key] = False
+
+    marca_registada = (st.session_state.get(marca_key) or "").strip()
+    marca_selecao_manual = st.session_state.get(marca_manual_key, False)
+
+    indice_guardado = st.session_state.get(marca_index_key)
+    indice_valido = (
+        isinstance(indice_guardado, int)
+        and 0 <= indice_guardado < len(marca_options)
+    )
+    if indice_valido:
+        marca_registada = (marca_options[indice_guardado] or "").strip()
+        st.session_state[marca_key] = marca_registada
+
+    if not marca_selecao_manual:
+        if marca_registada:
+            marca_normalizada = marca_registada.casefold()
+            marca_existente = marcas_disponiveis_normalizadas.get(marca_normalizada)
+            if marca_existente:
+                if marca_existente != marca_registada:
+                    marca_registada = marca_existente
+                    st.session_state[marca_key] = marca_existente
+                st.session_state[marca_manual_key] = False
+                marca_selecao_manual = False
+            else:
+                marca_registada = ""
+                st.session_state[marca_key] = ""
+                st.session_state[marca_manual_key] = False
+                marca_selecao_manual = False
+
+        if not marca_registada:
+            marca_sugerida = sugerir_marca_por_primeira_letra(
+                descricao_atual, marcas_disponiveis_por_inicial
+            )
+            if marca_sugerida:
+                marca_registada = marca_sugerida
+                st.session_state[marca_key] = marca_sugerida
+                st.session_state[marca_manual_key] = False
+                marca_selecao_manual = False
+
+        marca_idx = 0
+        if marca_registada:
+            try:
+                marca_idx = list(marcas_disponiveis).index(marca_registada) + 1
+            except ValueError:
+                marca_idx = 0
+                marca_registada = ""
+                st.session_state[marca_key] = ""
+                st.session_state[marca_manual_key] = False
+        st.session_state[marca_index_key] = marca_idx
+    else:
+        if not indice_valido:
+            marca_idx = 0
+            if marca_registada:
+                try:
+                    marca_idx = list(marcas_disponiveis).index(marca_registada) + 1
+                except ValueError:
+                    marca_idx = 0
+                    marca_registada = ""
+                    st.session_state[marca_key] = ""
+            st.session_state[marca_index_key] = marca_idx
+            indice_guardado = marca_idx
+
+    indice_final = st.session_state.get(marca_index_key, 0)
+    if marca_selecao_manual and indice_valido:
+        indice_final = indice_guardado
+
+    return marca_registada, marca_selecao_manual, indice_final
+
+
 def _marcar_marca_manual(widget_key: str, manual_key: str) -> None:
     """Assinala que a seleção de marca foi alterada manualmente pelo utilizador."""
 
@@ -6994,26 +7077,7 @@ elif menu_option == "🤖 Smart Quotation":
                     marca_key = f"smart_artigos_{idx}_marca"
                     descricao_atual = st.session_state.get(descricao_key, "")
 
-                    marca_valor_guardado = st.session_state.get(marca_key)
-                    marca_registada = (marca_valor_guardado or "").strip()
                     marca_manual_key = f"{marca_key}_manual"
-                    if marca_manual_key not in st.session_state:
-                        st.session_state[marca_manual_key] = False
-                    marca_selecao_manual = st.session_state.get(marca_manual_key, False)
-
-                    if marca_registada:
-                        if marca_valor_guardado != marca_registada:
-                            st.session_state[marca_key] = marca_registada
-                    else:
-                        if not marca_selecao_manual:
-                            marca_sugerida = sugerir_marca_por_primeira_letra(
-                                descricao_atual, marcas_disponiveis_por_inicial
-                            )
-                            if marca_sugerida:
-                                st.session_state[marca_key] = marca_sugerida
-                                st.session_state[marca_manual_key] = False
-                                marca_selecao_manual = False
-                                marca_registada = marca_sugerida
 
                     col_art, col_qtd, col_uni, col_marca = st.columns([1.4, 1, 1, 1.6])
                     with col_art:
@@ -7043,53 +7107,16 @@ elif menu_option == "🤖 Smart Quotation":
                     with col_marca:
                         marca_options = [None, *marcas_disponiveis]
                         marca_index_key = f"{marca_key}_index"
-                        marca_registada = (st.session_state.get(marca_key) or "").strip()
-
-                        if marca_registada:
-                            marca_normalizada = marca_registada.casefold()
-                            marca_existente = marcas_disponiveis_normalizadas.get(marca_normalizada)
-                            if marca_existente:
-                                if marca_existente != marca_registada:
-                                    marca_registada = marca_existente
-                                    st.session_state[marca_key] = marca_existente
-                                    st.session_state[marca_manual_key] = False
-                                    marca_selecao_manual = False
-                            else:
-                                marca_registada = ""
-                                st.session_state[marca_key] = ""
-                                st.session_state[marca_manual_key] = False
-                                marca_selecao_manual = False
-                        if not marca_registada:
-                            if not marca_selecao_manual:
-                                marca_sugerida = sugerir_marca_por_primeira_letra(
-                                    descricao_atual, marcas_disponiveis_por_inicial
-                                )
-                                if marca_sugerida:
-                                    marca_registada = marca_sugerida
-                                    st.session_state[marca_key] = marca_sugerida
-                                    st.session_state[marca_manual_key] = False
-                                    marca_selecao_manual = False
-
-                        marca_idx = 0
-                        if marca_registada:
-                            try:
-                                marca_idx = marcas_disponiveis.index(marca_registada) + 1
-                            except ValueError:
-                                marca_idx = 0
-                                marca_registada = ""
-                                st.session_state[marca_key] = ""
-                                st.session_state[marca_manual_key] = False
-                                marca_selecao_manual = False
-
-                        indice_guardado = st.session_state.get(marca_index_key)
-                        if (
-                            indice_guardado is None
-                            or indice_guardado < 0
-                            or indice_guardado >= len(marca_options)
-                        ):
-                            st.session_state[marca_index_key] = marca_idx
-                        elif marca_idx != indice_guardado:
-                            st.session_state[marca_index_key] = marca_idx
+                        sincronizar_marca_smart_artigo(
+                            descricao_atual,
+                            marca_key,
+                            marca_manual_key,
+                            marca_index_key,
+                            marca_options,
+                            marcas_disponiveis,
+                            marcas_disponiveis_normalizadas,
+                            marcas_disponiveis_por_inicial,
+                        )
 
                         selecao_marca_idx = st.selectbox(
                             "Marca *",
