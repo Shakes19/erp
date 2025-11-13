@@ -5109,6 +5109,7 @@ def reset_artigos_state() -> None:
     _clear_session_state_keys(
         (
             "artigos_pesquisa",
+            "artigos_pesquisa_executada",
             "artigo_em_edicao",
             "artigo_em_edicao_key",
             "mostrar_modal_editar_artigo",
@@ -9071,32 +9072,40 @@ elif menu_option == "📦 Artigos":
         if "artigo_em_edicao" not in st.session_state:
             st.session_state["artigo_em_edicao"] = None
             st.session_state["artigo_em_edicao_key"] = None
+        if "artigos_pesquisa_executada" not in st.session_state:
+            st.session_state["artigos_pesquisa_executada"] = False
 
-        def _limpar_pesquisa_artigos() -> None:
-            st.session_state["artigos_pesquisa"] = ""
-            listar_artigos_catalogo.clear()
+        def _marcar_pesquisa_artigos_desatualizada() -> None:
+            st.session_state["artigos_pesquisa_executada"] = False
 
-        col_filtro, col_limpar = st.columns([1, 0.25])
+        def _executar_pesquisa_artigos() -> None:
+            st.session_state["artigos_pesquisa_executada"] = True
+
+        col_filtro, col_pesquisar = st.columns([1, 0.35])
 
         with col_filtro:
             filtro_artigos = st.text_input(
                 "Pesquisar artigos",
                 placeholder="Descrição, nº artigo ou marca",
                 key="artigos_pesquisa",
-            )
-
-        with col_limpar:
-            st.markdown("<div style='height: 1.95rem'></div>", unsafe_allow_html=True)
-            st.button(
-                "🔄 Limpar pesquisa",
-                use_container_width=True,
-                on_click=_limpar_pesquisa_artigos,
-                type="primary"
+                on_change=_marcar_pesquisa_artigos_desatualizada,
             )
 
         filtro_normalizado = (filtro_artigos or "").strip()
+
+        with col_pesquisar:
+            st.markdown("<div style='height: 1.95rem'></div>", unsafe_allow_html=True)
+            st.button(
+                "🔎 Pesquisar",
+                use_container_width=True,
+                type="primary",
+                key="executar_pesquisa_artigos",
+                on_click=_executar_pesquisa_artigos,
+                disabled=not bool(filtro_normalizado),
+            )
+
         artigos_catalogo: list[dict[str, object]] = []
-        if filtro_normalizado:
+        if filtro_normalizado and st.session_state.get("artigos_pesquisa_executada"):
             artigos_catalogo = listar_artigos_catalogo(filtro=filtro_artigos)
         feedback = st.session_state.get("artigo_edicao_feedback")
         if feedback:
@@ -9107,8 +9116,12 @@ elif menu_option == "📦 Artigos":
                 st.error(mensagem_feedback)
             st.session_state["artigo_edicao_feedback"] = None
 
+        pesquisa_executada = st.session_state.get("artigos_pesquisa_executada", False)
+
         if not filtro_normalizado:
             st.info("Introduza um termo de pesquisa para listar artigos.")
+        elif not pesquisa_executada:
+            st.info("Clique em 🔎 Pesquisar para consultar os resultados.")
         elif artigos_catalogo:
             for artigo in artigos_catalogo:
                 with st.container(border=True):
