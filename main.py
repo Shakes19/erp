@@ -6644,7 +6644,7 @@ if menu_option == "🏠 Dashboard":
         .strip()
     )
     if nome_utilizador:
-        st.markdown(f"## Bem Vindo, {nome_utilizador}!")
+        st.markdown(f"## Bem Vindo, {nome_utilizador}!" )
     else:
         st.markdown("## Bem Vindo!")
     st.markdown("")
@@ -6842,6 +6842,15 @@ elif menu_option == "📝 Nova Cotação":
         col_upload, col_submit = st.columns([3, 1.2])
 
         with col_upload:
+
+            st.markdown("""
+                <style>
+                [data-testid="stFileUploaderDropzone"] {
+                    height: 100px !important;          /* aumenta altura */
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
             upload_pedido_cliente = st.file_uploader(
                 "📎 Pedido do cliente (PDF ou email)",
                 type=["pdf", "eml", "msg"],
@@ -6856,10 +6865,18 @@ elif menu_option == "📝 Nova Cotação":
                     exibir_pdf(f"👁️ PDF carregado {idx} - {nome_pdf}", pdf_bytes, expanded=idx == 1)
 
         with col_submit:
-            st.markdown(
-                "<div style='height: 20px;'></div>",
-                unsafe_allow_html=True,
-            )
+            st.markdown("""
+                <style>
+                    .stVerticalBlock {
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: flex-end;  /* ALINHADO EM BAIXO */
+                        height: 100%;
+                    }
+                </style>
+
+                <div class="col-submit-bottom">
+            """, unsafe_allow_html=True)
             criar_cotacao = st.form_submit_button(
                 "🚀 Criar e Enviar",
                 type="primary",
@@ -9309,8 +9326,8 @@ elif menu_option == "👤 Perfil":
                             width: 100%;
                         }
                         .stForm {
-                                width: 420% !important;         /* metade da largura */
-                                margin-left: auto !important;  /* centra horizontalmente */
+                                width: 40% !important;
+                                margin-left: auto !important; 
                                 margin-right: auto !important;
                         }
                     </style>
@@ -10223,7 +10240,7 @@ elif menu_option == "⚙️ Configurações":
                         )
 
             with restore_col:
-                restore_col.subheader("Restauro")
+                restore_col.subheader("Restaurar")
 
                 uploaded_backup = restore_col.file_uploader(
                     "Selecionar ficheiro de backup",
