@@ -15,6 +15,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Optional
+from mimetypes import guess_type
 
 import streamlit as st
 
@@ -206,6 +207,7 @@ def send_email(
     email_password: str = "",
     use_tls: Optional[bool] = None,
     use_ssl: Optional[bool] = None,
+    attachments: Optional[list[tuple[str, bytes, Optional[str]]]] = None,
 ) -> None:
     """Enviar email reutilizando a ligação SMTP em cache."""
 
@@ -238,11 +240,25 @@ def send_email(
     msg["To"] = destino
     msg["Subject"] = assunto
     msg.attach(MIMEText(corpo, "plain"))
+
+    anexos_para_enviar: list[tuple[str, bytes, Optional[str]]] = []
     if pdf_bytes:
-        part = MIMEBase("application", "octet-stream")
-        part.set_payload(pdf_bytes)
+        anexos_para_enviar.append((pdf_filename, pdf_bytes, "application/pdf"))
+    if attachments:
+        anexos_para_enviar.extend(attachments)
+
+    for nome_ficheiro, dados, mime in anexos_para_enviar:
+        tipo_mime = mime or guess_type(nome_ficheiro)[0] or "application/octet-stream"
+        try:
+            tipo_principal, tipo_secundario = tipo_mime.split("/", 1)
+        except ValueError:
+            tipo_principal, tipo_secundario = "application", "octet-stream"
+        part = MIMEBase(tipo_principal, tipo_secundario)
+        part.set_payload(dados)
         encoders.encode_base64(part)
-        part.add_header("Content-Disposition", f'attachment; filename="{pdf_filename}"')
+        part.add_header(
+            "Content-Disposition", f'attachment; filename="{nome_ficheiro}"'
+        )
         msg.attach(part)
     server.send_message(msg)
 
