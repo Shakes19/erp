@@ -1164,6 +1164,25 @@ def criar_base_dados_completa():
     if "email_password" not in user_columns:
         c.execute("ALTER TABLE utilizador ADD COLUMN email_password TEXT")
 
+    # Encriptar palavras-passe de email antigas que ainda estejam a claro
+    c.execute(
+        """
+        SELECT id, email_password FROM utilizador
+        WHERE email_password IS NOT NULL AND email_password != ''
+        """
+    )
+    for user_id, raw_email_password in c.fetchall():
+        if raw_email_password is None:
+            continue
+        if isinstance(raw_email_password, (bytes, bytearray, memoryview)):
+            raw_email_password = raw_email_password.decode("utf-8", errors="ignore")
+        raw_email_password = str(raw_email_password)
+        if not raw_email_password.startswith("$2"):
+            c.execute(
+                "UPDATE utilizador SET email_password = ? WHERE id = ?",
+                (hash_password(raw_email_password), user_id),
+            )
+
     # Inserir utilizador administrador padrão se a tabela estiver vazia
     c.execute("SELECT COUNT(*) FROM utilizador")
     if c.fetchone()[0] == 0:
