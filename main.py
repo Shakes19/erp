@@ -6929,7 +6929,7 @@ elif menu_option == "📝 Nova Cotação":
 
         remover_indice = None
         for i, artigo in enumerate(st.session_state.artigos, 1):
-            with st.expander(f"Artigo {i}", expanded=(i == 1)):
+            with st.expander(f"Artigo {i}"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            , expanded=(i == 1)):
                 col_desc, col_id, col_qty, col_del = st.columns(
                     [3, 1.5, 1, 0.5], vertical_alignment="bottom"
                 )
@@ -8266,9 +8266,14 @@ elif menu_option == "📩 Process Center":
             submitted = False
             with col_form:
                 with st.form("process_center_form"):
-                    col_input, col_button = st.columns(
-                        [4, 1], vertical_alignment="bottom"
-                    )
+                    st.markdown("""
+                        <style>
+                            .stForm {
+                            padding: 0px !important; 
+                            }
+                        </style>
+                        """, unsafe_allow_html=True)
+                    col_input, col_button = st.columns([4, 1], vertical_alignment="bottom")
                     with col_input:
                         termo_pesquisa = st.text_input(
                             input_label,
@@ -9068,7 +9073,7 @@ elif menu_option == "📄 PDFs":
                     background: none !important;
                 }
             </style>
-            <div class="pdf-search-type-label">Tipo de pesquisa</div>
+            <div class="pdf-search-type-label"></div>
             """,
             unsafe_allow_html=True,
         )
@@ -9078,7 +9083,6 @@ elif menu_option == "📄 PDFs":
             ("Processo", "Referência Cliente"),
             key="pdf_search_tipo",
             on_change=_reset_pdf_search_state,
-            label_visibility="collapsed",
         )
 
     placeholder_numero = f"QT{datetime.now().year % 100:02d}-0001"
@@ -9096,6 +9100,13 @@ elif menu_option == "📄 PDFs":
     submitted = False
     with col_form:
         with st.form("pdf_search_form"):
+            st.markdown("""
+                <style>
+                .stForm {
+                    padding: calc(-1px + 1rem) 0px 15px !important; 
+                }
+                </style>
+                """, unsafe_allow_html=True)
             col_input, col_button = st.columns([4, 1], vertical_alignment="bottom")
             with col_input:
                 termo_pesquisa = st.text_input(
