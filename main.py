@@ -1316,14 +1316,14 @@ def mostrar_dialogo_referencia_duplicada(origem: str):
             f"Já existe uma cotação com a referência '{referencia}'{cliente_info}."
         )
         st.write("Deseja criar a cotação mesmo assim?")
-        col_cancel, col_ok = st.columns(2)
+        col_ok, col_cancel = st.columns(2)
+        if col_ok.button("Sim, criar mesmo assim"):
+            st.session_state["duplicated_ref_force"] = origem
+            st.session_state["show_duplicate_ref_dialog"] = False
+            st.rerun()
         if col_cancel.button("Não, cancelar"):
             st.session_state.pop("duplicated_ref_context", None)
             st.session_state.pop("duplicated_ref_force", None)
-            st.session_state["show_duplicate_ref_dialog"] = False
-            st.rerun()
-        if col_ok.button("Sim, criar mesmo assim", type="primary"):
-            st.session_state["duplicated_ref_force"] = origem
             st.session_state["show_duplicate_ref_dialog"] = False
             st.rerun()
 
@@ -5109,7 +5109,6 @@ def reset_artigos_state() -> None:
     _clear_session_state_keys(
         (
             "artigos_pesquisa",
-            "artigos_pesquisa_executada",
             "artigo_em_edicao",
             "artigo_em_edicao_key",
             "mostrar_modal_editar_artigo",
@@ -5886,7 +5885,7 @@ def criar_cotacao_cliente_dialog(
                     disabled_submit = True
 
             submitted = st.form_submit_button(
-                "🚀 Criar e Enviar",
+                "Criar e Enviar",
                 type="primary",
                 disabled=disabled_submit,
             )
@@ -6862,12 +6861,12 @@ elif menu_option == "📝 Nova Cotação":
                 unsafe_allow_html=True,
             )
             criar_cotacao = st.form_submit_button(
-                "🚀 Criar e Enviar",
+                "✅ Criar Cotação",
                 type="primary",
                 use_container_width=True,
             )
             criar_processo_sem_email = st.form_submit_button(
-                "📁 Criar (sem email)",
+                "📁 Criar Processo (sem email)",
                 use_container_width=True,
             )
     
@@ -7306,16 +7305,16 @@ elif menu_option == "🤖 Smart Quotation":
                     else None
                 )
 
-                col_submit_sem_email, col_submit_principal = st.columns(2)
+                col_submit_principal, col_submit_sem_email = st.columns(2)
                 with col_submit_principal:
                     submit_smart = st.button(
-                        "🚀 Criar e Enviar",
+                        "Submeter",
                         type="primary",
                         key="smart_submit",
                     )
                 with col_submit_sem_email:
                     submit_smart_sem_email = st.button(
-                        "📁 Criar (sem email)",
+                        "Criar processo (sem email)",
                         key="smart_submit_sem_email",
                     )
 
@@ -7528,7 +7527,7 @@ elif menu_option == "📩 Process Center":
                 key="utilizador_pend",
             )
         with col4:
-            if st.button("🔎 Pesquisar", key="refresh_pend", use_container_width=True, type="primary"):
+            if st.button("🔄 Atualizar", key="refresh_pend", use_container_width=True):
                 st.rerun()
 
         fornecedor_id_pend = fornecedor_options[fornecedor_sel_pend]
@@ -7731,7 +7730,7 @@ elif menu_option == "📩 Process Center":
                 key="utilizador_resp",
             )
         with col4:
-            if st.button("🔎 Pesquisar", key="refresh_resp", use_container_width=True, type="primary"):
+            if st.button("🔄 Atualizar", key="refresh_resp", use_container_width=True):
                 st.rerun()
 
         fornecedor_id_resp = fornecedor_options[fornecedor_sel_resp]
@@ -7888,7 +7887,7 @@ elif menu_option == "📩 Process Center":
                 key="utilizador_arq",
             )
         with col4:
-            if st.button("🔎 Pesquisar", key="refresh_arq", use_container_width=True, type="primary"):
+            if st.button("🔄 Atualizar", key="refresh_arq", use_container_width=True):
                 st.rerun()
 
         fornecedor_id_arq = fornecedor_options[fornecedor_sel_arq]
@@ -8001,7 +8000,7 @@ elif menu_option == "📩 Process Center":
                         )
                     with col_button:
                         submitted = st.form_submit_button(
-                            "🔎 Pesquisar", type="primary", use_container_width=True
+                            "Pesquisar", type="primary", use_container_width=True
                         )
 
         if submitted:
@@ -8825,7 +8824,7 @@ elif menu_option == "📄 PDFs":
                 )
             with col_button:
                 submitted = st.form_submit_button(
-                    "🔎 Pesquisar", type="primary", use_container_width=True
+                    "Pesquisar", type="primary", use_container_width=True
                 )
 
     if submitted:
@@ -9072,51 +9071,31 @@ elif menu_option == "📦 Artigos":
         if "artigo_em_edicao" not in st.session_state:
             st.session_state["artigo_em_edicao"] = None
             st.session_state["artigo_em_edicao_key"] = None
-        if "artigos_pesquisa_executada" not in st.session_state:
-            st.session_state["artigos_pesquisa_executada"] = False
-        if "artigos_pesquisa_valor_previo" not in st.session_state:
-            st.session_state["artigos_pesquisa_valor_previo"] = (
-                st.session_state.get("artigos_pesquisa", "")
-            )
 
-        def _marcar_pesquisa_artigos_desatualizada() -> None:
-            st.session_state["artigos_pesquisa_executada"] = False
+        def _limpar_pesquisa_artigos() -> None:
+            st.session_state["artigos_pesquisa"] = ""
+            listar_artigos_catalogo.clear()
 
-        def _executar_pesquisa_artigos() -> None:
-            st.session_state["artigos_pesquisa_executada"] = True
-
-        col_filtro, col_pesquisar = st.columns([1, 0.35])
+        col_filtro, col_limpar = st.columns([1, 0.25])
 
         with col_filtro:
             filtro_artigos = st.text_input(
                 "Pesquisar artigos",
                 placeholder="Descrição, nº artigo ou marca",
                 key="artigos_pesquisa",
-                on_change=_executar_pesquisa_artigos,
-                help="Pressione Enter para submeter a pesquisa sem clicar no botão.",
+            )
+
+        with col_limpar:
+            st.markdown("<div style='height: 1.95rem'></div>", unsafe_allow_html=True)
+            st.button(
+                "🔄 Limpar pesquisa",
+                use_container_width=True,
+                on_click=_limpar_pesquisa_artigos,
             )
 
         filtro_normalizado = (filtro_artigos or "").strip()
-
-        with col_pesquisar:
-            st.markdown("<div style='height: 1.95rem'></div>", unsafe_allow_html=True)
-            pesquisa_submetida = st.button(
-                "🔎 Pesquisar",
-                use_container_width=True,
-                type="primary",
-            )
-
-        if pesquisa_submetida:
-            _executar_pesquisa_artigos()
-
-        filtro_atual = st.session_state.get("artigos_pesquisa", "")
-        filtro_previo = st.session_state.get("artigos_pesquisa_valor_previo", "")
-        if filtro_atual != filtro_previo:
-            st.session_state["artigos_pesquisa_valor_previo"] = filtro_atual
-            _marcar_pesquisa_artigos_desatualizada()
-
         artigos_catalogo: list[dict[str, object]] = []
-        if filtro_normalizado and st.session_state.get("artigos_pesquisa_executada"):
+        if filtro_normalizado:
             artigos_catalogo = listar_artigos_catalogo(filtro=filtro_artigos)
         feedback = st.session_state.get("artigo_edicao_feedback")
         if feedback:
@@ -9127,12 +9106,8 @@ elif menu_option == "📦 Artigos":
                 st.error(mensagem_feedback)
             st.session_state["artigo_edicao_feedback"] = None
 
-        pesquisa_executada = st.session_state.get("artigos_pesquisa_executada", False)
-
         if not filtro_normalizado:
             st.info("Introduza um termo de pesquisa para listar artigos.")
-        elif not pesquisa_executada:
-            st.info("Clique em 🔎 Pesquisar para consultar os resultados.")
         elif artigos_catalogo:
             for artigo in artigos_catalogo:
                 with st.container(border=True):
