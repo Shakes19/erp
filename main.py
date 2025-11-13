@@ -271,6 +271,24 @@ def limitar_descricao_artigo(texto: str, max_linhas: int = 2) -> str:
     return "\n".join(linhas_filtradas)
 
 
+def _format_file_size(num_bytes: int | float) -> str:
+    """Return a human-readable representation for ``num_bytes``."""
+
+    try:
+        size = float(num_bytes)
+    except (TypeError, ValueError):
+        return "—"
+
+    units = ["B", "KB", "MB", "GB", "TB"]
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} {units[-1]}"
+
+
 def invalidate_overview_caches() -> None:
     """Limpar caches utilizadas na dashboard principal.
 
@@ -1151,6 +1169,25 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
         st.session_state["show_supplier_requirement_dialog"] = True
         return False
 
+    anexos_por_fornecedor = copy.deepcopy(
+        contexto.get("anexos_fornecedores") or {}
+    )
+    if contexto.get("solicitar_anexos_fornecedor"):
+        st.session_state["supplier_attachment_context"] = copy.deepcopy(contexto)
+        st.session_state["supplier_attachment_suppliers"] = [
+            {
+                "id": fornecedor_id,
+                "nome": fornecedores_info.get(fornecedor_id, ("", "Fornecedor"))[1],
+            }
+            for fornecedor_id in fornecedores_map.keys()
+        ]
+        st.session_state["supplier_attachment_data"] = copy.deepcopy(
+            anexos_por_fornecedor
+        )
+        st.session_state["supplier_attachment_origin"] = origem
+        st.session_state["show_supplier_attachment_dialog"] = True
+        return False
+
     processo_id, numero_processo, rfq_artigos = criar_processo_com_artigos(
         artigos, cliente_id
     )
@@ -1181,6 +1218,7 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
             rfq_artigos=rfq_artigos,
             requisitos_fornecedor=requisitos_fornecedores.get(fornecedor_id),
             enviar_email=enviar_emails,
+            anexos_email=anexos_por_fornecedor.get(fornecedor_id),
         )
 
         if rfq_id:
@@ -1405,6 +1443,107 @@ def mostrar_dialogo_requisitos_fornecedor(origem: str) -> None:
             st.session_state.pop("supplier_requirement_ready", None)
             st.session_state.pop("supplier_requirement_origin", None)
             st.session_state["show_supplier_requirement_dialog"] = False
+            st.rerun()
+
+    _dialogo()
+
+
+def mostrar_dialogo_anexos_fornecedor(origem: str) -> None:
+    """Permite carregar anexos adicionais para cada fornecedor selecionado."""
+
+    contexto = st.session_state.get("supplier_attachment_context")
+    if (
+        not contexto
+        or contexto.get("origem") != origem
+        or not st.session_state.get("show_supplier_attachment_dialog")
+    ):
+        return
+
+    fornecedores = st.session_state.get("supplier_attachment_suppliers") or []
+    dados_existentes = copy.deepcopy(
+        st.session_state.get("supplier_attachment_data") or {}
+    )
+
+    titulo = "Enviar anexos adicionais para fornecedores"
+
+    @st.dialog(titulo)
+    def _dialogo():
+        st.info(
+            "Carregue ficheiros PDF ou imagem que deverão seguir em anexo ao email de cada fornecedor."
+        )
+
+        updated_data = copy.deepcopy(dados_existentes)
+        tipos_permitidos = [
+            "pdf",
+            "png",
+            "jpg",
+            "jpeg",
+            "gif",
+            "bmp",
+            "tif",
+            "tiff",
+            "webp",
+        ]
+
+        for fornecedor in fornecedores:
+            fornecedor_id = fornecedor.get("id")
+            fornecedor_nome = (fornecedor.get("nome") or "Fornecedor").strip()
+            uploader_key = f"attachment_uploader_{origem}_{fornecedor_id}"
+            st.markdown(f"**{fornecedor_nome}**")
+            st.caption("Arraste PDFs ou imagens para adicionar aos pedidos deste fornecedor.")
+            ficheiros = st.file_uploader(
+                "Adicionar ficheiros",
+                type=tipos_permitidos,
+                accept_multiple_files=True,
+                key=uploader_key,
+                label_visibility="collapsed",
+            )
+            if ficheiros:
+                anexos_processados: list[tuple[str, bytes, str | None]] = []
+                for ficheiro in ficheiros:
+                    try:
+                        conteudo = ficheiro.read()
+                    except Exception:
+                        conteudo = b""
+                    if not conteudo:
+                        continue
+                    anexos_processados.append(
+                        (ficheiro.name, conteudo, getattr(ficheiro, "type", None))
+                    )
+                if anexos_processados:
+                    updated_data[fornecedor_id] = anexos_processados
+
+            anexos_existentes = updated_data.get(fornecedor_id) or []
+            if anexos_existentes:
+                st.caption("Anexos selecionados:")
+                for idx, (nome_ficheiro, dados, _mime) in enumerate(
+                    anexos_existentes, start=1
+                ):
+                    st.text(f"{idx}. {nome_ficheiro} ({_format_file_size(len(dados))})")
+                if st.button(
+                    "Limpar anexos",
+                    key=f"clear_attachment_{origem}_{fornecedor_id}",
+                    help="Remove todos os anexos selecionados para este fornecedor.",
+                ):
+                    updated_data.pop(fornecedor_id, None)
+                    st.session_state["supplier_attachment_data"] = copy.deepcopy(
+                        updated_data
+                    )
+                    st.rerun()
+            else:
+                st.caption("Nenhum anexo selecionado para este fornecedor.")
+
+            st.markdown("---")
+
+        st.session_state["supplier_attachment_data"] = copy.deepcopy(updated_data)
+
+        col_confirmar, col_cancelar = st.columns(2)
+        if col_confirmar.button("Confirmar anexos", type="primary"):
+            st.session_state["supplier_attachment_ready"] = origem
+            st.session_state["show_supplier_attachment_dialog"] = False
+            st.rerun()
+        if col_cancelar.button("Cancelar"):
+            reset_supplier_attachment_state()
             st.rerun()
 
     _dialogo()
@@ -1886,6 +2025,7 @@ def criar_rfq(
     rfq_artigos=None,
     requisitos_fornecedor: dict | None = None,
     enviar_email: bool = True,
+    anexos_email: list[tuple[str, bytes, str | None]] | None = None,
 ):
     """Criar nova RFQ"""
     conn = obter_conexao()
@@ -2079,7 +2219,9 @@ def criar_rfq(
         gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos)
         # Enviar pedido por email ao fornecedor (opcional)
         if enviar_email:
-            envio_email = enviar_email_pedido_fornecedor(rfq_id)
+            envio_email = enviar_email_pedido_fornecedor(
+                rfq_id, anexos_extra=anexos_email
+            )
         else:
             envio_email = {
                 "sucesso": True,
@@ -3468,7 +3610,9 @@ def enviar_email_orcamento(
         return False
 
 
-def enviar_email_pedido_fornecedor(rfq_id):
+def enviar_email_pedido_fornecedor(
+    rfq_id, anexos_extra: list[tuple[str, bytes, str | None]] | None = None
+):
     """Envia por email o PDF de pedido ao fornecedor associado à RFQ.
 
     Retorna um dicionário com o estado do envio e uma mensagem legível.
@@ -3690,6 +3834,7 @@ def enviar_email_pedido_fornecedor(rfq_id):
             smtp_port=smtp_port,
             email_user=email_user,
             email_password=email_password,
+            attachments=anexos_extra,
         )
 
         mensagem = f"Email para {fornecedor_nome} enviado com sucesso."
@@ -5017,6 +5162,23 @@ def reset_supplier_requirement_state() -> None:
     )
 
 
+def reset_supplier_attachment_state() -> None:
+    """Limpa a recolha de anexos adicionais por fornecedor."""
+
+    _clear_session_state_keys(
+        (
+            "supplier_attachment_context",
+            "supplier_attachment_suppliers",
+            "supplier_attachment_data",
+            "supplier_attachment_ready",
+            "supplier_attachment_origin",
+            "show_supplier_attachment_dialog",
+        )
+    )
+
+    _clear_session_state_prefixes(("attachment_uploader_",))
+
+
 def reset_smart_quotation_state() -> None:
     """Limpa os valores guardados para o módulo Smart Quotation."""
 
@@ -5028,6 +5190,7 @@ def reset_smart_quotation_state() -> None:
             "smart_unidade",
             "smart_marca",
             "smart_cliente_index",
+            "smart_enviar_anexos",
             "smart_artigos",
             "smart_success_data",
             "show_smart_success_dialog",
@@ -5042,6 +5205,7 @@ def reset_smart_quotation_state() -> None:
     )
     reset_duplicate_reference_state()
     reset_supplier_requirement_state()
+    reset_supplier_attachment_state()
 
 
 def reset_nova_cotacao_state() -> None:
@@ -5052,6 +5216,7 @@ def reset_nova_cotacao_state() -> None:
             "nova_cotacao_data",
             "nova_cotacao_referencia",
             "cliente_select_nova",
+            "nova_enviar_anexos",
             "artigos",
             "pedido_cliente_anexos",
             "upload_pedido_cliente",
@@ -5072,6 +5237,7 @@ def reset_nova_cotacao_state() -> None:
     )
     reset_duplicate_reference_state()
     reset_supplier_requirement_state()
+    reset_supplier_attachment_state()
 
 
 def reset_process_center_state() -> None:
@@ -6722,7 +6888,7 @@ elif menu_option == "📝 Nova Cotação":
     with st.form(key="nova_cotacao_form"):
         clientes = listar_clientes()
         clientes_opcoes = [None] + clientes
-        col_data, col_ref, col_cliente = st.columns([1.2, 1.8, 2.5])
+        col_data, col_ref, col_cliente, col_anexos = st.columns([1.2, 1.8, 2.4, 1.2])
 
         with col_data:
             data = st.date_input(
@@ -6744,6 +6910,13 @@ elif menu_option == "📝 Nova Cotação":
                 format_func=lambda x: x[1] if x else "Selecione um cliente",
                 key="cliente_select_nova",
                 placeholder="Escolha uma opção",
+            )
+
+        with col_anexos:
+            st.checkbox(
+                "Enviar Anexos",
+                key="nova_enviar_anexos",
+                help="Ao enviar os pedidos aos fornecedores será possível anexar ficheiros adicionais.",
             )
 
         nome_solicitante = cliente_sel[1] if cliente_sel else ""
@@ -6985,7 +7158,10 @@ elif menu_option == "📝 Nova Cotação":
                     "anexos": st.session_state.get("pedido_cliente_anexos", []),
                     "anexo_tipo": "anexo_cliente",
                 }
-                contexto_criacao["enviar_emails"] = bool(criar_cotacao)
+                enviar_automatico = bool(criar_cotacao)
+                contexto_criacao["enviar_emails"] = enviar_automatico
+                if enviar_automatico and st.session_state.get("nova_enviar_anexos"):
+                    contexto_criacao["solicitar_anexos_fornecedor"] = True
                 processar_criacao_cotacoes(contexto_criacao)
 
     contexto_dup_manual = st.session_state.get("duplicated_ref_context")
@@ -7016,6 +7192,22 @@ elif menu_option == "📝 Nova Cotação":
                 processar_criacao_cotacoes(contexto_confirmado, forcar=True)
         elif st.session_state.get("show_supplier_requirement_dialog"):
             mostrar_dialogo_requisitos_fornecedor("manual")
+
+    contexto_anexos_manual = st.session_state.get("supplier_attachment_context")
+    if contexto_anexos_manual and contexto_anexos_manual.get("origem") == "manual":
+        if st.session_state.get("supplier_attachment_ready") == "manual":
+            contexto_confirmado = st.session_state.pop("supplier_attachment_context", None)
+            anexos_confirmados = copy.deepcopy(
+                st.session_state.get("supplier_attachment_data") or {}
+            )
+            reset_supplier_attachment_state()
+            if contexto_confirmado:
+                contexto_confirmado = copy.deepcopy(contexto_confirmado)
+                contexto_confirmado["anexos_fornecedores"] = anexos_confirmados
+                contexto_confirmado["solicitar_anexos_fornecedor"] = False
+                processar_criacao_cotacoes(contexto_confirmado, forcar=True)
+        elif st.session_state.get("show_supplier_attachment_dialog"):
+            mostrar_dialogo_anexos_fornecedor("manual")
 
 elif menu_option == "🤖 Smart Quotation":
     st.title("🤖 Smart Quotation")
@@ -7211,12 +7403,20 @@ elif menu_option == "🤖 Smart Quotation":
                     "Referência Cliente",
                     key="smart_referencia",
                 )
-                cliente_idx = st.selectbox(
-                    "Cliente (Gestão de Clientes)",
-                    options=list(range(len(cliente_options))),
-                    format_func=_format_cliente,
-                    key="smart_cliente_index",
-                )
+                cliente_cols = st.columns([2.6, 1])
+                with cliente_cols[0]:
+                    cliente_idx = st.selectbox(
+                        "Cliente (Gestão de Clientes)",
+                        options=list(range(len(cliente_options))),
+                        format_func=_format_cliente,
+                        key="smart_cliente_index",
+                    )
+                with cliente_cols[1]:
+                    st.checkbox(
+                        "Enviar Anexos",
+                        key="smart_enviar_anexos",
+                        help="Permite escolher ficheiros adicionais antes de enviar os pedidos aos fornecedores.",
+                    )
                 artigos_guardados = st.session_state.get("smart_artigos", [])
                 total_artigos = len(artigos_guardados)
                 if total_artigos:
@@ -7462,7 +7662,10 @@ elif menu_option == "🤖 Smart Quotation":
                                 "anexos": anexos_processados,
                                 "anexo_tipo": "anexo_cliente",
                             }
-                            contexto_criacao_smart["enviar_emails"] = bool(submit_smart)
+                            enviar_smart = bool(submit_smart)
+                            contexto_criacao_smart["enviar_emails"] = enviar_smart
+                            if enviar_smart and st.session_state.get("smart_enviar_anexos"):
+                                contexto_criacao_smart["solicitar_anexos_fornecedor"] = True
                             processar_criacao_cotacoes(contexto_criacao_smart)
 
             with col_pdf:
@@ -7508,6 +7711,22 @@ elif menu_option == "🤖 Smart Quotation":
                 processar_criacao_cotacoes(contexto_confirmado, forcar=True)
         elif st.session_state.get("show_supplier_requirement_dialog"):
             mostrar_dialogo_requisitos_fornecedor("smart")
+
+    contexto_anexos_smart = st.session_state.get("supplier_attachment_context")
+    if contexto_anexos_smart and contexto_anexos_smart.get("origem") == "smart":
+        if st.session_state.get("supplier_attachment_ready") == "smart":
+            contexto_confirmado = st.session_state.pop("supplier_attachment_context", None)
+            anexos_confirmados = copy.deepcopy(
+                st.session_state.get("supplier_attachment_data") or {}
+            )
+            reset_supplier_attachment_state()
+            if contexto_confirmado:
+                contexto_confirmado = copy.deepcopy(contexto_confirmado)
+                contexto_confirmado["anexos_fornecedores"] = anexos_confirmados
+                contexto_confirmado["solicitar_anexos_fornecedor"] = False
+                processar_criacao_cotacoes(contexto_confirmado, forcar=True)
+        elif st.session_state.get("show_supplier_attachment_dialog"):
+            mostrar_dialogo_anexos_fornecedor("smart")
 
     mostrar_dialogo_sucesso_smart()
 elif menu_option == "📩 Process Center":
