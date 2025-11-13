@@ -1316,14 +1316,14 @@ def mostrar_dialogo_referencia_duplicada(origem: str):
             f"Já existe uma cotação com a referência '{referencia}'{cliente_info}."
         )
         st.write("Deseja criar a cotação mesmo assim?")
-        col_ok, col_cancel = st.columns(2)
-        if col_ok.button("Sim, criar mesmo assim"):
-            st.session_state["duplicated_ref_force"] = origem
-            st.session_state["show_duplicate_ref_dialog"] = False
-            st.rerun()
+        col_cancel, col_ok = st.columns(2)
         if col_cancel.button("Não, cancelar"):
             st.session_state.pop("duplicated_ref_context", None)
             st.session_state.pop("duplicated_ref_force", None)
+            st.session_state["show_duplicate_ref_dialog"] = False
+            st.rerun()
+        if col_ok.button("Sim, criar mesmo assim", type="primary"):
+            st.session_state["duplicated_ref_force"] = origem
             st.session_state["show_duplicate_ref_dialog"] = False
             st.rerun()
 
@@ -5885,7 +5885,7 @@ def criar_cotacao_cliente_dialog(
                     disabled_submit = True
 
             submitted = st.form_submit_button(
-                "Criar e Enviar",
+                "🚀 Criar e Enviar",
                 type="primary",
                 disabled=disabled_submit,
             )
@@ -6861,12 +6861,12 @@ elif menu_option == "📝 Nova Cotação":
                 unsafe_allow_html=True,
             )
             criar_cotacao = st.form_submit_button(
-                "✅ Criar Cotação",
+                "🚀 Criar e Enviar",
                 type="primary",
                 use_container_width=True,
             )
             criar_processo_sem_email = st.form_submit_button(
-                "📁 Criar Processo (sem email)",
+                "📁 Criar (sem email)",
                 use_container_width=True,
             )
     
@@ -7305,16 +7305,16 @@ elif menu_option == "🤖 Smart Quotation":
                     else None
                 )
 
-                col_submit_principal, col_submit_sem_email = st.columns(2)
+                col_submit_sem_email, col_submit_principal = st.columns(2)
                 with col_submit_principal:
                     submit_smart = st.button(
-                        "Submeter",
+                        "🚀 Criar e Enviar",
                         type="primary",
                         key="smart_submit",
                     )
                 with col_submit_sem_email:
                     submit_smart_sem_email = st.button(
-                        "Criar processo (sem email)",
+                        "📁 Criar (sem email)",
                         key="smart_submit_sem_email",
                     )
 
@@ -7527,7 +7527,7 @@ elif menu_option == "📩 Process Center":
                 key="utilizador_pend",
             )
         with col4:
-            if st.button("🔄 Atualizar", key="refresh_pend", use_container_width=True):
+            if st.button("🔎 Pesquisar", key="refresh_pend", use_container_width=True, type="primary"):
                 st.rerun()
 
         fornecedor_id_pend = fornecedor_options[fornecedor_sel_pend]
@@ -7730,7 +7730,7 @@ elif menu_option == "📩 Process Center":
                 key="utilizador_resp",
             )
         with col4:
-            if st.button("🔄 Atualizar", key="refresh_resp", use_container_width=True):
+            if st.button("🔎 Pesquisar", key="refresh_resp", use_container_width=True, type="primary"):
                 st.rerun()
 
         fornecedor_id_resp = fornecedor_options[fornecedor_sel_resp]
@@ -7887,7 +7887,7 @@ elif menu_option == "📩 Process Center":
                 key="utilizador_arq",
             )
         with col4:
-            if st.button("🔄 Atualizar", key="refresh_arq", use_container_width=True):
+            if st.button("🔎 Pesquisar", key="refresh_arq", use_container_width=True, type="primary"):
                 st.rerun()
 
         fornecedor_id_arq = fornecedor_options[fornecedor_sel_arq]
@@ -8000,7 +8000,7 @@ elif menu_option == "📩 Process Center":
                         )
                     with col_button:
                         submitted = st.form_submit_button(
-                            "Pesquisar", type="primary", use_container_width=True
+                            "🔎 Pesquisar", type="primary", use_container_width=True
                         )
 
         if submitted:
@@ -8824,7 +8824,7 @@ elif menu_option == "📄 PDFs":
                 )
             with col_button:
                 submitted = st.form_submit_button(
-                    "Pesquisar", type="primary", use_container_width=True
+                    "🔎 Pesquisar", type="primary", use_container_width=True
                 )
 
     if submitted:
@@ -9091,6 +9091,7 @@ elif menu_option == "📦 Artigos":
                 "🔄 Limpar pesquisa",
                 use_container_width=True,
                 on_click=_limpar_pesquisa_artigos,
+                type="primary"
             )
 
         filtro_normalizado = (filtro_artigos or "").strip()
