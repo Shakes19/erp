@@ -9081,28 +9081,29 @@ elif menu_option == "📦 Artigos":
         def _executar_pesquisa_artigos() -> None:
             st.session_state["artigos_pesquisa_executada"] = True
 
-        col_filtro, col_pesquisar = st.columns([1, 0.35])
+        with st.form("form_pesquisar_artigos"):
+            col_filtro, col_pesquisar = st.columns([1, 0.35])
 
-        with col_filtro:
-            filtro_artigos = st.text_input(
-                "Pesquisar artigos",
-                placeholder="Descrição, nº artigo ou marca",
-                key="artigos_pesquisa",
-                on_change=_marcar_pesquisa_artigos_desatualizada,
-            )
+            with col_filtro:
+                filtro_artigos = st.text_input(
+                    "Pesquisar artigos",
+                    placeholder="Descrição, nº artigo ou marca",
+                    key="artigos_pesquisa",
+                    on_change=_marcar_pesquisa_artigos_desatualizada,
+                )
 
-        filtro_normalizado = (filtro_artigos or "").strip()
+            filtro_normalizado = (filtro_artigos or "").strip()
 
-        with col_pesquisar:
-            st.markdown("<div style='height: 1.95rem'></div>", unsafe_allow_html=True)
-            st.button(
-                "🔎 Pesquisar",
-                use_container_width=True,
-                type="primary",
-                key="executar_pesquisa_artigos",
-                on_click=_executar_pesquisa_artigos,
-                disabled=not bool(filtro_normalizado),
-            )
+            with col_pesquisar:
+                st.markdown("<div style='height: 1.95rem'></div>", unsafe_allow_html=True)
+                pesquisa_submetida = st.form_submit_button(
+                    "🔎 Pesquisar",
+                    use_container_width=True,
+                    type="primary",
+                )
+
+            if pesquisa_submetida:
+                _executar_pesquisa_artigos()
 
         artigos_catalogo: list[dict[str, object]] = []
         if filtro_normalizado and st.session_state.get("artigos_pesquisa_executada"):
