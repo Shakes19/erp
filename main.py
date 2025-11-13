@@ -9074,6 +9074,10 @@ elif menu_option == "📦 Artigos":
             st.session_state["artigo_em_edicao_key"] = None
         if "artigos_pesquisa_executada" not in st.session_state:
             st.session_state["artigos_pesquisa_executada"] = False
+        if "artigos_pesquisa_valor_previo" not in st.session_state:
+            st.session_state["artigos_pesquisa_valor_previo"] = (
+                st.session_state.get("artigos_pesquisa", "")
+            )
 
         def _marcar_pesquisa_artigos_desatualizada() -> None:
             st.session_state["artigos_pesquisa_executada"] = False
@@ -9089,7 +9093,6 @@ elif menu_option == "📦 Artigos":
                     "Pesquisar artigos",
                     placeholder="Descrição, nº artigo ou marca",
                     key="artigos_pesquisa",
-                    on_change=_marcar_pesquisa_artigos_desatualizada,
                 )
 
             filtro_normalizado = (filtro_artigos or "").strip()
@@ -9102,8 +9105,14 @@ elif menu_option == "📦 Artigos":
                     type="primary",
                 )
 
-            if pesquisa_submetida:
-                _executar_pesquisa_artigos()
+        if pesquisa_submetida:
+            _executar_pesquisa_artigos()
+
+        filtro_atual = st.session_state.get("artigos_pesquisa", "")
+        filtro_previo = st.session_state.get("artigos_pesquisa_valor_previo", "")
+        if filtro_atual != filtro_previo:
+            st.session_state["artigos_pesquisa_valor_previo"] = filtro_atual
+            _marcar_pesquisa_artigos_desatualizada()
 
         artigos_catalogo: list[dict[str, object]] = []
         if filtro_normalizado and st.session_state.get("artigos_pesquisa_executada"):
