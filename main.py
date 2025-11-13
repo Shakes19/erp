@@ -1771,7 +1771,7 @@ def inserir_utilizador(username, password, nome="", email="", role="user", email
                 nome,
                 email,
                 role,
-                email_password,
+                hash_password(email_password) if email_password else None,
             ),
         )
         conn.commit()
@@ -1797,7 +1797,7 @@ def atualizar_utilizador(
             params.append(hash_password(password))
         if email_password is not None:
             fields.append("email_password = ?")
-            params.append(email_password)
+            params.append(hash_password(email_password) if email_password else None)
         params.append(user_id)
         c.execute(
             f"UPDATE utilizador SET {', '.join(fields)} WHERE id = ?",
@@ -3379,13 +3379,19 @@ def enviar_email_orcamento(
 
         # Credenciais do utilizador atual
         current_user = obter_utilizador_por_id(st.session_state.get("user_id"))
-        if current_user and current_user[4] and current_user[6]:
+        if current_user and current_user[4]:
             email_user = current_user[4]
-            email_password = current_user[6]
             nome_utilizador = current_user[3]
         else:
             st.error(
                 "Configure o seu email e palavra-passe no perfil."
+            )
+            return False
+
+        email_password = st.session_state.get("email_password_cache")
+        if not email_password:
+            st.error(
+                "Introduza a palavra-passe do email em 'Perfil > Configuração de Email' para esta sessão."
             )
             return False
 
@@ -3588,9 +3594,8 @@ def enviar_email_pedido_fornecedor(rfq_id):
         smtp_port = config_email["port"]
 
         current_user = obter_utilizador_por_id(st.session_state.get("user_id"))
-        if current_user and current_user[4] and current_user[6]:
+        if current_user and current_user[4]:
             email_user = current_user[4]
-            email_password = current_user[6]
             nome_utilizador = current_user[3]
         else:
             mensagem = (
@@ -3599,6 +3604,17 @@ def enviar_email_pedido_fornecedor(rfq_id):
             resultado["mensagem"] = mensagem
             st.error(
                 "Configure o seu email e palavra-passe no perfil."
+            )
+            return resultado
+
+        email_password = st.session_state.get("email_password_cache")
+        if not email_password:
+            mensagem = (
+                f"Email para {fornecedor_nome} não enviado: introduza a palavra-passe do email em 'Perfil > Configuração de Email'."
+            )
+            resultado["mensagem"] = mensagem
+            st.error(
+                "Introduza a palavra-passe do email em 'Perfil > Configuração de Email' para esta sessão."
             )
             return resultado
 
@@ -6424,6 +6440,7 @@ if 'logged_in' not in st.session_state:
     st.session_state.username = None
     st.session_state.user_email = None
     st.session_state.user_nome = None
+    st.session_state.email_password_cache = None
 
 
 def login_screen():
@@ -6458,6 +6475,7 @@ def login_screen():
             st.session_state.username = user[1]
             st.session_state.user_email = user[4]
             st.session_state.user_nome = user[3] or user[1]
+            st.session_state.email_password_cache = None
             st.rerun()
         else:
             st.error("Credenciais inválidas")
@@ -6609,6 +6627,7 @@ with st.sidebar:
         st.session_state.username = None
         st.session_state.user_email = None
         st.session_state.user_nome = None
+        st.session_state.email_password_cache = None
         st.rerun()
 
     st.markdown("---")
@@ -9357,7 +9376,13 @@ elif menu_option == "👤 Perfil":
             with st.form("email_form"):
                 email_edit = st.text_input("Username", value=user[4] or "")
                 email_pw_edit = st.text_input(
-                    "Palavra-passe do Email", value=user[6] or "", type="password"
+                    "Palavra-passe do Email",
+                    value=st.session_state.get("email_password_cache") or "",
+                    type="password",
+                    help=(
+                        "Por motivos de segurança, a palavra-passe é cifrada e não pode ser mostrada. "
+                        "Introduza-a novamente para a atualizar e utilizar nesta sessão."
+                    ),
                 )
                 sub_email = st.form_submit_button("💾 Guardar")
             if sub_email:
@@ -9368,8 +9393,10 @@ elif menu_option == "👤 Perfil":
                     email_edit,
                     user[5],
                     None,
-                    email_pw_edit,
+                    email_pw_edit or None,
                 ):
+                    st.session_state.user_email = email_edit
+                    st.session_state.email_password_cache = email_pw_edit or None
                     st.success("Dados de email atualizados com sucesso!")
                 else:
                     st.error("Erro ao atualizar dados de email")
@@ -9915,7 +9942,12 @@ elif menu_option == "⚙️ Configurações":
                                 username_edit = st.text_input("Username", user[1])
                                 nome_edit = st.text_input("Nome", user[2] or "")
                                 email_edit = st.text_input("Email", user[3] or "")
-                                email_pw_edit = st.text_input("Password Email", user[5] or "", type="password")
+                                email_pw_edit = st.text_input(
+                                    "Password Email",
+                                    value="",
+                                    type="password",
+                                    help="Deixe em branco para manter a palavra-passe atual do utilizador.",
+                                )
                                 role_edit = st.selectbox(
                                     "Role",
                                     ["admin", "gestor", "user"],
