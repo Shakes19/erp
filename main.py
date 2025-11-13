@@ -9085,25 +9085,26 @@ elif menu_option == "📦 Artigos":
         def _executar_pesquisa_artigos() -> None:
             st.session_state["artigos_pesquisa_executada"] = True
 
-        with st.form("form_pesquisar_artigos"):
-            col_filtro, col_pesquisar = st.columns([1, 0.35])
+        col_filtro, col_pesquisar = st.columns([1, 0.35])
 
-            with col_filtro:
-                filtro_artigos = st.text_input(
-                    "Pesquisar artigos",
-                    placeholder="Descrição, nº artigo ou marca",
-                    key="artigos_pesquisa",
-                )
+        with col_filtro:
+            filtro_artigos = st.text_input(
+                "Pesquisar artigos",
+                placeholder="Descrição, nº artigo ou marca",
+                key="artigos_pesquisa",
+                on_change=_executar_pesquisa_artigos,
+                help="Pressione Enter para submeter a pesquisa sem clicar no botão.",
+            )
 
-            filtro_normalizado = (filtro_artigos or "").strip()
+        filtro_normalizado = (filtro_artigos or "").strip()
 
-            with col_pesquisar:
-                st.markdown("<div style='height: 1.95rem'></div>", unsafe_allow_html=True)
-                pesquisa_submetida = st.form_submit_button(
-                    "🔎 Pesquisar",
-                    use_container_width=True,
-                    type="primary",
-                )
+        with col_pesquisar:
+            st.markdown("<div style='height: 1.95rem'></div>", unsafe_allow_html=True)
+            pesquisa_submetida = st.button(
+                "🔎 Pesquisar",
+                use_container_width=True,
+                type="primary",
+            )
 
         if pesquisa_submetida:
             _executar_pesquisa_artigos()
