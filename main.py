@@ -9080,7 +9080,7 @@ elif menu_option == "📦 Artigos":
 
         with col_filtro:
             filtro_artigos = st.text_input(
-                "Pesquisar artigos",
+                "Pesquisar artigosssssssss",
                 placeholder="Descrição, nº artigo ou marca",
                 key="artigos_pesquisa",
             )
