@@ -1316,8 +1316,8 @@ def mostrar_dialogo_referencia_duplicada(origem: str):
             f"Já existe uma cotação com a referência '{referencia}'{cliente_info}."
         )
         st.write("Deseja criar a cotação mesmo assim?")
-        col_ok, col_cancel = st.columns(2)
-        if col_ok.button("Sim, criar mesmo assim"):
+        col_cancel, col_ok = st.columns(2)
+        if col_ok.button("Sim, criar mesmo assim",type = "primary"):
             st.session_state["duplicated_ref_force"] = origem
             st.session_state["show_duplicate_ref_dialog"] = False
             st.rerun()
@@ -6861,12 +6861,12 @@ elif menu_option == "📝 Nova Cotação":
                 unsafe_allow_html=True,
             )
             criar_cotacao = st.form_submit_button(
-                "✅ Criar Cotação",
+                "🚀 Criar e Enviar",
                 type="primary",
                 use_container_width=True,
             )
             criar_processo_sem_email = st.form_submit_button(
-                "📁 Criar Processo (sem email)",
+                "📁 Criar (sem envio)",
                 use_container_width=True,
             )
     
@@ -7305,16 +7305,16 @@ elif menu_option == "🤖 Smart Quotation":
                     else None
                 )
 
-                col_submit_principal, col_submit_sem_email = st.columns(2)
+                col_submit_sem_email, col_submit_principal = st.columns(2)
                 with col_submit_principal:
                     submit_smart = st.button(
-                        "Submeter",
+                        "🚀 Criar e Enviar",
                         type="primary",
                         key="smart_submit",
                     )
                 with col_submit_sem_email:
                     submit_smart_sem_email = st.button(
-                        "Criar processo (sem email)",
+                        "Criar (sem enviar)",
                         key="smart_submit_sem_email",
                     )
 
@@ -7527,7 +7527,7 @@ elif menu_option == "📩 Process Center":
                 key="utilizador_pend",
             )
         with col4:
-            if st.button("🔄 Atualizar", key="refresh_pend", use_container_width=True):
+            if st.button("🔎 Pesquisar", key="refresh_pend", use_container_width=True):
                 st.rerun()
 
         fornecedor_id_pend = fornecedor_options[fornecedor_sel_pend]
@@ -7730,7 +7730,7 @@ elif menu_option == "📩 Process Center":
                 key="utilizador_resp",
             )
         with col4:
-            if st.button("🔄 Atualizar", key="refresh_resp", use_container_width=True):
+            if st.button("🔎 Pesquisar", key="refresh_resp", use_container_width=True):
                 st.rerun()
 
         fornecedor_id_resp = fornecedor_options[fornecedor_sel_resp]
@@ -7887,7 +7887,7 @@ elif menu_option == "📩 Process Center":
                 key="utilizador_arq",
             )
         with col4:
-            if st.button("🔄 Atualizar", key="refresh_arq", use_container_width=True):
+            if st.button("🔎 Pesquisar", key="refresh_arq", use_container_width=True):
                 st.rerun()
 
         fornecedor_id_arq = fornecedor_options[fornecedor_sel_arq]
@@ -7963,14 +7963,36 @@ elif menu_option == "📩 Process Center":
             st.session_state.pop("process_center_match_selector", None)
 
         with st.container():
-            col_tipo, col_form = st.columns([2, 5], vertical_alignment="top")
+            col_tipo, col_form = st.columns([1, 6], vertical_alignment="top")
+
 
             with col_tipo:
-                tipo_pesquisa_label = st.radio(
+
+                st.markdown(
+            """
+            <style>
+                .pdf-search-type-label {
+                    display: flex;
+                    align-items: left;
+                    justify-content: left;
+                    height: 100%;
+                    font-weight: 600;
+                    text-align: center;
+                }
+                .stForm{
+                    border: none !important;
+                    box-shadow: none !important;
+                    background: none !important;
+                }
+            </style>
+            <div class="pdf-search-type-label"></div>
+            """,
+            unsafe_allow_html=True,
+        )
+                tipo_pesquisa_label = st.selectbox(
                     "Tipo de pesquisa",
                     ("Processo", "Referência cliente"),
                     key="process_center_tipo",
-                    horizontal=True,
                     on_change=_on_process_center_tipo_change,
                 )
 
@@ -8000,7 +8022,7 @@ elif menu_option == "📩 Process Center":
                         )
                     with col_button:
                         submitted = st.form_submit_button(
-                            "Pesquisar", type="primary", use_container_width=True
+                            "🔎 Pesquisar", type="secondary", use_container_width=True
                         )
 
         if submitted:
@@ -8771,7 +8793,7 @@ elif menu_option == "📄 PDFs":
         st.session_state.pop("pdf_process_selector", None)
         st.session_state.pdf_search_term = ""
 
-    col_tipo, col_form = st.columns([2, 5], vertical_alignment="center")
+    col_tipo, col_form = st.columns([1, 6], vertical_alignment="center")
 
     with col_tipo:
         st.markdown(
@@ -8779,11 +8801,16 @@ elif menu_option == "📄 PDFs":
             <style>
                 .pdf-search-type-label {
                     display: flex;
-                    align-items: center;
-                    justify-content: center;
+                    align-items: left;
+                    justify-content: left;
                     height: 100%;
                     font-weight: 600;
                     text-align: center;
+                }
+                .stForm{
+                    border: none !important;
+                    box-shadow: none !important;
+                    background: none !important;
                 }
             </style>
             <div class="pdf-search-type-label">Tipo de pesquisa</div>
@@ -8791,11 +8818,10 @@ elif menu_option == "📄 PDFs":
             unsafe_allow_html=True,
         )
 
-        tipo_pesquisa_label = st.radio(
+        tipo_pesquisa_label = st.selectbox(
             "Tipo de pesquisa",
-            ("Processo", "Referência cliente"),
+            ("Processo", "Referência Cliente"),
             key="pdf_search_tipo",
-            horizontal=True,
             on_change=_reset_pdf_search_state,
             label_visibility="collapsed",
         )
@@ -8824,7 +8850,7 @@ elif menu_option == "📄 PDFs":
                 )
             with col_button:
                 submitted = st.form_submit_button(
-                    "Pesquisar", type="primary", use_container_width=True
+                    "🔎 Pesquisar", type="secondary", use_container_width=True
                 )
 
     if submitted:
@@ -9072,26 +9098,30 @@ elif menu_option == "📦 Artigos":
             st.session_state["artigo_em_edicao"] = None
             st.session_state["artigo_em_edicao_key"] = None
 
-        def _limpar_pesquisa_artigos() -> None:
-            st.session_state["artigos_pesquisa"] = ""
-            listar_artigos_catalogo.clear()
-
-        col_filtro, col_limpar = st.columns([1, 0.25])
+        col_filtro, col_button = st.columns([1, 0.25])
 
         with col_filtro:
             filtro_artigos = st.text_input(
-                "Pesquisar artigosssssssss",
+                "Pesquisar artigos",
                 placeholder="Descrição, nº artigo ou marca",
                 key="artigos_pesquisa",
             )
 
-        with col_limpar:
-            st.markdown("<div style='height: 1.95rem'></div>", unsafe_allow_html=True)
-            st.button(
-                "🔄 Limpar pesquisa",
-                use_container_width=True,
-                on_click=_limpar_pesquisa_artigos,
-            )
+        with col_button:
+
+            st.markdown("""
+                <style>
+                    .stVerticalBlock {
+                        display: flex;
+                        flex-direction: column;
+                        height: 100%;
+                        justify-content: flex-end; /* empurra o botão pra baixo */
+                    }
+                </style>
+                <div class="stVerticalBlock"></div>
+            """, unsafe_allow_html=True)
+
+            submitted = st.button("🔎 Pesquisar", type="secondary", use_container_width=True)
 
         filtro_normalizado = (filtro_artigos or "").strip()
         artigos_catalogo: list[dict[str, object]] = []
@@ -9271,10 +9301,25 @@ elif menu_option == "👤 Perfil":
         ])
 
         with tab_pw:
+            st.markdown("""
+                    <style>
+                        .stFormSubmitButton {
+                            display: flex;
+                            justify-content: flex-end;
+                            width: 100%;
+                        }
+                        .stForm {
+                                width: 420% !important;         /* metade da largura */
+                                margin-left: auto !important;  /* centra horizontalmente */
+                                margin-right: auto !important;
+                        }
+                    </style>
+                    <div class="stFormSubmitButton">
+                """, unsafe_allow_html=True)
             with st.form("palavra_passe_form"):
                 nova_pw = st.text_input("Nova Palavra-passe", type="password")
                 confirmar_pw = st.text_input("Confirmar Palavra-passe", type="password")
-                sub_pw = st.form_submit_button("Alterar Palavra-passe")
+                sub_pw = st.form_submit_button("💾 Guardar")
             if sub_pw:
                 if not nova_pw or nova_pw != confirmar_pw:
                     st.error("Palavras-passe não coincidem")
@@ -9297,7 +9342,7 @@ elif menu_option == "👤 Perfil":
                 email_pw_edit = st.text_input(
                     "Palavra-passe do Email", value=user[6] or "", type="password"
                 )
-                sub_email = st.form_submit_button("Guardar Email")
+                sub_email = st.form_submit_button("💾 Guardar")
             if sub_email:
                 if atualizar_utilizador(
                     user[0],
