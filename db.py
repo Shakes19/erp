@@ -11,9 +11,11 @@ import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 import bcrypt
+from cryptography.fernet import Fernet, InvalidToken
 from functools import lru_cache
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -23,12 +25,82 @@ from sqlalchemy.orm import sessionmaker
 # environment variable for testing, but the application always uses a local
 # SQLite database.
 DB_PATH = os.environ.get("DB_PATH", "cotacoes.db")
+EMAIL_SECRET_ENV = "EMAIL_SECRET_KEY"
+EMAIL_SECRET_FILE = Path("email.env")
 
 engine = create_engine(
     f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False}
 )
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
+
+@lru_cache(maxsize=1)
+def _get_email_secret_key() -> bytes:
+    """Return the symmetric key used to encrypt email passwords."""
+
+    env_value = os.environ.get(EMAIL_SECRET_ENV)
+    if env_value:
+        return env_value.encode("utf-8")
+
+    if EMAIL_SECRET_FILE.exists():
+        saved = EMAIL_SECRET_FILE.read_text(encoding="utf-8").strip()
+        if saved:
+            os.environ[EMAIL_SECRET_ENV] = saved
+            return saved.encode("utf-8")
+
+    generated = Fernet.generate_key()
+    EMAIL_SECRET_FILE.write_text(generated.decode("utf-8"), encoding="utf-8")
+    os.environ[EMAIL_SECRET_ENV] = generated.decode("utf-8")
+    return generated
+
+
+def encrypt_email_password(value: str | None) -> str | None:
+    """Encrypt ``value`` for storage. Empty strings return ``None``."""
+
+    if not value:
+        return None
+    key = _get_email_secret_key()
+    token = Fernet(key).encrypt(value.encode("utf-8"))
+    return token.decode("utf-8")
+
+
+def decrypt_email_password(value: str | bytes | None) -> str | None:
+    """Decrypt ``value`` returning ``None`` for invalid/legacy hashes."""
+
+    if value is None:
+        return None
+
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        token = bytes(value).decode("utf-8", errors="ignore")
+    else:
+        token = str(value)
+
+    token = token.strip()
+    if not token or token.startswith("$2"):
+        # Legacy bcrypt hashes cannot be reversed.
+        return None
+
+    try:
+        key = _get_email_secret_key()
+        plain = Fernet(key).decrypt(token.encode("utf-8"))
+        return plain.decode("utf-8")
+    except (InvalidToken, ValueError):
+        return None
+
+
+def get_user_email_password(user_id: int | None) -> str | None:
+    """Return the decrypted email password for ``user_id`` if possible."""
+
+    if not user_id:
+        return None
+    row = fetch_one(
+        "SELECT email_password FROM utilizador WHERE id = ?",
+        (user_id,),
+    )
+    if not row:
+        return None
+    return decrypt_email_password(row[0])
 
 
 @lru_cache(maxsize=None)
@@ -1174,13 +1246,20 @@ def criar_base_dados_completa():
     for user_id, raw_email_password in c.fetchall():
         if raw_email_password is None:
             continue
+        if decrypt_email_password(raw_email_password):
+            # Já está encriptada com a chave simétrica.
+            continue
         if isinstance(raw_email_password, (bytes, bytearray, memoryview)):
             raw_email_password = raw_email_password.decode("utf-8", errors="ignore")
-        raw_email_password = str(raw_email_password)
-        if not raw_email_password.startswith("$2"):
+        raw_email_password = str(raw_email_password).strip()
+        if not raw_email_password or raw_email_password.startswith("$2"):
+            # Valores antigos com hash bcrypt não podem ser recuperados.
+            continue
+        encrypted_value = encrypt_email_password(raw_email_password)
+        if encrypted_value:
             c.execute(
                 "UPDATE utilizador SET email_password = ? WHERE id = ?",
-                (hash_password(raw_email_password), user_id),
+                (encrypted_value, user_id),
             )
 
     # Inserir utilizador administrador padrão se a tabela estiver vazia

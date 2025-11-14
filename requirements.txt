@@ -8,6 +8,7 @@ altair
 schedule
 sqlalchemy
 bcrypt
+cryptography
 Pillow
 standard-imghdr
 pypdf
