@@ -1320,8 +1320,6 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
                 "envio_automatico": enviar_emails,
             }
             st.session_state["show_smart_success_dialog"] = True
-            reset_smart_quotation_state()
-            solicitar_reset_upload_smart_pdf()
             st.rerun()
 
         return True
@@ -1675,8 +1673,7 @@ def mostrar_dialogo_sucesso_smart() -> None:
             )
 
         if st.button("Fechar"):
-            st.session_state.pop("smart_success_data", None)
-            st.session_state["show_smart_success_dialog"] = False
+            reset_smart_quotation_state()
             solicitar_reset_upload_smart_pdf()
             st.rerun()
 
@@ -7229,9 +7226,6 @@ elif menu_option == "🤖 Smart Quotation":
         accept_multiple_files=False,
         key="smart_pdf",
     )
-    if upload_pdf and st.session_state.get("show_smart_success_dialog"):
-        st.session_state.pop("smart_success_data", None)
-        st.session_state["show_smart_success_dialog"] = False
     if upload_pdf:
         anexos_processados = processar_upload_pdf(upload_pdf)
         if anexos_processados:
