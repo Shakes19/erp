@@ -2110,9 +2110,10 @@ def criar_rfq(
                         cliente_final_nome,
                         cliente_final_pais,
                         data_atualizacao,
-                        estado_id
+                        estado_id,
+                        enviado
                     )
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         processo_id,
@@ -2121,6 +2122,7 @@ def criar_rfq(
                         cliente_final_pais_db,
                         data_atualizacao,
                         estado_id,
+                        False,
                     ),
                 )
                 rfq_pk = cursor.lastrowid
@@ -2133,9 +2135,10 @@ def criar_rfq(
                         cliente_final_nome,
                         cliente_final_pais,
                         data_atualizacao,
-                        estado_id
+                        estado_id,
+                        enviado
                     )
-                    VALUES (?, ?, ?, ?, ?, ?) RETURNING id
+                    VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id
                     """,
                     (
                         processo_id,
@@ -2144,6 +2147,7 @@ def criar_rfq(
                         cliente_final_pais_db,
                         data_atualizacao,
                         estado_id,
+                        False,
                     ),
                 )
                 rfq_pk = cursor.fetchone()[0]
@@ -2228,7 +2232,7 @@ def criar_rfq(
             )
         else:
             envio_email = {
-                "sucesso": True,
+                "sucesso": False,
                 "mensagem": "Email não enviado (criação sem envio automático).",
             }
 
@@ -3647,10 +3651,33 @@ def enviar_email_pedido_fornecedor(
         "fornecedor": "",
     }
 
+    conn: sqlite3.Connection | None = None
+    cursor: sqlite3.Cursor | None = None
+
+    def _registar_estado_envio(valor: bool) -> None:
+        if conn is None:
+            return
+        try:
+            cur = cursor or conn.cursor()
+            cur.execute(
+                "UPDATE rfq SET enviado = ? WHERE id = ?",
+                (True if valor else False, rfq_id),
+            )
+            conn.commit()
+        except sqlite3.Error as exc:
+            try:
+                conn.rollback()
+            except sqlite3.Error:
+                pass
+            print(
+                f"⚠️ Não foi possível atualizar o estado de envio da RFQ {rfq_id}: {exc}"
+            )
+
     try:
         # Buscar fornecedor (nome+email), referência e número de processo
         conn = obter_conexao()
-        c = conn.cursor()
+        cursor = conn.cursor()
+        c = cursor
         data_expr = _rfq_data_expression("r") or "NULL"
         c.execute(
             f"""
@@ -3674,6 +3701,7 @@ def enviar_email_pedido_fornecedor(
             mensagem = "Fornecedor não encontrado para a RFQ."
             resultado["mensagem"] = mensagem
             st.warning(mensagem)
+            _registar_estado_envio(False)
             return resultado
 
         (
@@ -3694,6 +3722,7 @@ def enviar_email_pedido_fornecedor(
             )
             resultado["mensagem"] = mensagem
             st.info("Fornecedor sem email definido — não foi enviado o pedido.")
+            _registar_estado_envio(False)
             return resultado
 
         # Obter PDF do pedido
@@ -3754,6 +3783,7 @@ def enviar_email_pedido_fornecedor(
             )
             resultado["mensagem"] = mensagem
             st.error("PDF do pedido não encontrado para envio ao fornecedor.")
+            _registar_estado_envio(False)
             return resultado
 
         config_email = get_system_email_config()
@@ -3772,6 +3802,7 @@ def enviar_email_pedido_fornecedor(
             st.error(
                 "Configure o seu email e palavra-passe no perfil."
             )
+            _registar_estado_envio(False)
             return resultado
 
         email_password = _obter_palavra_passe_email_sessao()
@@ -3783,6 +3814,7 @@ def enviar_email_pedido_fornecedor(
             st.error(
                 "Introduza a palavra-passe do email em 'Perfil > Configuração de Email' para esta sessão."
             )
+            _registar_estado_envio(False)
             return resultado
 
         # Construir email
@@ -3861,12 +3893,14 @@ def enviar_email_pedido_fornecedor(
         )
 
         mensagem = f"Email para {fornecedor_nome} enviado com sucesso."
+        _registar_estado_envio(True)
         resultado.update({"sucesso": True, "mensagem": mensagem})
         return resultado
     except Exception as e:
         mensagem = f"Email para {resultado['fornecedor'] or 'fornecedor'} não enviado: {e}".strip()
         resultado["mensagem"] = mensagem
         st.error(f"Falha ao enviar email ao fornecedor: {e}")
+        _registar_estado_envio(False)
         return resultado
     finally:
         try:

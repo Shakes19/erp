@@ -762,6 +762,7 @@ def criar_base_dados_completa():
             cliente_final_pais TEXT,
             data_atualizacao TEXT DEFAULT CURRENT_TIMESTAMP,
             estado_id INTEGER,
+            enviado BOOLEAN NOT NULL CHECK (enviado IN (0, 1)) DEFAULT FALSE,
             FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
             FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE SET NULL,
             FOREIGN KEY (estado_id) REFERENCES estado(id) ON DELETE SET NULL
@@ -804,6 +805,7 @@ def criar_base_dados_completa():
                     cliente_final_pais TEXT,
                     data_atualizacao TEXT DEFAULT CURRENT_TIMESTAMP,
                     estado_id INTEGER,
+                    enviado BOOLEAN NOT NULL CHECK (enviado IN (0, 1)) DEFAULT FALSE,
                     FOREIGN KEY (fornecedor_id) REFERENCES fornecedor(id) ON DELETE CASCADE,
                     FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE SET NULL,
                     FOREIGN KEY (estado_id) REFERENCES estado(id) ON DELETE SET NULL
@@ -891,6 +893,11 @@ def criar_base_dados_completa():
 
     if "estado_id" not in rfq_columns:
         c.execute("ALTER TABLE rfq ADD COLUMN estado_id INTEGER REFERENCES estado(id)")
+
+    if "enviado" not in rfq_columns:
+        c.execute(
+            "ALTER TABLE rfq ADD COLUMN enviado BOOLEAN NOT NULL CHECK (enviado IN (0, 1)) DEFAULT FALSE"
+        )
 
     c.execute(
         """
