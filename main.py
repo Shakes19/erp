@@ -29,6 +29,7 @@ from db import (
     criar_base_dados_completa,
     get_connection as obter_conexao,
     backup_database,
+    restore_database,
     hash_password,
     verify_password,
     DB_PATH,
@@ -10588,12 +10589,14 @@ elif menu_option == "⚙️ Configurações":
 
                     # Restaurar
                     try:
-                        shutil.copy2(temp_path, DB_PATH)
-                        os.remove(temp_path)
+                        restore_database(temp_path)
                         restore_col.success("Backup restaurado com sucesso!")
                         st.rerun()
                     except Exception as e:
                         restore_col.error(f"Erro ao restaurar: {e}")
+                    finally:
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
 
                 restore_col.warning("⚠️ Restaurar backup irá substituir todos os dados atuais!")
     

@@ -8,6 +8,7 @@ database dependencies.
 
 import os
 import re
+import shutil
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -1339,6 +1340,29 @@ def backup_database(backup_path: str | None = None):
     source.close()
     dest.close()
     return backup_path
+
+
+def restore_database(backup_path: str):
+    """Restore ``DB_PATH`` from ``backup_path`` ensuring WAL files are cleaned."""
+
+    backup_file = Path(backup_path)
+    if not backup_file.exists():
+        raise FileNotFoundError(f"Backup não encontrado: {backup_path}")
+
+    engine.dispose()
+
+    target = Path(DB_PATH)
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    # Garantir que ficheiros WAL/SHM antigos não interferem com o restauro
+    for suffix in ("-wal", "-shm"):
+        wal_file = target.with_name(target.name + suffix)
+        if wal_file.exists():
+            wal_file.unlink()
+
+    temp_target = target.with_name(target.name + ".restoring")
+    shutil.copy2(backup_file, temp_target)
+    temp_target.replace(target)
 
 def criar_processo(
     descricao: str = "",
