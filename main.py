@@ -1413,9 +1413,9 @@ def mostrar_dialogo_requisitos_fornecedor(origem: str) -> None:
             )
             entradas.append((fornecedor_id, fornecedor_nome, cliente_key, pais_key))
 
-        col_ok, col_cancel = st.columns(2)
+        col_cancel, col_ok = st.columns(2)
 
-        if col_ok.button("Confirmar e continuar"):
+        if col_ok.button("Confirmar", type="primary"):
             dados_confirmados: dict[int, dict[str, str]] = {}
             em_falta: list[str] = []
             for fornecedor_id, fornecedor_nome, cliente_key, pais_key in entradas:
@@ -7099,9 +7099,9 @@ elif menu_option == "📝 Nova Cotação":
             if upload_pedido_cliente:
                 st.session_state.pedido_cliente_anexos = processar_upload_pdf(upload_pedido_cliente)
 
-            if st.session_state.pedido_cliente_anexos:
-                for idx, (nome_pdf, pdf_bytes) in enumerate(st.session_state.pedido_cliente_anexos, start=1):
-                    exibir_pdf(f"👁️ PDF carregado {idx} - {nome_pdf}", pdf_bytes, expanded=idx == 1)
+            # if st.session_state.pedido_cliente_anexos:
+            #     for idx, (nome_pdf, pdf_bytes) in enumerate(st.session_state.pedido_cliente_anexos, start=1):
+            #         exibir_pdf(f"👁️ PDF carregado {idx} - {nome_pdf}", pdf_bytes, expanded=idx == 1)
 
         with col_submit:
             st.markdown("""
