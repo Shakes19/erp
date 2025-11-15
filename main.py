@@ -30,8 +30,6 @@ from db import (
     get_connection as obter_conexao,
     backup_database,
     hash_password,
-    encrypt_email_password,
-    decrypt_email_password,
     verify_password,
     DB_PATH,
     engine,
@@ -42,7 +40,7 @@ from db import (
     get_marca_id,
     obter_processo_id_por_rfq,
     get_table_columns,
-    get_user_email_password,
+    has_user_email_password,
 )
 from services.pdf_service import (
     ensure_latin1,
@@ -1910,7 +1908,7 @@ def inserir_utilizador(username, password, nome="", email="", role="user", email
                 nome,
                 email,
                 role,
-                encrypt_email_password(email_password),
+                hash_password(email_password) if email_password else None,
             ),
         )
         conn.commit()
@@ -1937,9 +1935,7 @@ def atualizar_utilizador(
         if email_password is not None:
             fields.append("email_password = ?")
             params.append(
-                encrypt_email_password(email_password)
-                if email_password
-                else None
+                hash_password(email_password) if email_password else None
             )
         params.append(user_id)
         c.execute(
@@ -3513,13 +3509,6 @@ def _obter_palavra_passe_email_sessao() -> str | None:
     email_password = st.session_state.get("email_password_cache")
     if email_password:
         return email_password
-
-    user_id = st.session_state.get("user_id")
-    if user_id:
-        email_password = get_user_email_password(user_id)
-        if email_password:
-            st.session_state.email_password_cache = email_password
-            return email_password
     return None
 
 
@@ -6698,7 +6687,7 @@ def login_screen():
             st.session_state.username = user[1]
             st.session_state.user_email = user[4]
             st.session_state.user_nome = user[3] or user[1]
-            st.session_state.email_password_cache = decrypt_email_password(user[6])
+            st.session_state.email_password_cache = None
             st.rerun()
         else:
             st.error("Credenciais inválidas")
@@ -9657,25 +9646,26 @@ elif menu_option == "👤 Perfil":
                         st.error("Erro ao atualizar palavra-passe")
 
         with tab_email:
-            stored_email_password = _obter_palavra_passe_email_sessao()
+            user_id = st.session_state.get("user_id")
+            has_configured_email_password = has_user_email_password(user_id)
             with st.form("email_form"):
                 email_edit = st.text_input("Username", value=user[4] or "")
                 default_pw_value = (
-                    EMAIL_PASSWORD_PLACEHOLDER if stored_email_password else ""
+                    EMAIL_PASSWORD_PLACEHOLDER if has_configured_email_password else ""
                 )
                 email_pw_edit = st.text_input(
                     "Palavra-passe do Email",
                     value=default_pw_value,
                     type="password",
                     help=(
-                        "A palavra-passe é encriptada e reutilizada automaticamente. "
-                        "Introduza um novo valor para atualizar ou deixe em branco para remover."
+                        "A palavra-passe é guardada com hash (não reversível). "
+                        "Introduza um novo valor para a disponibilizar nesta sessão ou deixe em branco para remover."
                     ),
                 )
                 sub_email = st.form_submit_button("💾 Guardar")
 
             if sub_email:
-                if stored_email_password and email_pw_edit == EMAIL_PASSWORD_PLACEHOLDER:
+                if has_configured_email_password and email_pw_edit == EMAIL_PASSWORD_PLACEHOLDER:
                     email_password_param = None
                 elif not email_pw_edit:
                     email_password_param = ""

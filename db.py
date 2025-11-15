@@ -36,8 +36,8 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
 @lru_cache(maxsize=1)
-def _get_email_secret_key() -> bytes:
-    """Return the symmetric key used to encrypt email passwords."""
+def _legacy_get_email_secret_key() -> bytes:
+    """Return the symmetric key used by legacy email password encryption."""
 
     env_value = os.environ.get(EMAIL_SECRET_ENV)
     if env_value:
@@ -55,18 +55,8 @@ def _get_email_secret_key() -> bytes:
     return generated
 
 
-def encrypt_email_password(value: str | None) -> str | None:
-    """Encrypt ``value`` for storage. Empty strings return ``None``."""
-
-    if not value:
-        return None
-    key = _get_email_secret_key()
-    token = Fernet(key).encrypt(value.encode("utf-8"))
-    return token.decode("utf-8")
-
-
-def decrypt_email_password(value: str | bytes | None) -> str | None:
-    """Decrypt ``value`` returning ``None`` for invalid/legacy hashes."""
+def _legacy_decrypt_email_password(value: str | bytes | None) -> str | None:
+    """Decrypt legacy email passwords that were stored using Fernet."""
 
     if value is None:
         return None
@@ -78,29 +68,34 @@ def decrypt_email_password(value: str | bytes | None) -> str | None:
 
     token = token.strip()
     if not token or token.startswith("$2"):
-        # Legacy bcrypt hashes cannot be reversed.
+        # Bcrypt hashes (new format) cannot be reversed.
         return None
 
     try:
-        key = _get_email_secret_key()
+        key = _legacy_get_email_secret_key()
         plain = Fernet(key).decrypt(token.encode("utf-8"))
         return plain.decode("utf-8")
     except (InvalidToken, ValueError):
         return None
 
 
-def get_user_email_password(user_id: int | None) -> str | None:
-    """Return the decrypted email password for ``user_id`` if possible."""
+def has_user_email_password(user_id: int | None) -> bool:
+    """Return ``True`` when ``user_id`` has a hashed email password stored."""
 
     if not user_id:
-        return None
+        return False
     row = fetch_one(
         "SELECT email_password FROM utilizador WHERE id = ?",
         (user_id,),
     )
     if not row:
-        return None
-    return decrypt_email_password(row[0])
+        return False
+    value = row[0]
+    if value is None:
+        return False
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return bool(bytes(value).strip())
+    return bool(str(value).strip())
 
 
 @lru_cache(maxsize=None)
@@ -1243,7 +1238,7 @@ def criar_base_dados_completa():
     if "email_password" not in user_columns:
         c.execute("ALTER TABLE utilizador ADD COLUMN email_password TEXT")
 
-    # Encriptar palavras-passe de email antigas que ainda estejam a claro
+    # Converter palavras-passe de email antigas para hash bcrypt
     c.execute(
         """
         SELECT id, email_password FROM utilizador
@@ -1253,21 +1248,24 @@ def criar_base_dados_completa():
     for user_id, raw_email_password in c.fetchall():
         if raw_email_password is None:
             continue
-        if decrypt_email_password(raw_email_password):
-            # Já está encriptada com a chave simétrica.
-            continue
-        if isinstance(raw_email_password, (bytes, bytearray, memoryview)):
-            raw_email_password = raw_email_password.decode("utf-8", errors="ignore")
-        raw_email_password = str(raw_email_password).strip()
-        if not raw_email_password or raw_email_password.startswith("$2"):
-            # Valores antigos com hash bcrypt não podem ser recuperados.
-            continue
-        encrypted_value = encrypt_email_password(raw_email_password)
-        if encrypted_value:
-            c.execute(
-                "UPDATE utilizador SET email_password = ? WHERE id = ?",
-                (encrypted_value, user_id),
-            )
+
+        plain_password = _legacy_decrypt_email_password(raw_email_password)
+        if plain_password is None:
+            if isinstance(raw_email_password, (bytes, bytearray, memoryview)):
+                candidate = raw_email_password.decode("utf-8", errors="ignore")
+            else:
+                candidate = str(raw_email_password)
+            candidate = candidate.strip()
+            if not candidate or candidate.startswith("$2"):
+                # Já está em formato bcrypt ou vazio.
+                continue
+            plain_password = candidate
+
+        hashed_value = hash_password(plain_password)
+        c.execute(
+            "UPDATE utilizador SET email_password = ? WHERE id = ?",
+            (hashed_value, user_id),
+        )
 
     # Inserir utilizador administrador padrão se a tabela estiver vazia
     c.execute("SELECT COUNT(*) FROM utilizador")
