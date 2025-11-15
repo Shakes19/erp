@@ -1537,7 +1537,7 @@ def mostrar_dialogo_anexos_fornecedor(origem: str) -> None:
 
         st.session_state["supplier_attachment_data"] = copy.deepcopy(updated_data)
 
-        col_confirmar, col_cancelar = st.columns(2)
+        col_cancelar,col_confirmar = st.columns(2)
         if col_confirmar.button("Confirmar anexos", type="primary"):
             st.session_state["supplier_attachment_ready"] = origem
             st.session_state["show_supplier_attachment_dialog"] = False
@@ -6936,7 +6936,7 @@ elif menu_option == "📝 Nova Cotação":
         clientes = listar_clientes()
         clientes_opcoes = [None] + clientes
         col_data, col_ref, col_cliente, col_anexos = st.columns([1.2, 1.8, 2.4, 1.2])
-
+    
         with col_data:
             data = st.date_input(
                 "Data da cotação",
@@ -9620,6 +9620,7 @@ elif menu_option == "👤 Perfil":
                         }
                         .stForm {
                                 width: 40% !important;
+                                min-width: 400px;
                                 margin-left: auto !important; 
                                 margin-right: auto !important;
                         }
