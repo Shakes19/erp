@@ -1051,7 +1051,7 @@ def criar_base_dados_completa():
     if colunas_resposta_antigas.intersection(resposta_cols):
         c.execute("PRAGMA foreign_keys = OFF")
         try:
-            c.execute("DROP TABLE resposta_fornecedor")
+            c.execute("ALTER TABLE resposta_fornecedor RENAME TO resposta_fornecedor_legacy")
             c.execute(
                 """
                 CREATE TABLE resposta_fornecedor (
@@ -1075,6 +1075,46 @@ def criar_base_dados_completa():
                 )
                 """
             )
+
+            colunas_novas = [
+                "id",
+                "fornecedor_id",
+                "rfq_id",
+                "artigo_id",
+                "descricao",
+                "custo",
+                "prazo_entrega",
+                "quantidade_final",
+                "moeda",
+                "preco_venda",
+                "observacoes",
+                "data_resposta",
+                "validade_preco",
+            ]
+            valores_por_omissao = {
+                "descricao": "NULL",
+                "custo": "0.0",
+                "prazo_entrega": "1",
+                "quantidade_final": "NULL",
+                "moeda": "'EUR'",
+                "preco_venda": "NULL",
+                "observacoes": "NULL",
+                "data_resposta": "CURRENT_TIMESTAMP",
+                "validade_preco": "NULL",
+            }
+            select_clause = []
+            for coluna in colunas_novas:
+                if coluna in resposta_cols:
+                    select_clause.append(coluna)
+                else:
+                    default_expr = valores_por_omissao.get(coluna, "NULL")
+                    select_clause.append(f"{default_expr} AS {coluna}")
+
+            c.execute(
+                f"INSERT INTO resposta_fornecedor ({', '.join(colunas_novas)}) "
+                f"SELECT {', '.join(select_clause)} FROM resposta_fornecedor_legacy"
+            )
+            c.execute("DROP TABLE resposta_fornecedor_legacy")
         finally:
             c.execute("PRAGMA foreign_keys = ON")
 
