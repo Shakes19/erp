@@ -7259,6 +7259,33 @@ elif menu_option == "📝 Nova Cotação":
 elif menu_option == "🤖 Smart Quotation":
     st.title("🤖 Smart Quotation")
 
+    smart_layout_id = "smart-quotation-layout"
+    st.markdown(
+        f"""
+        <style>
+        @media screen and (min-width: 1367px) {{
+            #{smart_layout_id} {{
+                display: grid;
+                grid-template-columns: minmax(0, 1.7fr) minmax(360px, 1fr);
+                gap: 1.5rem;
+                align-items: flex-start;
+            }}
+            #{smart_layout_id} > div[data-testid="column"]:first-child {{
+                max-height: calc(100vh - 140px);
+                overflow-y: auto;
+                padding-right: 0.75rem;
+            }}
+            #{smart_layout_id} > div[data-testid="column"]:last-child {{
+                position: sticky;
+                top: 110px;
+                align-self: flex-start;
+            }}
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     unidades_padrao = obter_nomes_unidades()
     unidade_padrao = unidades_padrao[0] if unidades_padrao else "Peças"
     marcas_disponiveis = [marca for marca in listar_todas_marcas() if marca]
@@ -7440,6 +7467,10 @@ elif menu_option == "🤖 Smart Quotation":
                     return f"{nome_cli} ({empresa_cli})"
                 return nome_cli
 
+            st.markdown(
+                f'<div id="{smart_layout_id}">',
+                unsafe_allow_html=True,
+            )
             col_form, col_pdf = st.columns(2)
 
             with col_form:
@@ -7721,6 +7752,8 @@ elif menu_option == "🤖 Smart Quotation":
                     sticky=True,
                     sticky_top=110,
                 )
+
+            st.markdown("</div>", unsafe_allow_html=True)
         else:
             st.warning("Ficheiro carregado não pôde ser processado.")
     else:
