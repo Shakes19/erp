@@ -8058,17 +8058,16 @@ elif menu_option == "📩 Process Center":
                     detalhes = obter_detalhes_cotacao(cotacao['id'])
                     respostas = obter_respostas_cotacao(cotacao['id'])
                     
-                    col1, col2 = st.columns([3, 1])
+                    col1, col2, col3 = st.columns([3, 3, 3])
                     
                     with col1:
-                        st.write(f"**Data:** {cotacao['data']}")
+                        st.write(f"**Data:** {cotacao['data'][:10]}")
                         st.write(f"**Solicitante:** {cotacao['nome_solicitante'] if cotacao['nome_solicitante'] else 'N/A'}")
                         st.write(f"**Email:** {cotacao['email_solicitante'] if cotacao['email_solicitante'] else 'N/A'}")
                         st.write(f"**Criado por:** {cotacao['criador'] if cotacao['criador'] else 'N/A'}")
                         st.write(f"**Artigos:** {cotacao['num_artigos']}")
-
+                    with col2:
                         if respostas:
-                            st.markdown("---")
                             st.markdown("**Resumo das Respostas:**")
                             total_geral = 0
                             for resp in respostas:
@@ -8081,21 +8080,13 @@ elif menu_option == "📩 Process Center":
                         artigos_processo, fornecedores_estado = ([], [])
                         if cotacao.get('processo_id'):
                             artigos_processo, fornecedores_estado = obter_respostas_por_processo(cotacao['processo_id'])
-
+                    with col3:
                         if fornecedores_estado:
-                            st.markdown("---")
                             st.markdown("**Estado dos Fornecedores no Processo:**")
                             for fornecedor_estado in fornecedores_estado:
                                 emoji = "🟢" if (fornecedor_estado.get("estado") or "").lower() == "respondido" else "🟡"
                                 st.write(f"{emoji} {fornecedor_estado['nome']}")
 
-                        if artigos_processo:
-                            st.markdown("---")
-                            st.info(
-                                "Seleção de propostas e envio ao cliente disponíveis apenas no Process Center."
-                            )
-
-                    with col2:
                         # Anexos
                         conn = obter_conexao()
                         c = conn.cursor()
@@ -8129,21 +8120,9 @@ elif menu_option == "📩 Process Center":
                             )
                         anexos = c.fetchall()
                         conn.close()
-                        if anexos:
-                            st.markdown("**Anexos:**")
-                            st.caption(
-                                "Consulta de anexos disponível apenas na aba PDFs."
-                            )
 
-                        st.caption(
-                            "Envio de respostas ao cliente disponível apenas no Process Center."
-                        )
-                        st.caption(
-                            "Visualização e download de PDFs disponível apenas na aba PDFs."
-                        )
-
-                        if st.button("🗑️ Eliminar", key=f"del_resp_{cotacao['id']}"):
-                            st.session_state.confirmacao = ("eliminar", cotacao['id'])
+                    if st.button("🗑️ Eliminar", key=f"del_resp_{cotacao['id']}"):
+                        st.session_state.confirmacao = ("eliminar", cotacao['id'])
         else:
             st.info("Não há cotações respondidas")
 
@@ -8681,8 +8660,8 @@ elif menu_option == "📩 Process Center":
                 if acao == "arquivar"
                 else "Tem a certeza que deseja eliminar este processo?"
             )
-            col_ok, col_cancel = st.columns(2)
-            if col_ok.button("Sim"):
+            col_cancel,  col_ok = st.columns(2)
+            if col_ok.button("Sim", type="primary"):
                 if acao == "arquivar":
                     if arquivar_cotacao(rfq_conf):
                         st.success("Cotação arquivada!")
@@ -9531,9 +9510,10 @@ elif menu_option == "📦 Artigos":
             marca_opcoes = ["Sem marca"] + listar_todas_marcas()
 
             with st.form("form_criar_artigo"):
-                col_artigo, col_unidade = st.columns(2)
+                col_artigo, col_unidade, col_marca = st.columns(3)
                 with col_artigo:
-                    artigo_num_input = st.text_input("Nº Artigo (opcional)")
+                    artigo_num_input = st.text_input("Nº Artigo *")
+
                 with col_unidade:
                     default_unidade_index = next(
                         (
@@ -9542,7 +9522,7 @@ elif menu_option == "📦 Artigos":
                             if nome and nome.strip().casefold() == "peças"
                         ),
                         0,
-                    )
+                    )                
                     unidade_selecionada = st.selectbox(
                         "Unidade *",
                         unidades_opcoes,
@@ -9550,33 +9530,40 @@ elif menu_option == "📦 Artigos":
                         help="Unidade em que o artigo será registado.",
                     )
 
-                descricao_input = st.text_area("Descrição *")
-                especificacoes_input = st.text_area(
-                    "Especificações (opcional)",
-                    help="Informações adicionais ou notas técnicas do artigo.",
+                with col_marca:
+                    marca_selecionada = st.selectbox(
+                    "Marca *",
+                    marca_opcoes,
+                    index=None,
+                    help="Selecione uma marca já registada ou escolha 'Sem marca'.",
+                    placeholder="Selecione uma marca",
                 )
+                col_descricao, col_especificacoes = st.columns([2,1])
+                with col_descricao:
+                    descricao_input = st.text_area("Descrição *", height=150,)
+                with col_especificacoes:
+                    especificacoes_input = st.text_area(
+                        "Especificações",
+                        help="Informações adicionais ou notas técnicas do artigo.",
+                        height=150,
+                    )
                 col_peso, col_hs, col_pais = st.columns(3)
                 with col_peso:
                     peso_input = st.text_input(
-                        "Peso (kg) (opcional)",
+                        "Peso (kg)",
                         help="Indique o peso unitário em quilogramas, se aplicável.",
                     )
                 with col_hs:
                     hs_code_input = st.text_input(
-                        "HS Code (opcional)",
+                        "HS Code",
                         help="Código harmonizado do artigo.",
                     )
                 with col_pais:
                     pais_origem_input = st.text_input(
-                        "País de origem (opcional)",
+                        "País de origem",
                         help="Informe o país de origem do artigo.",
                     )
-                marca_selecionada = st.selectbox(
-                    "Marca (opcional)",
-                    marca_opcoes,
-                    index=0,
-                    help="Selecione uma marca já registada ou escolha 'Sem marca'.",
-                )
+                
 
                 _, col_submit = st.columns([1, 0.3])
                 with col_submit:
