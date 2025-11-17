@@ -3268,7 +3268,6 @@ def obter_detalhes_processo(processo_id: int):
 
     artigos_por_rfq: dict[int, list[dict]] = {rfq_id: [] for rfq_id in rfq_ids}
     respostas_por_rfq: dict[int, int] = {rfq_id: 0 for rfq_id in rfq_ids}
-    envios_por_rfq: dict[int, int] = {rfq_id: 0 for rfq_id in rfq_ids}
 
     if rfq_ids:
         placeholders = ",".join(["?"] * len(rfq_ids))
@@ -3321,19 +3320,6 @@ def obter_detalhes_processo(processo_id: int):
         for rfq_id, total in c.fetchall():
             respostas_por_rfq[rfq_id] = total or 0
 
-        c.execute(
-            f"""
-            SELECT rfq_id, COUNT(*)
-              FROM cliente_envio_artigo
-             WHERE rfq_id IN ({placeholders})
-             GROUP BY rfq_id
-            """,
-            rfq_ids,
-        )
-
-        for rfq_id, enviados in c.fetchall():
-            envios_por_rfq[rfq_id] = enviados or 0
-
     conn.close()
 
     rfqs = []
@@ -3350,8 +3336,9 @@ def obter_detalhes_processo(processo_id: int):
             artigo for artigo in artigos_rfq if artigo.get("rfq_artigo_id")
         ]
         total_artigos_cliente = len(artigos_clientes)
-        enviados_registados = envios_por_rfq.get(rfq_id, 0)
-        enviados_cliente = min(enviados_registados, total_artigos_cliente)
+        enviados_cliente = (
+            total_artigos_cliente if cliente_pdf_disponivel and total_artigos_cliente > 0 else 0
+        )
         total_cliente_artigos += total_artigos_cliente
         total_cliente_enviados += enviados_cliente
         estado_atual = (rfq_row[2] or "pendente").strip().lower()
@@ -4978,8 +4965,7 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
                    COALESCE(a.peso, 0),
                    COALESCE(a.hs_code, ''),
                    COALESCE(a.pais_origem, ''),
-                   COALESCE(ra.ordem, rf.id) AS ordem,
-                   ra.id AS rfq_artigo_id
+                   COALESCE(ra.ordem, rf.id) AS ordem
         FROM resposta_fornecedor rf
         JOIN artigo a ON rf.artigo_id = a.id
             LEFT JOIN rfq_artigo ra ON ra.artigo_id = a.id AND ra.rfq_id = rf.rfq_id
@@ -4998,24 +4984,21 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
                 (rfq_id,),
             )
 
-        itens_resposta = []
-        for row in c.fetchall():
-            itens_resposta.append(
-                {
-                    'artigo_num': row[0] or '',
-                    'descricao': limitar_descricao_artigo(row[1]),
-                    'quantidade_final': row[2],
-                    'quantidade': row[2],
-                    'unidade': row[3],
-                    'preco_venda': row[4],
-                    'prazo_entrega': row[5],
-                    'peso': row[6] or 0,
-                    'hs_code': row[7] or '',
-                    'pais_origem': row[8] or '',
-                    'ordem': row[9],
-                    'rfq_artigo_id': row[10],
-                }
-            )
+        itens_resposta = [
+            {
+                'artigo_num': row[0] or '',
+                'descricao': limitar_descricao_artigo(row[1]),
+                'quantidade_final': row[2],
+                'quantidade': row[2],
+                'unidade': row[3],
+                'preco_venda': row[4],
+                'prazo_entrega': row[5],
+                'peso': row[6] or 0,
+                'hs_code': row[7] or '',
+                'pais_origem': row[8] or ''
+            }
+            for row in c.fetchall()
+        ]
 
         if not itens_resposta:
             st.error("Nenhuma resposta encontrada para esta RFQ")
@@ -5104,26 +5087,6 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
                       nome_ficheiro = excluded.nome_ficheiro""",
             (processo_id, "cliente", pdf_bytes, len(pdf_bytes), nome_pdf_cliente),
         )
-
-        artigos_enviados_ids = sorted(
-            {
-                item.get("rfq_artigo_id")
-                for item in itens_resposta
-                if item.get("rfq_artigo_id")
-            }
-        )
-        if artigos_enviados_ids:
-            c.executemany(
-                """
-                INSERT INTO cliente_envio_artigo (processo_id, rfq_id, rfq_artigo_id, data_envio)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(rfq_artigo_id) DO UPDATE SET
-                    processo_id = excluded.processo_id,
-                    rfq_id = excluded.rfq_id,
-                    data_envio = CURRENT_TIMESTAMP
-                """,
-                [(processo_id, rfq_id, artigo_id) for artigo_id in artigos_enviados_ids],
-            )
 
         conn.commit()
         invalidate_overview_caches()

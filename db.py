@@ -1019,33 +1019,6 @@ def criar_base_dados_completa():
     c.execute("DROP TABLE IF EXISTS processo_artigo_legacy")
     c.execute("DROP TABLE IF EXISTS processo_artigo_selecao")
 
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS cliente_envio_artigo (
-            rfq_artigo_id INTEGER PRIMARY KEY,
-            processo_id INTEGER NOT NULL,
-            rfq_id INTEGER NOT NULL,
-            data_envio TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (rfq_artigo_id) REFERENCES rfq_artigo(id) ON DELETE CASCADE,
-            FOREIGN KEY (processo_id) REFERENCES processo(id) ON DELETE CASCADE,
-            FOREIGN KEY (rfq_id) REFERENCES rfq(id) ON DELETE CASCADE
-        )
-        """
-    )
-
-    c.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_cliente_envio_processo
-            ON cliente_envio_artigo(processo_id)
-        """
-    )
-    c.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_cliente_envio_rfq
-            ON cliente_envio_artigo(rfq_id)
-        """
-    )
-
 # Tabela de respostas dos fornecedores
     c.execute(
         """
