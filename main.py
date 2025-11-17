@@ -3513,6 +3513,28 @@ def _obter_palavra_passe_email_sessao() -> str | None:
     return None
 
 
+def _sanitize_pdf_reference(value: str | None) -> str:
+    """Normaliza referências para utilização em nomes de ficheiro."""
+
+    referencia = (value or "").strip()
+    if not referencia:
+        return ""
+    return referencia.replace("/", "-").replace(" ", "_")
+
+
+def _build_standard_pdf_filename(
+    prefix: str, reference: str | None, *, fallback: str | None = None
+) -> str:
+    """Cria nomes de PDFs com o formato ``<prefix>_<referencia>.pdf``."""
+
+    referencia = _sanitize_pdf_reference(reference)
+    if not referencia and fallback:
+        referencia = _sanitize_pdf_reference(fallback)
+    if referencia:
+        return f"{prefix}_{referencia}.pdf"
+    return f"{prefix}.pdf"
+
+
 def enviar_email_orcamento(
     email_destino,
     nome_cliente,
@@ -3607,12 +3629,15 @@ def enviar_email_orcamento(
             assunto = f"Quotation {numero_cotacao}{referencia_sufixo}"
 
         print(f"🚀 A enviar email para {email_destino}...")
+        pdf_filename = _build_standard_pdf_filename(
+            "Quotation", numero_cotacao, fallback=referencia_cliente
+        )
         send_email(
             email_destino,
             assunto,
             corpo,
             pdf_bytes=pdf_bytes,
-            pdf_filename=f"quote_{numero_cotacao}.pdf",
+            pdf_filename=pdf_filename,
             smtp_server=smtp_server,
             smtp_port=smtp_port,
             email_user=email_user,
@@ -3866,8 +3891,9 @@ def enviar_email_pedido_fornecedor(
         assunto = subject_template.format_map(contexto_email) if subject_template else ""
         if not assunto.strip():
             assunto = f"Request for Quotation – {referencia_interna}"
-        pdf_nome = referencia_interna.replace('/', '-') if referencia_interna else referencia_texto
-        pdf_filename = f"pedido_{pdf_nome}.pdf" if pdf_nome else "pedido.pdf"
+        pdf_filename = _build_standard_pdf_filename(
+            "Inquiry", referencia_interna, fallback=referencia
+        )
 
         send_email(
             fornecedor_email,
@@ -4633,7 +4659,20 @@ class ClientQuotationPDF(InquiryPDF):
                 self.cell(widths[3], 6, str(quantidade), border=border, align="C")
                 self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=border, align="R")
                 self.cell(widths[5], 6, f"EUR {total:.2f}", border=border, align="R")
-                self.cell(widths[6], 6, f"{item.get('prazo_entrega', 0)}d", border=border, align="C")
+                prazo_bruto = item.get("prazo_entrega")
+                lead_time_display = ""
+                if prazo_bruto not in (None, ""):
+                    prazo_texto = str(prazo_bruto)
+                    try:
+                        prazo_valor = float(prazo_bruto)
+                    except (TypeError, ValueError):
+                        lead_time_display = f"{prazo_texto}d"
+                    else:
+                        if prazo_valor > 0:
+                            if prazo_valor.is_integer():
+                                prazo_texto = str(int(prazo_valor))
+                            lead_time_display = f"{prazo_texto}d"
+                self.cell(widths[6], 6, lead_time_display, border=border, align="C")
                 self.cell(widths[7], 6, f"{(item.get('peso') or 0):.1f}kg", border=border, align="C")
             else:
                 for w in widths[3:]:
@@ -4805,11 +4844,7 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
         if processo_id is None:
             raise ValueError("Processo associado à RFQ não encontrado")
 
-        referencia_pdf = (numero_processo or "").replace("/", "-")
-        fornecedor_nome_pdf = (fornecedor.get("nome") or "").strip().replace(" ", "_")
-        nome_comum = (
-            f"pedido_{referencia_pdf}.pdf" if referencia_pdf else "pedido.pdf"
-        )
+        nome_pdf_inquiry = _build_standard_pdf_filename("Inquiry", numero_processo)
 
         c.execute(
             """
@@ -4820,15 +4855,12 @@ def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
                 tamanho_bytes = excluded.tamanho_bytes,
                 nome_ficheiro = excluded.nome_ficheiro
         """,
-            (processo_id, "pedido", pdf_bytes, len(pdf_bytes), nome_comum),
+            (processo_id, "pedido", pdf_bytes, len(pdf_bytes), nome_pdf_inquiry),
         )
 
         if rfq_id is not None:
             tipo_especifico = f"pedido_fornecedor_rfq_{rfq_id}"
-            nome_especifico = "pedido.pdf"
-            if referencia_pdf or fornecedor_nome_pdf:
-                partes_nome = [p for p in (referencia_pdf, fornecedor_nome_pdf) if p]
-                nome_especifico = f"pedido_{'_'.join(partes_nome)}.pdf"
+            nome_especifico = nome_pdf_inquiry
 
             c.execute(
                 """
@@ -5042,14 +5074,18 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
         if processo_id is None:
             raise ValueError("Processo associado à RFQ não encontrado")
 
+        nome_pdf_cliente = _build_standard_pdf_filename(
+            "Quotation", rfq_data.get("processo_numero"), fallback=rfq_data.get("referencia")
+        )
         c.execute(
             """INSERT INTO pdf_storage
-                  (processo_id, tipo_pdf, pdf_data, tamanho_bytes)
-                  VALUES (?, ?, ?, ?)
+                  (processo_id, tipo_pdf, pdf_data, tamanho_bytes, nome_ficheiro)
+                  VALUES (?, ?, ?, ?, ?)
                   ON CONFLICT (processo_id, tipo_pdf) DO UPDATE SET
                       pdf_data = excluded.pdf_data,
-                      tamanho_bytes = excluded.tamanho_bytes""",
-            (processo_id, "cliente", pdf_bytes, len(pdf_bytes)),
+                      tamanho_bytes = excluded.tamanho_bytes,
+                      nome_ficheiro = excluded.nome_ficheiro""",
+            (processo_id, "cliente", pdf_bytes, len(pdf_bytes), nome_pdf_cliente),
         )
 
         conn.commit()
@@ -8528,8 +8564,13 @@ elif menu_option == "📩 Process Center":
                                     st.download_button(
                                         "📄 PDF Pedido",
                                         data=pdf_pedido,
-                                        file_name=(
-                                            f"pedido_{processo_info.get('numero') or pedido.get('id')}.pdf"
+                                        file_name=_build_standard_pdf_filename(
+                                            "Inquiry",
+                                            processo_info.get("numero"),
+                                            fallback=(
+                                                pedido.get("referencia")
+                                                or str(pedido.get("id") or "")
+                                            ),
                                         ),
                                         mime="application/pdf",
                                         key=f"pc_pdf_{pedido.get('id')}"
