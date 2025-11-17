@@ -69,6 +69,12 @@ def test_gerar_pdf_cliente(tmp_path, monkeypatch):
         (processo_id,),
     )
     assert c.fetchone() is not None
+    c.execute(
+        "SELECT COUNT(*) FROM cliente_envio_artigo WHERE processo_id = ?",
+        (processo_id,),
+    )
+    enviados = c.fetchone()
+    assert enviados is not None and enviados[0] == 1
     conn.close()
 
 
