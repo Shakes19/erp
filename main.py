@@ -5150,18 +5150,26 @@ def exibir_pdf(
     else:
         if sticky:
             container_id = f"pdf-sticky-{uuid4().hex}"
+            outer_id = f"{container_id}-outer"
             sticky_offset = max(sticky_top, 0)
-            scrollable_height_css = f"calc(100vh - {sticky_offset + 40}px)"
+            scrollable_height_css = f"calc(100vh - {sticky_offset + 48}px)"
+            safe_label = escape(label)
             st.markdown(
                 textwrap.dedent(
                     f"""
                     <style>
-                    #{container_id} {{
-                        position: -webkit-sticky;
+                    #{outer_id} {{
                         position: sticky;
                         top: {sticky_offset}px;
-                        z-index: 2;
                         align-self: flex-start;
+                        width: 100%;
+                        z-index: 20;
+                    }}
+                    #{container_id} {{
+                        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
+                        border-radius: 0.5rem;
+                        background: var(--background-color, #fff);
+                        padding: 0.75rem;
                     }}
                     #{container_id} .pdf-title {{
                         font-weight: 600;
@@ -5183,17 +5191,12 @@ def exibir_pdf(
                         min-height: min({height}px, {scrollable_height_css});
                     }}
                     </style>
-                    """
-                ).strip(),
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                textwrap.dedent(
-                    f"""
-                    <div id="{container_id}">
-                        <div class="pdf-title">{label}</div>
-                        <div class="pdf-wrapper">
-                            {pdf_object}
+                    <div id="{outer_id}" class="pdf-sticky-outer">
+                        <div id="{container_id}" class="pdf-sticky-container">
+                            <div class="pdf-title">{safe_label}</div>
+                            <div class="pdf-wrapper">
+                                {pdf_object}
+                            </div>
                         </div>
                     </div>
                     """
@@ -7823,7 +7826,7 @@ elif menu_option == "🤖 Smart Quotation":
                     expanded=True,
                     use_expander=False,
                     sticky=True,
-                    sticky_top=110,
+                    sticky_top=0,
                 )
         else:
             st.warning("Ficheiro carregado não pôde ser processado.")
