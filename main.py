@@ -10525,8 +10525,9 @@ elif menu_option == "⚙️ Configurações":
                         list(provider_defaults.keys()),
                         key=provider_key,
                         help="Selecione um fornecedor comum ou mantenha 'Outro' para definir valores próprios.",
-                        on_change=_atualizar_provider,
                     )
+
+                    _atualizar_provider()
 
                     provider = st.session_state.get(provider_key, provider_guess)
 
