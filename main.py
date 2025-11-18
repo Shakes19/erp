@@ -10422,8 +10422,32 @@ elif menu_option == "⚙️ Configurações":
 
         with tab_email:
             st.subheader("Configuração de Email")
+            
+            # Obter configuração atual
+            conn = obter_conexao()
+            c = conn.cursor()
+            try:
+                c.execute(
+                    "SELECT smtp_server, smtp_port, use_tls, use_ssl FROM configuracao_email WHERE ativo = TRUE ORDER BY id DESC LIMIT 1"
+                )
+            except sqlite3.OperationalError:
+                try:
+                    c.execute(
+                        "SELECT smtp_server, smtp_port, use_tls, use_ssl FROM configuracao_email ORDER BY id DESC LIMIT 1"
+                    )
+                except sqlite3.OperationalError:
+                    c.execute(
+                        "SELECT smtp_server, smtp_port FROM configuracao_email ORDER BY id DESC LIMIT 1"
+                    )
+            row = c.fetchone()
+            conn.close()
 
-            config_atual = get_system_email_config()
+            config_atual = {
+                "smtp_server": row[0] if row else "",
+                "smtp_port": row[1] if row and len(row) > 1 else None,
+                "use_tls": row[2] if row and len(row) > 2 else None,
+                "use_ssl": row[3] if row and len(row) > 3 else None,
+            }
 
             provider_defaults = {
                 "Gmail": {"server": "smtp.gmail.com", "port": 587, "use_tls": True, "use_ssl": False},
@@ -10431,7 +10455,7 @@ elif menu_option == "⚙️ Configurações":
                 "Outro": {},
             }
 
-            server_lower = (config_atual.get("server") or "").lower()
+            server_lower = (config_atual.get("smtp_server") or "").lower()
             provider_guess = "Outro"
             if "gmail" in server_lower:
                 provider_guess = "Gmail"
@@ -10443,25 +10467,15 @@ elif menu_option == "⚙️ Configurações":
             port_key = "config_email_smtp_port"
             tls_key = "config_email_use_tls"
             ssl_key = "config_email_use_ssl"
-            method_key = "config_email_method"
-            graph_tenant_key = "config_email_graph_tenant"
-            graph_client_id_key = "config_email_graph_client_id"
-            graph_client_secret_key = "config_email_graph_client_secret"
-            graph_sender_key = "config_email_graph_sender"
-
-            method_labels = {
-                "smtp": "SMTP (Servidor e porta)",
-                "graph": "Microsoft Graph (Office 365)",
-            }
 
             if provider_key not in st.session_state:
                 st.session_state[provider_key] = provider_guess
 
             if server_key not in st.session_state:
-                st.session_state[server_key] = config_atual.get("server") or provider_defaults[provider_guess].get("server", "")
+                st.session_state[server_key] = config_atual.get("smtp_server") or provider_defaults[provider_guess].get("server", "")
 
             if port_key not in st.session_state:
-                st.session_state[port_key] = config_atual.get("port") or provider_defaults[provider_guess].get("port", 587)
+                st.session_state[port_key] = config_atual.get("smtp_port") or provider_defaults[provider_guess].get("port", 587)
 
             if tls_key not in st.session_state:
                 valor_tls = config_atual.get("use_tls")
@@ -10474,18 +10488,6 @@ elif menu_option == "⚙️ Configurações":
                 if valor_ssl is None:
                     valor_ssl = provider_defaults[provider_guess].get("use_ssl", False)
                 st.session_state[ssl_key] = bool(valor_ssl)
-
-            if method_key not in st.session_state:
-                st.session_state[method_key] = "graph" if config_atual.get("use_graph_api") else "smtp"
-
-            if graph_tenant_key not in st.session_state:
-                st.session_state[graph_tenant_key] = config_atual.get("graph_tenant_id", "")
-            if graph_client_id_key not in st.session_state:
-                st.session_state[graph_client_id_key] = config_atual.get("graph_client_id", "")
-            if graph_client_secret_key not in st.session_state:
-                st.session_state[graph_client_secret_key] = config_atual.get("graph_client_secret", "")
-            if graph_sender_key not in st.session_state:
-                st.session_state[graph_sender_key] = config_atual.get("graph_sender", "")
 
             provider_prev_key = f"{provider_key}_prev"
 
@@ -10510,87 +10512,64 @@ elif menu_option == "⚙️ Configurações":
             if provider_prev_key not in st.session_state:
                 st.session_state[provider_prev_key] = st.session_state.get(provider_key, provider_guess)
 
+            st.selectbox(
+                "Fornecedor SMTP",
+                list(provider_defaults.keys()),
+                key=provider_key,
+                help="Selecione um fornecedor comum ou mantenha 'Outro' para definir valores próprios.",
+                on_change=_atualizar_provider,
+            )
+
+            # Garantir que os valores estejam sincronizados com o fornecedor selecionado
+            _atualizar_provider()
+
             with st.form("config_email_form"):
-                metodo_envio = st.radio(
-                    "Método de envio",
-                    options=list(method_labels.keys()),
-                    format_func=lambda opt: method_labels[opt],
-                    key=method_key,
-                    help="Escolha 'Microsoft Graph' para contas Office 365 sem suporte SMTP.",
+                provider = st.session_state.get(provider_key, provider_guess)
+
+                if provider != "Outro":
+                    defaults = provider_defaults.get(provider, {})
+                    if defaults.get("server"):
+                        st.session_state[server_key] = defaults["server"]
+                    if defaults.get("port"):
+                        st.session_state[port_key] = defaults["port"]
+                    if "use_tls" in defaults:
+                        st.session_state[tls_key] = defaults["use_tls"]
+                    if "use_ssl" in defaults:
+                        st.session_state[ssl_key] = defaults["use_ssl"]
+
+                is_custom_provider = provider == "Outro"
+
+                smtp_server = st.text_input(
+                    "Servidor SMTP",
+                    key=server_key,
+                    disabled=not is_custom_provider,
+                )
+                smtp_port = st.number_input(
+                    "Porta SMTP",
+                    min_value=1,
+                    step=1,
+                    key=port_key,
+                    disabled=not is_custom_provider,
                 )
 
-                if metodo_envio == "smtp":
-                    st.selectbox(
-                        "Fornecedor SMTP",
-                        list(provider_defaults.keys()),
-                        key=provider_key,
-                        help="Selecione um fornecedor comum ou mantenha 'Outro' para definir valores próprios.",
-                        on_change=_atualizar_provider,
-                    )
-
-                    provider = st.session_state.get(provider_key, provider_guess)
-
-                    if provider != "Outro":
-                        defaults = provider_defaults.get(provider, {})
-                        if defaults.get("server"):
-                            st.session_state[server_key] = defaults["server"]
-                        if defaults.get("port"):
-                            st.session_state[port_key] = defaults["port"]
-                        if "use_tls" in defaults:
-                            st.session_state[tls_key] = defaults["use_tls"]
-                        if "use_ssl" in defaults:
-                            st.session_state[ssl_key] = defaults["use_ssl"]
-
-                    is_custom_provider = provider == "Outro"
-
-                    smtp_server = st.text_input(
-                        "Servidor SMTP",
-                        key=server_key,
+                col_tls, col_ssl = st.columns(2)
+                with col_tls:
+                    use_tls_val = st.checkbox(
+                        "Usar STARTTLS",
+                        value=st.session_state[tls_key],
+                        key=tls_key,
                         disabled=not is_custom_provider,
                     )
-                    smtp_port = st.number_input(
-                        "Porta SMTP",
-                        min_value=1,
-                        step=1,
-                        key=port_key,
+                with col_ssl:
+                    use_ssl_val = st.checkbox(
+                        "Usar SSL (porta 465)",
+                        value=st.session_state[ssl_key],
+                        key=ssl_key,
                         disabled=not is_custom_provider,
                     )
 
-                    col_tls, col_ssl = st.columns(2)
-                    with col_tls:
-                        use_tls_val = st.checkbox(
-                            "Usar STARTTLS",
-                            value=st.session_state[tls_key],
-                            key=tls_key,
-                            disabled=not is_custom_provider,
-                        )
-                    with col_ssl:
-                        use_ssl_val = st.checkbox(
-                            "Usar SSL (porta 465)",
-                            value=st.session_state[ssl_key],
-                            key=ssl_key,
-                            disabled=not is_custom_provider,
-                        )
-
-                    if use_ssl_val and use_tls_val:
-                        st.warning("SSL e STARTTLS não devem estar ativos em simultâneo. Será utilizada a opção SSL.")
-                else:
-                    st.caption(
-                        "Utilize uma aplicação registada no Azure AD com permissões 'Mail.Send' para enviar através do Microsoft Graph."
-                    )
-                    st.text_input("Tenant ID (Directory ID)", key=graph_tenant_key)
-                    st.text_input("Client ID (Application ID)", key=graph_client_id_key)
-                    st.text_input(
-                        "Client Secret",
-                        key=graph_client_secret_key,
-                        type="password",
-                        help="Guarde o valor gerado no registo da aplicação no Azure.",
-                    )
-                    st.text_input(
-                        "Remetente (UPN ou email configurado)",
-                        key=graph_sender_key,
-                        help="Endereço que será apresentado no envio via Graph.",
-                    )
+                if use_ssl_val and use_tls_val:
+                    st.warning("SSL e STARTTLS não devem estar ativos em simultâneo. Será utilizada a opção SSL.")
 
                 if st.form_submit_button("💾 Guardar"):
                     conn = obter_conexao()
@@ -10602,72 +10581,36 @@ elif menu_option == "⚙️ Configurações":
                         smtp_port_val = 587
                     use_tls_flag = bool(st.session_state.get(tls_key)) and not bool(st.session_state.get(ssl_key))
                     use_ssl_flag = bool(st.session_state.get(ssl_key))
-                    use_graph_flag = metodo_envio == "graph"
-                    graph_tenant_val = (st.session_state.get(graph_tenant_key) or "").strip()
-                    graph_client_id_val = (st.session_state.get(graph_client_id_key) or "").strip()
-                    graph_client_secret_val = (st.session_state.get(graph_client_secret_key) or "").strip()
-                    graph_sender_val = (st.session_state.get(graph_sender_key) or "").strip()
 
-                    erros = []
-                    if use_graph_flag:
-                        if not graph_tenant_val:
-                            erros.append("Tenant ID")
-                        if not graph_client_id_val:
-                            erros.append("Client ID")
-                        if not graph_client_secret_val:
-                            erros.append("Client Secret")
-                        if not graph_sender_val:
-                            erros.append("Remetente")
+                    try:
+                        # Desativar configurações anteriores
+                        c.execute("UPDATE configuracao_email SET ativo = FALSE")
 
-                    if erros:
-                        st.error("Preencha os seguintes campos obrigatórios: " + ", ".join(erros))
-                        conn.close()
-                    else:
-                        try:
-                            c.execute("UPDATE configuracao_email SET ativo = FALSE")
-                            c.execute(
-                                """
-                                INSERT INTO configuracao_email (
-                                    smtp_server,
-                                    smtp_port,
-                                    use_tls,
-                                    use_ssl,
-                                    ativo,
-                                    use_graph_api,
-                                    graph_tenant_id,
-                                    graph_client_id,
-                                    graph_client_secret,
-                                    graph_sender
-                                )
-                                VALUES (?, ?, ?, ?, TRUE, ?, ?, ?, ?, ?)
-                                """,
-                                (
-                                    smtp_server_val,
-                                    smtp_port_val,
-                                    use_tls_flag,
-                                    use_ssl_flag,
-                                    use_graph_flag,
-                                    graph_tenant_val,
-                                    graph_client_id_val,
-                                    graph_client_secret_val,
-                                    graph_sender_val,
-                                ),
-                            )
-                            conn.commit()
-                            clear_email_cache()
-                            st.success("Configuração de email guardada!")
-                        except sqlite3.OperationalError as exc:
-                            conn.rollback()
-                            st.error(
-                                "Não foi possível guardar a configuração de email. "
-                                "Verifique se a base de dados está atualizada.\n"
-                                f"Detalhe: {exc}"
-                            )
-                        finally:
-                            conn.close()
+                        # Inserir nova configuração
+                        c.execute(
+                            """
+                            INSERT INTO configuracao_email (smtp_server, smtp_port, use_tls, use_ssl, ativo)
+                            VALUES (?, ?, ?, ?, TRUE)
+                            """,
+                            (smtp_server_val, smtp_port_val, use_tls_flag, use_ssl_flag),
+                        )
+                    except sqlite3.OperationalError:
+                        # Colunas ausentes - manter apenas uma configuração básica
+                        c.execute("DELETE FROM configuracao_email")
+                        c.execute(
+                            "INSERT INTO configuracao_email (smtp_server, smtp_port) VALUES (?, ?)",
+                            (smtp_server_val, smtp_port_val),
+                        )
+
+                    conn.commit()
+                    conn.close()
+
+                    clear_email_cache()
+
+                    st.success("Configuração de email guardada!")
 
             st.info(
-                "Notas: Gmail requer uma 'App Password'. Para Office 365 recomenda-se utilizar o método Microsoft Graph com uma aplicação Azure AD e permissões Mail.Send."
+                "Notas: Para Gmail é necessário usar uma 'App Password'. Para Outlook/Office365 o servidor recomendado é smtp.office365.com."
             )
         
         with tab_backup:
