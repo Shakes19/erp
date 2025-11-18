@@ -5804,239 +5804,254 @@ def _marcar_marca_manual(widget_key: str, manual_key: str) -> None:
 
     st.session_state[manual_key] = True
 
-@st.dialog("Responder Cotação", width="large")
+
 def responder_cotacao_dialog(cotacao):
-    st.markdown(
-        """
-        <style>
-        /* Occupy the full viewport with the dialog overlay */
-        [data-testid="stDialog"] {
-            position: fixed;
-            inset: 0;
-            width: 100vw !important;
-            height: 100vh !important;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0;
-        }
-        /* Ensure the immediate container stretches across the overlay */
-        [data-testid="stDialog"] > div:first-child {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        /* Expand inner dialog content to occupy full form */
-        [data-testid="stDialog"] > div > div {
-            width: min(90vw, 75rem) !important;
-            max-width: min(90vw, 75rem) !important;
-            max-height: 90vh;
-            padding-top: 20px;
-            min-width: 60rem;
-            overflow-y: auto;
-        }
-        /* Ensure form stretches to fill available space */
-        [data-testid="stDialog"] form {
-            width: 100%;
-            min-height: 0;
-        }
-        [data-testid="stDialog"] [data-testid="stVerticalBlock"] > div {
-            width: 100%;
-        }
-        [data-testid="stDialog"] .st-ft {
-            min-width: 60rem;
-        }
-        [data-testid="stDialog"] hr {
-            margin: 1.3em 0px;
-        }
+    
+    @st.dialog(f"Responder Cotação {cotacao['processo']}", width="large")
+    def show_dialog():
+        st.markdown(
+            """
+            <style>
+            /* Occupy the full viewport with the dialog overlay */
+            [data-testid="stDialog"] {
+                position: fixed;
+                inset: 0;
+                width: 100vw !important;
+                height: 100vh !important;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0;
+            }
+            /* Ensure the immediate container stretches across the overlay */
+            [data-testid="stDialog"] > div:first-child {
+                width: 100%;
+                height: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            /* Expand inner dialog content to occupy full form */
+            [data-testid="stDialog"] > div > div {
+                width: min(90vw, 75rem) !important;
+                max-width: min(90vw, 75rem) !important;
+                max-height: 90vh;
+                padding-top: 20px;
+                min-width: 60rem;
+                overflow-y: auto;
+            }
+            /* Ensure form stretches to fill available space */
+            [data-testid="stDialog"] form {
+                width: 100%;
+                min-height: 0;
+            }
+            [data-testid="stDialog"] [data-testid="stVerticalBlock"] > div {
+                width: 100%;
+            }
+            [data-testid="stDialog"] .st-ft {
+                min-width: 60rem;
+            }
+            [data-testid="stDialog"] hr {
+                margin: 1.3em 0px;
+            }
 
-        [data-testid="stVerticalBlock"]{
-            gap: .2rem;
-        }
+            [data-testid="stVerticalBlock"]{
+                gap: .2rem;
+            }
 
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    detalhes = obter_detalhes_cotacao(cotacao['id'])
-    st.info(f"**Responder a Cotação {cotacao['processo']}**")
-
-    anexos_resposta_key = f"anexos_resposta_{cotacao['id']}"
-    if anexos_resposta_key not in st.session_state:
-        st.session_state[anexos_resposta_key] = []
-    with st.form(f"resposta_form_{cotacao['id']}"):
-        respostas = []
-        pdf_resposta = st.file_uploader(
-            "Resposta do Fornecedor (PDF ou email)",
-            type=["pdf", "eml", "msg"],
-            accept_multiple_files=True,
-            key=f"pdf_{cotacao['id']}"
+            </style>
+            """,
+            unsafe_allow_html=True,
         )
-        if pdf_resposta:
-            st.session_state[anexos_resposta_key] = processar_upload_pdf(pdf_resposta)
+        detalhes = obter_detalhes_cotacao(cotacao['id'])
 
-        if st.session_state[anexos_resposta_key]:
-            for idx, (nome_resposta, resposta_bytes) in enumerate(st.session_state[anexos_resposta_key], start=1):
-                exibir_pdf(f"📄 Resposta carregada {idx} - {nome_resposta}", resposta_bytes, expanded=False)
-
-        margens_por_marca_ui: dict[str, float] = {}
-        if detalhes['artigos']:
-            conn_margens = obter_conexao()
-            try:
-                cursor_margens = conn_margens.cursor()
-                margens_por_marca_ui = _carregar_margens_por_marca(
-                    cursor_margens,
-                    detalhes["fornecedor_id"],
-                    (artigo.get("marca") for artigo in detalhes["artigos"]),
-                )
-            finally:
-                conn_margens.close()
-
-        for i, artigo in enumerate(detalhes['artigos'], 1):
-            st.subheader(f"Artigo {i}: {artigo['artigo_num'] if artigo['artigo_num'] else 'S/N'}")
-
-            col1, col2, col3 = st.columns([2, 1, 1])
-
-            with col1:
-                descricao_editada = st.text_area(
-                    "Descrição (editável)",
-                    value=artigo['descricao'],
-                    key=f"desc_{artigo['id']}",
-                    height=180
-                )
-
-            with col2:
-                quantidade_original = artigo['quantidade']
-                quantidade_final = st.number_input(
-                    f"Qtd (Original: {quantidade_original})",
-                    min_value=1,
-                    value=quantidade_original,
-                    key=f"qtd_{artigo['id']}"
-                )
-                peso = st.number_input(
-                    "Peso Unitário(kg)",
-                    min_value=0.0,
-                    step=0.1,
-                    value=float(artigo.get('peso') or 0.0),
-                    key=f"peso_{artigo['id']}"
-                )
-                prazo = st.number_input(
-                    "Prazo (dias)",
-                    min_value=0,
-                    step=1,
-                    key=f"prazo_{artigo['id']}"
-                )
-
-            with col3:
-                hs_code = st.text_input(
-                    "HS Code",
-                    value=artigo.get("hs_code") or "",
-                    key=f"hs_{artigo['id']}"
-                )
-                pais_origem = st.text_input(
-                    "País Origem",
-                    value=artigo.get("pais_origem") or "",
-                    key=f"pais_{artigo['id']}"
-                )
-
-            margem = margens_por_marca_ui.get(
-                _normalizar_nome_marca(artigo.get("marca")),
-                0.0,
+        anexos_resposta_key = f"anexos_resposta_{cotacao['id']}"
+        if anexos_resposta_key not in st.session_state:
+            st.session_state[anexos_resposta_key] = []
+        with st.form(f"resposta_form_{cotacao['id']}"):
+            respostas = []
+            pdf_resposta = st.file_uploader(
+                "Resposta do Fornecedor (PDF ou email)",
+                type=["pdf", "eml", "msg"],
+                accept_multiple_files=True,
+                key=f"pdf_{cotacao['id']}"
             )
+            if pdf_resposta:
+                st.session_state[anexos_resposta_key] = processar_upload_pdf(pdf_resposta)
 
-            col4, col5 = st.columns(2)
+            if st.session_state[anexos_resposta_key]:
+                for idx, (nome_resposta, resposta_bytes) in enumerate(st.session_state[anexos_resposta_key], start=1):
+                    exibir_pdf(f"📄 Resposta carregada {idx} - {nome_resposta}", resposta_bytes, expanded=False)
 
-            with col4:
-                custo = st.number_input(
-                    "Preço Compra (EUR )",
+            margens_por_marca_ui: dict[str, float] = {}
+            if detalhes['artigos']:
+                conn_margens = obter_conexao()
+                try:
+                    cursor_margens = conn_margens.cursor()
+                    margens_por_marca_ui = _carregar_margens_por_marca(
+                        cursor_margens,
+                        detalhes["fornecedor_id"],
+                        (artigo.get("marca") for artigo in detalhes["artigos"]),
+                    )
+                finally:
+                    conn_margens.close()
+
+            for i, artigo in enumerate(detalhes['artigos'], 1):
+                st.subheader(f"Artigo {i}: {artigo['artigo_num'] if artigo['artigo_num'] else 'S/N'}")
+
+                col1, col2, col3 = st.columns([2, 1, 1])
+
+                with col1:
+                    descricao_editada = st.text_area(
+                        "Descrição (editável)",
+                        value=artigo['descricao'],
+                        key=f"desc_{artigo['id']}",
+                        height=180
+                    )
+
+                with col2:
+                    quantidade_original = artigo['quantidade']
+                    quantidade_final = st.number_input(
+                        f"Qtd (Original: {quantidade_original})",
+                        min_value=1,
+                        value=quantidade_original,
+                        key=f"qtd_{artigo['id']}"
+                    )
+                    peso = st.number_input(
+                        "Peso Unitário(kg)",
+                        min_value=0.0,
+                        step=0.1,
+                        value=float(artigo.get('peso') or 0.0),
+                        key=f"peso_{artigo['id']}"
+                    )
+                    prazo = st.number_input(
+                        "Prazo (dias)",
+                        min_value=0,
+                        step=1,
+                        key=f"prazo_{artigo['id']}"
+                    )
+
+                with col3:
+                    hs_code = st.text_input(
+                        "HS Code",
+                        value=artigo.get("hs_code") or "",
+                        key=f"hs_{artigo['id']}"
+                    )
+                    pais_origem = st.text_input(
+                        "País Origem",
+                        value=artigo.get("pais_origem") or "",
+                        key=f"pais_{artigo['id']}"
+                    )
+
+                margem = margens_por_marca_ui.get(
+                    _normalizar_nome_marca(artigo.get("marca")),
+                    0.0,
+                )
+
+                col4, col5 = st.columns(2)
+
+                with col4:
+                    custo = st.number_input(
+                        "Preço Compra (EUR )",
+                        min_value=0.0,
+                        step=0.01,
+                        key=f"custo_{artigo['id']}"
+                    )
+                    if custo > 0:
+                        preco_venda = custo * (1 + margem / 100)
+                        st.caption(f"Margem aplicada: {margem:.1f}%")
+                        st.success(f"P.V.: EUR {preco_venda:.2f}")
+
+                with col5:
+                    validade_default = date.today() + timedelta(days=30)
+                    validade_preco = st.date_input(
+                        "Validade Preço",
+                        value=validade_default,
+                        key=f"val_{artigo['id']}"
+                    )
+
+
+                respostas.append((
+                    artigo['id'], custo, validade_preco.isoformat(), peso,
+                    hs_code, pais_origem, descricao_editada, quantidade_final, prazo
+                ))
+
+            st.markdown("---")
+
+            col_obs, col_env = st.columns([3, 1])
+
+            with col_obs:
+                observacoes = st.text_area(
+                    "Observações",
+                    key=f"obs_{cotacao['id']}",
+                    height=110
+                )
+
+            with col_env:
+                custo_envio = st.number_input(
+                    "Custos Envio",
                     min_value=0.0,
                     step=0.01,
-                    key=f"custo_{artigo['id']}"
+                    key=f"custo_envio_{cotacao['id']}"
                 )
-                if custo > 0:
-                    preco_venda = custo * (1 + margem / 100)
-                    st.caption(f"Margem aplicada: {margem:.1f}%")
-                    st.success(f"P.V.: EUR {preco_venda:.2f}")
-
-            with col5:
-                validade_default = date.today() + timedelta(days=30)
-                validade_preco = st.date_input(
-                    "Validade Preço",
-                    value=validade_default,
-                    key=f"val_{artigo['id']}"
+                custo_embalagem = st.number_input(
+                    "Custos Embalagem",
+                    min_value=0.0,
+                    step=0.01,
+                    key=f"custo_emb_{cotacao['id']}"
                 )
 
+            col2, col1 = st.columns(2)
 
-            respostas.append((
-                artigo['id'], custo, validade_preco.isoformat(), peso,
-                hs_code, pais_origem, descricao_editada, quantidade_final, prazo
-            ))
-
-        st.markdown("---")
-
-        col_obs, col_env = st.columns([3, 1])
-
-        with col_obs:
-            observacoes = st.text_area(
-                "Observações",
-                key=f"obs_{cotacao['id']}",
-                height=110
+            st.markdown(
+                """
+                <style>
+                .stHorizontalBlock {
+                    margin-top: 20px;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
             )
 
-        with col_env:
-            custo_envio = st.number_input(
-                "Custos Envio",
-                min_value=0.0,
-                step=0.01,
-                key=f"custo_envio_{cotacao['id']}"
-            )
-            custo_embalagem = st.number_input(
-                "Custos Embalagem",
-                min_value=0.0,
-                step=0.01,
-                key=f"custo_emb_{cotacao['id']}"
-            )
+            with col1:
+                submeter = st.form_submit_button("💾 Guardar", type="primary", use_container_width=True)
 
-        col1, col2 = st.columns(2)
+            with col2:
+                cancelar = st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True)
 
-        with col1:
-            submeter = st.form_submit_button("💾 Submeter Preço", type="primary")
+        if submeter:
+            respostas_validas = [r for r in respostas if r[1] > 0]
 
-        with col2:
-            cancelar = st.form_submit_button("❌ Cancelar")
+            if respostas_validas:
+                sucesso, info_envio = guardar_respostas(
+                    cotacao['id'],
+                    respostas_validas,
+                    custo_envio,
+                    custo_embalagem,
+                    observacoes,
+                )
 
-    if submeter:
-        respostas_validas = [r for r in respostas if r[1] > 0]
+                if sucesso:
+                    anexos_resposta = st.session_state.get(anexos_resposta_key, [])
+                    if anexos_resposta:
+                        guardar_pdf_uploads(
+                            cotacao['id'],
+                            f"anexo_fornecedor_rfq_{cotacao['id']}",
+                            anexos_resposta,
+                            processo_id=cotacao.get('processo_id'),
+                        )
+                        st.session_state[anexos_resposta_key] = []
 
-        if respostas_validas:
-            sucesso, info_envio = guardar_respostas(
-                cotacao['id'],
-                respostas_validas,
-                custo_envio,
-                custo_embalagem,
-                observacoes,
-            )
+                    st.success("Resposta guardada com sucesso.")
+                    st.rerun()
+            else:
+                st.error("Por favor, preencha pelo menos um preço")
 
-            if sucesso:
-                anexos_resposta = st.session_state.get(anexos_resposta_key, [])
-                if anexos_resposta:
-                    guardar_pdf_uploads(
-                        cotacao['id'],
-                        f"anexo_fornecedor_rfq_{cotacao['id']}",
-                        anexos_resposta,
-                        processo_id=cotacao.get('processo_id'),
-                    )
-                    st.session_state[anexos_resposta_key] = []
+        if cancelar:
+            st.rerun()
 
-                st.success("Resposta guardada com sucesso.")
-                st.rerun()
-        else:
-            st.error("Por favor, preencha pelo menos um preço")
-
-    if cancelar:
-        st.rerun()
+    show_dialog()
 
 
 @st.dialog("Criar Cotação para Cliente")
@@ -7038,7 +7053,6 @@ elif menu_option == "📝 Nova Cotação":
                 key="nova_enviar_anexos",
                 help="Ao enviar os pedidos aos fornecedores será possível anexar ficheiros adicionais.",
             )
-
         nome_solicitante = cliente_sel[1] if cliente_sel else ""
         email_solicitante = cliente_sel[2] if cliente_sel else ""
 
@@ -7515,7 +7529,7 @@ elif menu_option == "🤖 Smart Quotation":
 
             col_form, col_pdf = st.columns(2)
 
-            with col_form:
+            with col_form:  
                 st.text_input(
                     "Referência Cliente",
                     key="smart_referencia",
@@ -8645,9 +8659,6 @@ elif menu_option == "📩 Process Center":
                                 )
                                 st.write(
                                     f"**Data:** {_format_iso_date(pedido.get('data')) or '—'}"
-                                )
-                                st.write(
-                                    f"**Envio Cliente:** {emoji_cliente} {texto_cliente}"
                                 )
                             with meta_cols[1]:
                                 st.write(
