@@ -1204,7 +1204,14 @@ def criar_base_dados_completa():
             smtp_server TEXT,
             smtp_port INTEGER,
             email_user TEXT,
-            ativo BOOLEAN DEFAULT TRUE
+            ativo BOOLEAN DEFAULT TRUE,
+            use_tls BOOLEAN DEFAULT TRUE,
+            use_ssl BOOLEAN DEFAULT FALSE,
+            use_graph_api BOOLEAN DEFAULT FALSE,
+            graph_tenant_id TEXT,
+            graph_client_id TEXT,
+            graph_client_secret TEXT,
+            graph_sender TEXT
         )
         """
     )
@@ -1226,6 +1233,32 @@ def criar_base_dados_completa():
         c.execute(
             "ALTER TABLE configuracao_email ADD COLUMN use_ssl BOOLEAN DEFAULT FALSE"
         )
+        email_cols.append("use_ssl")
+    if "use_graph_api" not in email_cols:
+        c.execute(
+            "ALTER TABLE configuracao_email ADD COLUMN use_graph_api BOOLEAN DEFAULT FALSE"
+        )
+        email_cols.append("use_graph_api")
+    if "graph_tenant_id" not in email_cols:
+        c.execute(
+            "ALTER TABLE configuracao_email ADD COLUMN graph_tenant_id TEXT"
+        )
+        email_cols.append("graph_tenant_id")
+    if "graph_client_id" not in email_cols:
+        c.execute(
+            "ALTER TABLE configuracao_email ADD COLUMN graph_client_id TEXT"
+        )
+        email_cols.append("graph_client_id")
+    if "graph_client_secret" not in email_cols:
+        c.execute(
+            "ALTER TABLE configuracao_email ADD COLUMN graph_client_secret TEXT"
+        )
+        email_cols.append("graph_client_secret")
+    if "graph_sender" not in email_cols:
+        c.execute(
+            "ALTER TABLE configuracao_email ADD COLUMN graph_sender TEXT"
+        )
+        email_cols.append("graph_sender")
 
     # Tabela de configuração da empresa
     c.execute(

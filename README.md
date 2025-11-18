@@ -48,6 +48,7 @@ Sistema de gestão de cotações desenvolvido em **Python** com **Streamlit** e 
 - **Configurações**
   - Gestão de fornecedores, marcas e margens
   - Configuração de e-mail para envio automático
+  - Integração opcional com Microsoft Graph para contas Office 365
   - Backup da base de dados
   - Agendamento de backup diário automático
 
@@ -92,7 +93,7 @@ aplicadas imediatamente.
 📌 Notas
 - A base de dados utiliza um ficheiro SQLite local (`cotacoes.db`) por padrão.
 - A palavra-passe de e-mail **não** é armazenada na BD. Define a variável de ambiente `EMAIL_PASSWORD` para permitir o envio de emails.
-- As configurações de e-mail (servidor e porta) podem ser ajustadas em "Configurações > Email".
+- As configurações de e-mail (servidor e porta) podem ser ajustadas em "Configurações > Email" e, para Office 365, é possível enviar através da API Microsoft Graph com uma app registada no Azure AD.
 - Para envio de e-mails via Gmail, usa uma "App Password" em vez da palavra-passe normal.
 
 ### ⏰ Backup automático diário

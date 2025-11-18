@@ -37,7 +37,16 @@ def test_colunas_email_extras_existem():
     c.execute("PRAGMA table_info(configuracao_email)")
     cols = [row[1] for row in c.fetchall()]
     conn.close()
-    for expected in {"ativo", "use_tls", "use_ssl"}:
+    for expected in {
+        "ativo",
+        "use_tls",
+        "use_ssl",
+        "use_graph_api",
+        "graph_tenant_id",
+        "graph_client_id",
+        "graph_client_secret",
+        "graph_sender",
+    }:
         assert expected in cols
 
 
@@ -56,3 +65,8 @@ def test_get_system_email_config_devolve_flags_tls_ssl():
     assert "port" in config
     assert "use_tls" in config
     assert "use_ssl" in config
+    assert "use_graph_api" in config
+    assert "graph_tenant_id" in config
+    assert "graph_client_id" in config
+    assert "graph_client_secret" in config
+    assert "graph_sender" in config

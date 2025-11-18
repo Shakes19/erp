@@ -13,3 +13,4 @@ Pillow
 standard-imghdr
 pypdf
 extract_msg
+requests
