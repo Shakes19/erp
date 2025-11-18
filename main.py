@@ -7817,14 +7817,36 @@ elif menu_option == "🤖 Smart Quotation":
                             processar_criacao_cotacoes(contexto_criacao_smart)
 
             with col_pdf:
+                pdf_container_id = "pdf_sticky_container"
+
+                st.markdown(
+                    f"""
+                    <style>
+                    /* Contentor sticky do PDF na coluna da direita */
+                    .stColumn {{
+                        position: -webkit-sticky !important;
+                        position: sticky !important;
+                        top: 20px !important;      /* cola mesmo ao topo, ajusta se precisares */
+                        z-index: 20 !important;
+                        align-self: flex-start;
+                    }}
+                    </style>
+                    <div id="{pdf_container_id}">
+                    """,
+                    unsafe_allow_html=True,
+                )
+
                 exibir_pdf(
                     f"👁️ PDF carregado - {nome_pdf}",
                     pdf_bytes,
                     expanded=True,
                     use_expander=False,
-                    sticky=True,
+                    sticky=False,   # desliga o sticky interno da função
                     sticky_top=0,
+                    height=700,
                 )
+
+                st.markdown("</div>", unsafe_allow_html=True)
         else:
             st.warning("Ficheiro carregado não pôde ser processado.")
     else:
