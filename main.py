@@ -7823,7 +7823,7 @@ elif menu_option == "🤖 Smart Quotation":
                     expanded=True,
                     use_expander=False,
                     sticky=True,
-                    sticky_top=110,
+                    sticky_top=0,
                 )
         else:
             st.warning("Ficheiro carregado não pôde ser processado.")
