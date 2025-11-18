@@ -5859,87 +5859,120 @@ def responder_cotacao_dialog(cotacao):
                 finally:
                     conn_margens.close()
 
-            for i, artigo in enumerate(detalhes['artigos'], 1):
+            for i, artigo in enumerate(detalhes["artigos"], 1):
                 st.subheader(f"Artigo {i}: {artigo['artigo_num'] if artigo['artigo_num'] else 'S/N'}")
 
-                col1, col2, col3 = st.columns([2, 1, 1])
+                # Esquerda: Descrição  |  Direita: resto em grid 3xN
+                col_desc, col_grid = st.columns([3, 3])
 
-                with col1:
+                # ---------------- DESCRIÇÃO (coluna esquerda) ----------------
+                with col_desc:
                     descricao_editada = st.text_area(
                         "Descrição (editável)",
-                        value=artigo['descricao'],
+                        value=artigo["descricao"],
                         key=f"desc_{artigo['id']}",
-                        height=180
+                        height=223,
                     )
 
-                with col2:
-                    quantidade_original = artigo['quantidade']
-                    quantidade_final = st.number_input(
-                        f"Qtd (Original: {quantidade_original})",
-                        min_value=1,
-                        value=quantidade_original,
-                        key=f"qtd_{artigo['id']}"
-                    )
-                    peso = st.number_input(
-                        "Peso Unitário(kg)",
-                        min_value=0.0,
-                        step=0.1,
-                        value=float(artigo.get('peso') or 0.0),
-                        key=f"peso_{artigo['id']}"
-                    )
-                    prazo = st.number_input(
-                        "Prazo (dias)",
-                        min_value=0,
-                        step=1,
-                        key=f"prazo_{artigo['id']}"
+                # ---------------- GRID DIREITO (HS, País, Peso, Qtd, Prazo, Validade, Preço) ----------------
+                with col_grid:
+                    # 1ª LINHA: HS Code | País Origem | Peso Unitário
+                    col_hs, col_pais, col_peso = st.columns(3)
+
+                    with col_hs:
+                        hs_code = st.text_input(
+                            "HS Code",
+                            value=artigo.get("hs_code") or "",
+                            key=f"hs_{artigo['id']}",
+                        )
+
+                    with col_pais:
+                        pais_origem = st.text_input(
+                            "País Origem",
+                            value=artigo.get("pais_origem") or "",
+                            key=f"pais_{artigo['id']}",
+                        )
+
+                    with col_peso:
+                        peso = st.number_input(
+                            "Peso Unitário (kg)",
+                            min_value=0.0,
+                            step=0.1,
+                            value=float(artigo.get("peso") or 0.0),
+                            key=f"peso_{artigo['id']}",
+                        )
+
+                    # Puxar a linha de baixo para cima (reduzir margem vertical)
+                    st.markdown(
+                        "<div style='margin-top:-12px'></div>",
+                        unsafe_allow_html=True,
                     )
 
-                with col3:
-                    hs_code = st.text_input(
-                        "HS Code",
-                        value=artigo.get("hs_code") or "",
-                        key=f"hs_{artigo['id']}"
+                    # 2ª LINHA: Qtd | Prazo | Validade Preço
+                    col_qtd, col_prazo, col_validade = st.columns(3)
+
+                    with col_qtd:
+                        quantidade_original = artigo["quantidade"]
+                        quantidade_final = st.number_input(
+                            f"Qtd (Original: {quantidade_original})",
+                            min_value=1,
+                            value=quantidade_original,
+                            key=f"qtd_{artigo['id']}",
+                        )
+
+                    with col_prazo:
+                        prazo = st.number_input(
+                            "Prazo (dias)",
+                            min_value=0,
+                            step=1,
+                            value=int(artigo.get("prazo") or 0),
+                            key=f"prazo_{artigo['id']}",
+                        )
+
+                    with col_validade:
+                        validade_default = date.today() + timedelta(days=30)
+                        validade_preco = st.date_input(
+                            "Validade Preço",
+                            value=validade_default,
+                            key=f"val_{artigo['id']}",
+                        )
+
+                    # 3ª LINHA: Preço Compra ocupa toda a largura da coluna direita
+                    margem = margens_por_marca_ui.get(
+                        _normalizar_nome_marca(artigo.get("marca")),
+                        0.0,
                     )
-                    pais_origem = st.text_input(
-                        "País Origem",
-                        value=artigo.get("pais_origem") or "",
-                        key=f"pais_{artigo['id']}"
-                    )
 
-                margem = margens_por_marca_ui.get(
-                    _normalizar_nome_marca(artigo.get("marca")),
-                    0.0,
-                )
-
-                col4, col5 = st.columns(2)
-
-                with col4:
                     custo = st.number_input(
-                        "Preço Compra (EUR )",
+                        "Preço Compra (EUR)",
                         min_value=0.0,
                         step=0.01,
-                        key=f"custo_{artigo['id']}"
+                        key=f"custo_{artigo['id']}",
                     )
+
                     if custo > 0:
                         preco_venda = custo * (1 + margem / 100)
                         st.caption(f"Margem aplicada: {margem:.1f}%")
                         st.success(f"P.V.: EUR {preco_venda:.2f}")
 
-                with col5:
-                    validade_default = date.today() + timedelta(days=30)
-                    validade_preco = st.date_input(
-                        "Validade Preço",
-                        value=validade_default,
-                        key=f"val_{artigo['id']}"
+                # Guardar resposta
+                respostas.append(
+                    (
+                        artigo["id"],
+                        custo,
+                        validade_preco.isoformat(),
+                        peso,
+                        hs_code,
+                        pais_origem,
+                        descricao_editada,
+                        quantidade_final,
+                        prazo,
                     )
-
-
-                respostas.append((
-                    artigo['id'], custo, validade_preco.isoformat(), peso,
-                    hs_code, pais_origem, descricao_editada, quantidade_final, prazo
-                ))
+                )
 
             st.markdown("---")
+
+
 
             col_obs, col_env = st.columns([3, 1])
 
@@ -6150,7 +6183,7 @@ def criar_cotacao_cliente_dialog(
             st.warning(
                 "Nenhum endereço de e-mail disponível para este cliente. A cotação será criada sem envio."
             )
-        _, col_botao = st.columns([3, 1])
+        _, col_botao = st.columns([2, 1])
         with col_botao:
             submit_lock_key = f"cliente_submit_lock_{rfq_id}"
             last_submit_iso = st.session_state.get(submit_lock_key)
@@ -6165,7 +6198,7 @@ def criar_cotacao_cliente_dialog(
                     disabled_submit = True
 
             submitted = st.form_submit_button(
-                "Criar e Enviar",
+                "🚀 Criar e Enviar",
                 type="primary",
                 disabled=disabled_submit,
             )
