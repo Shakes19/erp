@@ -59,7 +59,6 @@ from services.email_service import (
     send_email,
 )
 
-
 @contextmanager
 def compat_modal(title: str, *, key: Optional[str] = None, **kwargs):
     """Provide a fallback for ``st.modal`` when running on older Streamlit versions."""
@@ -383,11 +382,24 @@ except (FileNotFoundError, OSError, UnidentifiedImageError) as exc:
     PAGE_ICON = FALLBACK_PAGE_ICON
     LOGGER.warning("Não foi possível carregar o logo em %s: %s", LOGO_PATH, exc)
 
-st.set_page_config(
-    page_title="myERP",
-    page_icon=PAGE_ICON,
-    layout="wide",
-)
+st.set_page_config(page_title="myERP",page_icon=PAGE_ICON,layout="wide")
+
+st.markdown(
+        r"""
+        <style>
+        .stAppDeployButton {
+                visibility: hidden;
+            }
+        .reportview-container {
+            margin-top: -2em;
+        }
+        #MainMenu {visibility: hidden;}
+        .stDeployButton {display:none;}
+        footer {visibility: hidden;}
+        #stDecoration {display:none;}
+        </style>
+        """, unsafe_allow_html=True
+    )
 
 # ========================== GESTÃO DA BASE DE DADOS ==========================
 
@@ -6791,7 +6803,7 @@ def login_screen():
             unsafe_allow_html=True,
         )
     st.markdown(
-        "<p style='text-align:center;'>Sistema myERP v4.0<br/>© 2025 Ricardo Nogueira</p>",
+        "<p style='text-align:center;'>Sistema myERP<br/>© 2025 Ricardo Nogueira</p>",
         unsafe_allow_html=True,
     )
 
@@ -6938,8 +6950,8 @@ with st.sidebar:
                 unsafe_allow_html=True,
             )
     st.markdown(
-        "<div style='text-align:center; font-size: 12px;'>"
-        "<p>Sistema myERP v4.0</p>"
+        "<div style='text-align:center; font-size: 12px; margin-top:-15px;'>"
+        "<p>Sistema myERP </p>"
         "<p>© 2025 Ricardo Nogueira</p>"
         "</div>",
         unsafe_allow_html=True,
@@ -7043,7 +7055,7 @@ elif menu_option == "📝 Nova Cotação":
                 placeholder="Escolha uma opção",
             )
 
-        with col_anexos:
+        with col_anexos:        
             st.checkbox(
                 "Enviar Anexos",
                 key="nova_enviar_anexos",
@@ -7525,7 +7537,7 @@ elif menu_option == "🤖 Smart Quotation":
 
             col_form, col_pdf = st.columns(2)
 
-            with col_form:  
+            with col_form:        
                 st.text_input(
                     "Referência Cliente",
                     key="smart_referencia",
@@ -7539,6 +7551,15 @@ elif menu_option == "🤖 Smart Quotation":
                         key="smart_cliente_index",
                     )
                 with cliente_cols[1]:
+
+                    st.markdown("""
+                    <style>
+                    .st-key-smart_enviar_anexos {
+                        margin-top: 20px !important;
+                    }
+                    </style>
+                    """, unsafe_allow_html=True) 
+                                    
                     st.checkbox(
                         "Enviar Anexos",
                         key="smart_enviar_anexos",
@@ -10825,7 +10846,7 @@ elif menu_option == "⚙️ Configurações":
 st.markdown("---")
 st.markdown("""
     <div style="text-align: center; color: #666; font-size: 12px;">
-        Sistema myERP v4.0 | Desenvolvido por Ricardo Nogueira | © 2025
+        Sistema myERP | Desenvolvido por Ricardo Nogueira | © 2025
     </div>
 """, unsafe_allow_html=True)
 
