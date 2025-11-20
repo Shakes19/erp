@@ -85,7 +85,9 @@ def decrypt_email_password(value: str | bytes | None) -> str | None:
         plain = Fernet(key).decrypt(token.encode("utf-8"))
         return plain.decode("utf-8")
     except (InvalidToken, ValueError):
-        return None
+        # Caso o valor tenha sido guardado em texto simples, devolvê-lo para que
+        # o envio de emails continue a funcionar.
+        return token
 
 
 def has_user_email_password(user_id: int | None) -> bool:
@@ -1204,20 +1206,21 @@ def criar_base_dados_completa():
         """
     )
 
-    # Tabela de configurações de email (sem password)
+    # Tabela de configurações de email (sem utilizador)
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS configuracao_email (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             smtp_server TEXT,
             smtp_port INTEGER,
-            email_user TEXT,
-            ativo BOOLEAN DEFAULT TRUE
+            ativo BOOLEAN DEFAULT TRUE,
+            use_tls BOOLEAN DEFAULT TRUE,
+            use_ssl BOOLEAN DEFAULT FALSE
         )
         """
     )
 
-    # Garantir coluna "ativo" para bases existentes
+    # Garantir colunas e remoção de colunas obsoletas em bases existentes
     c.execute("PRAGMA table_info(configuracao_email)")
     email_cols = [row[1] for row in c.fetchall()]
     if "ativo" not in email_cols:
@@ -1233,6 +1236,44 @@ def criar_base_dados_completa():
     if "use_ssl" not in email_cols:
         c.execute(
             "ALTER TABLE configuracao_email ADD COLUMN use_ssl BOOLEAN DEFAULT FALSE"
+        )
+        email_cols.append("use_ssl")
+
+    if "email_user" in email_cols:
+        # Reconstruir tabela sem a coluna obsoleta preservando dados existentes
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS configuracao_email_tmp (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                smtp_server TEXT,
+                smtp_port INTEGER,
+                ativo BOOLEAN DEFAULT TRUE,
+                use_tls BOOLEAN DEFAULT TRUE,
+                use_ssl BOOLEAN DEFAULT FALSE
+            )
+            """
+        )
+
+        current_cols = set(email_cols)
+        select_exprs = [
+            "id" if "id" in current_cols else "ROWID",
+            "smtp_server" if "smtp_server" in current_cols else "NULL",
+            "smtp_port" if "smtp_port" in current_cols else "NULL",
+            "COALESCE(ativo, TRUE)" if "ativo" in current_cols else "TRUE",
+            "COALESCE(use_tls, TRUE)" if "use_tls" in current_cols else "TRUE",
+            "COALESCE(use_ssl, FALSE)" if "use_ssl" in current_cols else "FALSE",
+        ]
+
+        c.execute(
+            """
+            INSERT INTO configuracao_email_tmp (id, smtp_server, smtp_port, ativo, use_tls, use_ssl)
+            SELECT {select_exprs} FROM configuracao_email
+            """.format(select_exprs=", ".join(select_exprs))
+        )
+
+        c.execute("DROP TABLE configuracao_email")
+        c.execute(
+            "ALTER TABLE configuracao_email_tmp RENAME TO configuracao_email"
         )
 
     # Tabela de configuração da empresa
