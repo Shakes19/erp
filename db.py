@@ -56,8 +56,24 @@ def _legacy_get_email_secret_key() -> bytes:
     return generated
 
 
-def _legacy_decrypt_email_password(value: str | bytes | None) -> str | None:
-    """Decrypt legacy email passwords that were stored using Fernet."""
+def encrypt_email_password(password: str | None) -> str | None:
+    """Encrypt ``password`` with a symmetric key for later retrieval."""
+
+    if not password:
+        return None
+
+    key = _legacy_get_email_secret_key()
+    token = Fernet(key).encrypt(password.encode("utf-8"))
+    return token.decode("utf-8")
+
+
+def decrypt_email_password(value: str | bytes | None) -> str | None:
+    """Decrypt or normalise stored email passwords.
+
+    Supports existing Fernet tokens and plain-text values (for legacy
+    databases).  Bcrypt hashes are intentionally ignored because they are not
+    reversible.
+    """
 
     if value is None:
         return None
@@ -77,11 +93,12 @@ def _legacy_decrypt_email_password(value: str | bytes | None) -> str | None:
         plain = Fernet(key).decrypt(token.encode("utf-8"))
         return plain.decode("utf-8")
     except (InvalidToken, ValueError):
-        return None
+        # Value is not encrypted; treat it as plain text so it can be migrated.
+        return token
 
 
 def has_user_email_password(user_id: int | None) -> bool:
-    """Return ``True`` when ``user_id`` has a hashed email password stored."""
+    """Return ``True`` when ``user_id`` has an email password stored."""
 
     if not user_id:
         return False
@@ -97,6 +114,21 @@ def has_user_email_password(user_id: int | None) -> bool:
     if isinstance(value, (bytes, bytearray, memoryview)):
         return bool(bytes(value).strip())
     return bool(str(value).strip())
+
+
+def get_user_email_password(user_id: int | None) -> str | None:
+    """Return the decrypted email password for ``user_id`` when available."""
+
+    if not user_id:
+        return None
+
+    row = fetch_one(
+        "SELECT email_password FROM utilizador WHERE id = ?",
+        (user_id,),
+    )
+    if not row:
+        return None
+    return decrypt_email_password(row[0])
 
 
 @lru_cache(maxsize=None)
@@ -1279,7 +1311,7 @@ def criar_base_dados_completa():
     if "email_password" not in user_columns:
         c.execute("ALTER TABLE utilizador ADD COLUMN email_password TEXT")
 
-    # Converter palavras-passe de email antigas para hash bcrypt
+    # Converter palavras-passe de email antigas para formato encriptado
     c.execute(
         """
         SELECT id, email_password FROM utilizador
@@ -1290,22 +1322,17 @@ def criar_base_dados_completa():
         if raw_email_password is None:
             continue
 
-        plain_password = _legacy_decrypt_email_password(raw_email_password)
-        if plain_password is None:
-            if isinstance(raw_email_password, (bytes, bytearray, memoryview)):
-                candidate = raw_email_password.decode("utf-8", errors="ignore")
-            else:
-                candidate = str(raw_email_password)
-            candidate = candidate.strip()
-            if not candidate or candidate.startswith("$2"):
-                # Já está em formato bcrypt ou vazio.
-                continue
-            plain_password = candidate
+        plain_password = decrypt_email_password(raw_email_password)
+        if not plain_password:
+            continue
 
-        hashed_value = hash_password(plain_password)
+        encrypted_value = encrypt_email_password(plain_password)
+        if not encrypted_value:
+            continue
+
         c.execute(
             "UPDATE utilizador SET email_password = ? WHERE id = ?",
-            (hashed_value, user_id),
+            (encrypted_value, user_id),
         )
 
     # Inserir utilizador administrador padrão se a tabela estiver vazia

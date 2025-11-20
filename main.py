@@ -30,6 +30,7 @@ from db import (
     get_connection as obter_conexao,
     backup_database,
     restore_database,
+    encrypt_email_password,
     hash_password,
     verify_password,
     DB_PATH,
@@ -42,6 +43,7 @@ from db import (
     obter_processo_id_por_rfq,
     get_table_columns,
     has_user_email_password,
+    get_user_email_password,
 )
 from services.pdf_service import (
     ensure_latin1,
@@ -1921,7 +1923,7 @@ def inserir_utilizador(username, password, nome="", email="", role="user", email
                 nome,
                 email,
                 role,
-                hash_password(email_password) if email_password else None,
+                encrypt_email_password(email_password),
             ),
         )
         conn.commit()
@@ -1947,9 +1949,7 @@ def atualizar_utilizador(
             params.append(hash_password(password))
         if email_password is not None:
             fields.append("email_password = ?")
-            params.append(
-                hash_password(email_password) if email_password else None
-            )
+            params.append(encrypt_email_password(email_password))
         params.append(user_id)
         c.execute(
             f"UPDATE utilizador SET {', '.join(fields)} WHERE id = ?",
@@ -6784,7 +6784,9 @@ def login_screen():
             st.session_state.username = user[1]
             st.session_state.user_email = user[4]
             st.session_state.user_nome = user[3] or user[1]
-            st.session_state.email_password_cache = None
+            st.session_state.email_password_cache = get_user_email_password(
+                user[0]
+            )
             st.rerun()
         else:
             st.error("Credenciais inválidas")
