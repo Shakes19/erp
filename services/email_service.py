@@ -22,8 +22,13 @@ import streamlit as st
 from db import get_connection
 
 
+# Configuração SMTP provisória e forçada para Gmail.
+#
+# O projeto está com problemas de envio e precisamos de uma solução rápida, por
+# isso fixamos aqui o servidor/porta e forçamos STARTTLS em vez de depender das
+# configurações guardadas na base de dados.
 DEFAULT_SMTP_CONFIG = {
-    "server": "smtp-mail.outlook.com",
+    "server": "smtp.gmail.com",
     "port": 587,
     "use_tls": True,
     "use_ssl": False,
@@ -112,48 +117,8 @@ def get_system_email_config() -> dict:
     por omissão quando necessário.
     """
 
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                "SELECT smtp_server, smtp_port, use_tls, use_ssl FROM configuracao_email "
-                "WHERE ativo = TRUE LIMIT 1"
-            )
-        except sqlite3.OperationalError:
-            try:
-                cursor.execute(
-                    "SELECT smtp_server, smtp_port, use_tls, use_ssl FROM configuracao_email LIMIT 1"
-                )
-            except sqlite3.OperationalError:
-                cursor.execute(
-                    "SELECT smtp_server, smtp_port FROM configuracao_email LIMIT 1"
-                )
-        row = cursor.fetchone()
-    except sqlite3.OperationalError:
-        row = None
-    finally:
-        conn.close()
-
-    if row and row[0]:
-        server = row[0]
-        try:
-            port = int(row[1]) if row[1] is not None else DEFAULT_SMTP_CONFIG["port"]
-        except (TypeError, ValueError):
-            port = DEFAULT_SMTP_CONFIG["port"]
-        use_tls = DEFAULT_SMTP_CONFIG["use_tls"]
-        use_ssl = DEFAULT_SMTP_CONFIG["use_ssl"]
-        if len(row) >= 3 and row[2] is not None:
-            use_tls = bool(row[2])
-        if len(row) >= 4 and row[3] is not None:
-            use_ssl = bool(row[3])
-        return {
-            "server": server,
-            "port": port,
-            "use_tls": use_tls,
-            "use_ssl": use_ssl,
-        }
-
+    # Solução provisória: ignoramos a configuração persistida e devolvemos os
+    # valores fixos do Gmail para garantir STARTTLS na porta 587.
     return DEFAULT_SMTP_CONFIG.copy()
 
 
