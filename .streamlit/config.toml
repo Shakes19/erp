@@ -3,3 +3,9 @@ primaryColor = "#687a82"
 backgroundColor = "#0E1117"
 textColor = "#FAFAFA"
 secondaryBackgroundColor = "#262730"
+
+[server]
+port = 8501
+
+[global]
+developmentMode = false
