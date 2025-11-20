@@ -56,16 +56,8 @@ def _legacy_get_email_secret_key() -> bytes:
     return generated
 
 
-def encrypt_email_password(password: str) -> str:
-    """Encrypt ``password`` using the shared symmetric key."""
-
-    key = _legacy_get_email_secret_key()
-    token = Fernet(key).encrypt(password.encode("utf-8"))
-    return token.decode("utf-8")
-
-
-def decrypt_email_password(value: str | bytes | None) -> str | None:
-    """Decrypt an email password stored in the database when possible."""
+def _legacy_decrypt_email_password(value: str | bytes | None) -> str | None:
+    """Decrypt legacy email passwords that were stored using Fernet."""
 
     if value is None:
         return None
@@ -77,7 +69,7 @@ def decrypt_email_password(value: str | bytes | None) -> str | None:
 
     token = token.strip()
     if not token or token.startswith("$2"):
-        # Bcrypt hashes (legacy migration) cannot be reversed.
+        # Bcrypt hashes (new format) cannot be reversed.
         return None
 
     try:
@@ -85,9 +77,7 @@ def decrypt_email_password(value: str | bytes | None) -> str | None:
         plain = Fernet(key).decrypt(token.encode("utf-8"))
         return plain.decode("utf-8")
     except (InvalidToken, ValueError):
-        # Caso o valor tenha sido guardado em texto simples, devolvê-lo para que
-        # o envio de emails continue a funcionar.
-        return token
+        return None
 
 
 def has_user_email_password(user_id: int | None) -> bool:
@@ -1206,21 +1196,20 @@ def criar_base_dados_completa():
         """
     )
 
-    # Tabela de configurações de email (sem utilizador)
+    # Tabela de configurações de email (sem password)
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS configuracao_email (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             smtp_server TEXT,
             smtp_port INTEGER,
-            ativo BOOLEAN DEFAULT TRUE,
-            use_tls BOOLEAN DEFAULT TRUE,
-            use_ssl BOOLEAN DEFAULT FALSE
+            email_user TEXT,
+            ativo BOOLEAN DEFAULT TRUE
         )
         """
     )
 
-    # Garantir colunas e remoção de colunas obsoletas em bases existentes
+    # Garantir coluna "ativo" para bases existentes
     c.execute("PRAGMA table_info(configuracao_email)")
     email_cols = [row[1] for row in c.fetchall()]
     if "ativo" not in email_cols:
@@ -1236,44 +1225,6 @@ def criar_base_dados_completa():
     if "use_ssl" not in email_cols:
         c.execute(
             "ALTER TABLE configuracao_email ADD COLUMN use_ssl BOOLEAN DEFAULT FALSE"
-        )
-        email_cols.append("use_ssl")
-
-    if "email_user" in email_cols:
-        # Reconstruir tabela sem a coluna obsoleta preservando dados existentes
-        c.execute(
-            """
-            CREATE TABLE IF NOT EXISTS configuracao_email_tmp (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                smtp_server TEXT,
-                smtp_port INTEGER,
-                ativo BOOLEAN DEFAULT TRUE,
-                use_tls BOOLEAN DEFAULT TRUE,
-                use_ssl BOOLEAN DEFAULT FALSE
-            )
-            """
-        )
-
-        current_cols = set(email_cols)
-        select_exprs = [
-            "id" if "id" in current_cols else "ROWID",
-            "smtp_server" if "smtp_server" in current_cols else "NULL",
-            "smtp_port" if "smtp_port" in current_cols else "NULL",
-            "COALESCE(ativo, TRUE)" if "ativo" in current_cols else "TRUE",
-            "COALESCE(use_tls, TRUE)" if "use_tls" in current_cols else "TRUE",
-            "COALESCE(use_ssl, FALSE)" if "use_ssl" in current_cols else "FALSE",
-        ]
-
-        c.execute(
-            """
-            INSERT INTO configuracao_email_tmp (id, smtp_server, smtp_port, ativo, use_tls, use_ssl)
-            SELECT {select_exprs} FROM configuracao_email
-            """.format(select_exprs=", ".join(select_exprs))
-        )
-
-        c.execute("DROP TABLE configuracao_email")
-        c.execute(
-            "ALTER TABLE configuracao_email_tmp RENAME TO configuracao_email"
         )
 
     # Tabela de configuração da empresa
@@ -1328,7 +1279,7 @@ def criar_base_dados_completa():
     if "email_password" not in user_columns:
         c.execute("ALTER TABLE utilizador ADD COLUMN email_password TEXT")
 
-    # Normalizar palavras-passe de email para o formato encriptado
+    # Converter palavras-passe de email antigas para hash bcrypt
     c.execute(
         """
         SELECT id, email_password FROM utilizador
@@ -1339,23 +1290,22 @@ def criar_base_dados_completa():
         if raw_email_password is None:
             continue
 
-        # Skip irreversível hashes bcrypt para não perder compatibilidade.
-        token = (
-            raw_email_password.decode("utf-8", errors="ignore")
-            if isinstance(raw_email_password, (bytes, bytearray, memoryview))
-            else str(raw_email_password)
-        ).strip()
-        if not token or token.startswith("$2"):
-            continue
+        plain_password = _legacy_decrypt_email_password(raw_email_password)
+        if plain_password is None:
+            if isinstance(raw_email_password, (bytes, bytearray, memoryview)):
+                candidate = raw_email_password.decode("utf-8", errors="ignore")
+            else:
+                candidate = str(raw_email_password)
+            candidate = candidate.strip()
+            if not candidate or candidate.startswith("$2"):
+                # Já está em formato bcrypt ou vazio.
+                continue
+            plain_password = candidate
 
-        # Já encriptado no formato atual
-        if decrypt_email_password(token):
-            continue
-
-        encrypted_value = encrypt_email_password(token)
+        hashed_value = hash_password(plain_password)
         c.execute(
             "UPDATE utilizador SET email_password = ? WHERE id = ?",
-            (encrypted_value, user_id),
+            (hashed_value, user_id),
         )
 
     # Inserir utilizador administrador padrão se a tabela estiver vazia

@@ -39,7 +39,6 @@ def test_colunas_email_extras_existem():
     conn.close()
     for expected in {"ativo", "use_tls", "use_ssl"}:
         assert expected in cols
-    assert "email_user" not in cols
 
 
 def test_clear_email_cache_sem_erro():
@@ -57,17 +56,3 @@ def test_get_system_email_config_devolve_flags_tls_ssl():
     assert "port" in config
     assert "use_tls" in config
     assert "use_ssl" in config
-
-
-def test_decrypt_email_password_retorna_texto_simples_quando_nao_encriptado():
-    env_key = "EMAIL_SECRET_KEY"
-    previous_value = os.environ.get(env_key)
-    os.environ[env_key] = "TEST_KEY"
-    try:
-        plain = "segredo123"
-        assert db.decrypt_email_password(plain) == plain
-    finally:
-        if previous_value is None:
-            os.environ.pop(env_key, None)
-        else:
-            os.environ[env_key] = previous_value

@@ -32,8 +32,6 @@ from db import (
     restore_database,
     hash_password,
     verify_password,
-    encrypt_email_password,
-    decrypt_email_password,
     DB_PATH,
     engine,
     fetch_all,
@@ -1923,7 +1921,7 @@ def inserir_utilizador(username, password, nome="", email="", role="user", email
                 nome,
                 email,
                 role,
-                encrypt_email_password(email_password) if email_password else None,
+                hash_password(email_password) if email_password else None,
             ),
         )
         conn.commit()
@@ -1950,7 +1948,7 @@ def atualizar_utilizador(
         if email_password is not None:
             fields.append("email_password = ?")
             params.append(
-                encrypt_email_password(email_password) if email_password else None
+                hash_password(email_password) if email_password else None
             )
         params.append(user_id)
         c.execute(
@@ -3524,16 +3522,6 @@ def _obter_palavra_passe_email_sessao() -> str | None:
     email_password = st.session_state.get("email_password_cache")
     if email_password:
         return email_password
-
-    # Tentar recuperar da base de dados uma palavra-passe encriptada
-    user_id = st.session_state.get("user_id")
-    if user_id:
-        user = obter_utilizador_por_id(user_id)
-        if user:
-            decrypted = decrypt_email_password(user[6])
-            if decrypted:
-                st.session_state.email_password_cache = decrypted
-                return decrypted
     return None
 
 
@@ -6796,7 +6784,7 @@ def login_screen():
             st.session_state.username = user[1]
             st.session_state.user_email = user[4]
             st.session_state.user_nome = user[3] or user[1]
-            st.session_state.email_password_cache = decrypt_email_password(user[6])
+            st.session_state.email_password_cache = None
             st.rerun()
         else:
             st.error("Credenciais inválidas")
