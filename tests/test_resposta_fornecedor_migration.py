@@ -1,8 +1,11 @@
 import os
 import sqlite3
+import sys
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import db
 
@@ -76,9 +79,11 @@ def test_migracao_resposta_fornecedor_preserva_dados(tmp_path, monkeypatch):
             quantidade_final,
             moeda,
             preco_venda,
+            desconto,
+            preco_venda_desconto,
             observacoes,
             validade_preco
-        ) VALUES (?, ?, ?, 'Descrição', 10.5, 7, 5, 'USD', 12.0, 'obs', '2024-12-31')
+        ) VALUES (?, ?, ?, 'Descrição', 10.5, 7, 5, 'USD', 12.0, 5.0, 11.4, 'obs', '2024-12-31')
         """,
         (fornecedor_id, rfq_id, artigo_id),
     )
@@ -110,6 +115,8 @@ def test_migracao_resposta_fornecedor_preserva_dados(tmp_path, monkeypatch):
                quantidade_final,
                moeda,
                preco_venda,
+               desconto,
+               preco_venda_desconto,
                observacoes,
                validade_preco
           FROM resposta_fornecedor
@@ -126,6 +133,8 @@ def test_migracao_resposta_fornecedor_preserva_dados(tmp_path, monkeypatch):
         5,
         "USD",
         12.0,
+        5.0,
+        11.4,
         "obs",
         "2024-12-31",
     )

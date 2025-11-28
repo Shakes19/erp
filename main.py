@@ -2679,6 +2679,7 @@ def guardar_respostas(
             (
                 artigo_id,
                 custo,
+                desconto,
                 validade_preco,
                 peso,
                 hs_code,
@@ -2699,15 +2700,16 @@ def guardar_respostas(
                 0.0,
             )
             preco_venda = custo_total * (1 + margem / 100)
+            preco_venda_desconto = preco_venda * (1 - (desconto or 0) / 100)
             moeda_codigo = "EUR"
 
             c.execute(
                 """
                 INSERT OR REPLACE INTO resposta_fornecedor
                 (fornecedor_id, rfq_id, artigo_id, descricao, custo, prazo_entrega,
-                 quantidade_final, moeda, preco_venda,
+                 quantidade_final, moeda, preco_venda, desconto, preco_venda_desconto,
                  observacoes, validade_preco)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     fornecedor_id,
@@ -2719,6 +2721,8 @@ def guardar_respostas(
                     quantidade_final,
                     moeda_codigo,
                     preco_venda,
+                    desconto,
+                    preco_venda_desconto,
                     observacoes,
                     validade_preco,
                 ),
@@ -2735,7 +2739,7 @@ def guardar_respostas(
                  WHERE id = ?
                 """,
                 (
-                    custo_total,
+                    preco_venda_desconto,
                     validade_preco or None,
                     float(peso) if peso is not None else None,
                     hs_code or None,
@@ -2819,6 +2823,8 @@ def obter_respostas_cotacao(rfq_id):
                a.pais_origem,
                rf.moeda,
                rf.preco_venda,
+               rf.desconto,
+               rf.preco_venda_desconto,
                rf.observacoes,
                rf.data_resposta,
                rf.validade_preco,
@@ -2855,16 +2861,19 @@ def obter_respostas_cotacao(rfq_id):
                 "hs_code": row[9],
                 "pais_origem": row[10],
                 "moeda": row[11],
-                "preco_venda": row[12],
-                "observacoes": row[13],
-                "data_resposta": row[14],
-                "validade_preco": row[15],
-                "descricao_original": row[16],
-                "quantidade_original": row[17],
-                "rfq_artigo_id": row[18],
-                "fornecedor_nome": row[19] or "",
-                "unidade": row[20],
-                "marca": row[21],
+                "preco_venda_original": row[12],
+                "preco_venda": row[14] if row[14] is not None else row[12],
+                "desconto": row[13],
+                "preco_venda_desconto": row[14],
+                "observacoes": row[15],
+                "data_resposta": row[16],
+                "validade_preco": row[17],
+                "descricao_original": row[18],
+                "quantidade_original": row[19],
+                "rfq_artigo_id": row[20],
+                "fornecedor_nome": row[21] or "",
+                "unidade": row[22],
+                "marca": row[23],
             }
         )
 
@@ -2893,6 +2902,8 @@ def obter_respostas_processo(processo_id):
                    a.pais_origem,
                    rf.moeda,
                    rf.preco_venda,
+                   rf.desconto,
+                   rf.preco_venda_desconto,
                    rf.observacoes,
                    rf.data_resposta,
                    rf.validade_preco,
@@ -2930,16 +2941,19 @@ def obter_respostas_processo(processo_id):
                     "hs_code": row[9],
                     "pais_origem": row[10],
                     "moeda": row[11],
-                    "preco_venda": row[12],
-                    "observacoes": row[13],
-                    "data_resposta": row[14],
-                    "validade_preco": row[15],
-                    "descricao_original": row[16],
-                    "quantidade_original": row[17],
-                    "rfq_artigo_id": row[18],
-                    "fornecedor_nome": row[19] or '',
-                    "unidade": row[20],
-                    "marca": row[21],
+                    "preco_venda_original": row[12],
+                    "preco_venda": row[14] if row[14] is not None else row[12],
+                    "desconto": row[13],
+                    "preco_venda_desconto": row[14],
+                    "observacoes": row[15],
+                    "data_resposta": row[16],
+                    "validade_preco": row[17],
+                    "descricao_original": row[18],
+                    "quantidade_original": row[19],
+                    "rfq_artigo_id": row[20],
+                    "fornecedor_nome": row[21] or '',
+                    "unidade": row[22],
+                    "marca": row[23],
                 }
             )
 
@@ -2967,6 +2981,8 @@ def obter_respostas_por_processo(processo_id):
                ra.ordem,
                rf.id as resposta_id,
                rf.preco_venda,
+               rf.desconto,
+               rf.preco_venda_desconto,
                rf.custo,
                rf.prazo_entrega,
                rf.moeda,
@@ -3003,6 +3019,8 @@ def obter_respostas_por_processo(processo_id):
             ordem,
             resposta_id,
             preco_venda,
+            desconto,
+            preco_venda_desconto,
             custo,
             prazo,
             moeda,
@@ -3041,10 +3059,18 @@ def obter_respostas_por_processo(processo_id):
                 fornecedor_entry["estado"] = estado_rfq
 
         if resposta_id:
+            preco_final = (
+                preco_venda_desconto
+                if preco_venda_desconto is not None
+                else preco_venda
+            )
             artigo_info["respostas"].append(
                 {
                     "resposta_id": resposta_id,
-                    "preco_venda": preco_venda,
+                    "preco_venda": preco_final,
+                    "preco_venda_original": preco_venda,
+                    "desconto": desconto,
+                    "preco_venda_desconto": preco_venda_desconto,
                     "custo": custo,
                     "prazo": prazo,
                     "moeda": moeda,
@@ -4972,7 +4998,7 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
                    rf.descricao,
                    COALESCE(rf.quantidade_final, ra.quantidade, 1) AS quantidade_final,
                    COALESCE(u.nome, ''),
-                   rf.preco_venda,
+                   COALESCE(rf.preco_venda_desconto, rf.preco_venda) AS preco_venda,
                    rf.prazo_entrega,
                    COALESCE(a.peso, 0),
                    COALESCE(a.hs_code, ''),
@@ -5955,23 +5981,38 @@ def responder_cotacao_dialog(cotacao):
                         0.0,
                     )
 
-                    custo = st.number_input(
-                        "Preço Compra (EUR)",
-                        min_value=0.0,
-                        step=0.01,
-                        key=f"custo_{artigo['id']}",
-                    )
+                    col_preco, col_desconto = st.columns([3, 1])
+                    with col_preco:
+                        custo = st.number_input(
+                            "Preço Compra (EUR)",
+                            min_value=0.0,
+                            step=0.01,
+                            key=f"custo_{artigo['id']}",
+                        )
+
+                    with col_desconto:
+                        desconto = st.number_input(
+                            "Desconto (%)",
+                            min_value=0.0,
+                            max_value=100.0,
+                            step=0.1,
+                            value=0.0,
+                            key=f"desconto_{artigo['id']}",
+                            help="Percentual de desconto aplicado ao preço de venda.",
+                        )
 
                     if custo > 0:
                         preco_venda = custo * (1 + margem / 100)
+                        preco_venda_desconto = preco_venda * (1 - desconto / 100)
                         st.caption(f"Margem aplicada: {margem:.1f}%")
-                        st.success(f"P.V.: EUR {preco_venda:.2f}")
+                        st.success(f"P.V. c/ desc.: EUR {preco_venda_desconto:.2f}")
 
                 # Guardar resposta
                 respostas.append(
                     (
                         artigo["id"],
                         custo,
+                        desconto,
                         validade_preco.isoformat(),
                         peso,
                         hs_code,
@@ -6138,7 +6179,11 @@ def criar_cotacao_cliente_dialog(
             descricao_curta = " / ".join(descricao.splitlines()[:2]) or "Artigo"
             if len(descricao_curta) > 80:
                 descricao_curta = descricao_curta[:77].rstrip() + "..."
-            preco = resposta.get("preco_venda") or 0
+            preco = (
+                resposta.get("preco_venda_desconto")
+                or resposta.get("preco_venda")
+                or 0
+            )
             moeda = resposta.get("moeda") or "EUR"
             validade = resposta.get("validade_preco") or ""
             fornecedor_valor = resposta.get("fornecedor_nome")
@@ -8199,10 +8244,17 @@ elif menu_option == "📩 Process Center":
                             st.markdown("**Resumo das Respostas:**")
                             total_geral = 0
                             for resp in respostas:
-                                preco_total = resp['preco_venda'] * resp['quantidade_final']
+                                preco_unit = resp.get('preco_venda_desconto') or resp['preco_venda']
+                                preco_total = preco_unit * resp['quantidade_final']
                                 total_geral += preco_total
                                 st.write(f"• {resp['descricao'][:50]}...")
-                                st.write(f"  Qtd: {resp['quantidade_final']} | P.V.: EUR {resp['preco_venda']:.2f} | Total: EUR {preco_total:.2f}")
+                                st.write(
+                                    "  Qtd: {qtd} | P.V.: EUR {pv:.2f} | Total: EUR {total:.2f}".format(
+                                        qtd=resp['quantidade_final'],
+                                        pv=preco_unit,
+                                        total=preco_total,
+                                    )
+                                )
                             st.success(f"**Total Geral: EUR {total_geral:.2f}**")
 
                         artigos_processo, fornecedores_estado = ([], [])
@@ -9033,9 +9085,9 @@ elif menu_option == "📊 Relatórios":
 
         if data_column_alias:
             c.execute(
-                f"""
+               f"""
                 SELECT DATE({data_column_alias}) AS data,
-                       SUM(rf.preco_venda * rf.quantidade_final) AS total
+                       SUM(COALESCE(rf.preco_venda_desconto, rf.preco_venda) * rf.quantidade_final) AS total
                   FROM rfq r
                   JOIN resposta_fornecedor rf ON r.id = rf.rfq_id
                  GROUP BY DATE({data_column_alias})
