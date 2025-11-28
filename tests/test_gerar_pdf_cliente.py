@@ -52,8 +52,8 @@ def test_gerar_pdf_cliente(tmp_path, monkeypatch):
         """
         INSERT INTO resposta_fornecedor(
             fornecedor_id, rfq_id, artigo_id, descricao, custo,
-            prazo_entrega, quantidade_final, preco_venda
-        ) VALUES (?, ?, ?, 'Desc', 10, 5, 2, 15)
+            prazo_entrega, quantidade_final, preco_venda, desconto, preco_venda_desconto
+        ) VALUES (?, ?, ?, 'Desc', 10, 5, 2, 15, 10, 13.5)
         """,
         (forn_id, rfq_id, artigo_id),
     )

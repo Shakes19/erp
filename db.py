@@ -514,12 +514,19 @@ def criar_base_dados_completa():
         )
 
         if fornecedor_marca_existe:
+            c.execute("PRAGMA table_info(fornecedor_marca)")
+            fornecedor_marca_cols = {row[1] for row in c.fetchall()}
+            coluna_pais_cliente_final = (
+                "COALESCE(necessita_pais_cliente_final, 0)"
+                if "necessita_pais_cliente_final" in fornecedor_marca_cols
+                else "0"
+            )
             c.execute(
-                """
+                f"""
                 SELECT id,
                        fornecedor_id,
                        TRIM(marca) AS marca,
-                       COALESCE(necessita_pais_cliente_final, 0)
+                       {coluna_pais_cliente_final}
                   FROM fornecedor_marca
                  WHERE marca IS NOT NULL AND TRIM(marca) != ''
                 """
@@ -1065,6 +1072,8 @@ def criar_base_dados_completa():
             quantidade_final INTEGER,
             moeda TEXT DEFAULT 'EUR',
             preco_venda REAL,
+            desconto REAL NOT NULL DEFAULT 0.0,
+            preco_venda_desconto REAL,
             observacoes TEXT,
             data_resposta TEXT DEFAULT CURRENT_TIMESTAMP,
             validade_preco TEXT,
@@ -1080,7 +1089,31 @@ def criar_base_dados_completa():
     resposta_cols = [row[1] for row in c.fetchall()]
 
     colunas_resposta_antigas = {"peso", "hs_code", "pais_origem"}
-    if colunas_resposta_antigas.intersection(resposta_cols):
+    colunas_resposta_desejadas = [
+        "id",
+        "fornecedor_id",
+        "rfq_id",
+        "artigo_id",
+        "descricao",
+        "custo",
+        "prazo_entrega",
+        "quantidade_final",
+        "moeda",
+        "preco_venda",
+        "desconto",
+        "preco_venda_desconto",
+        "observacoes",
+        "data_resposta",
+        "validade_preco",
+    ]
+
+    needs_resposta_migration = bool(colunas_resposta_antigas.intersection(resposta_cols))
+    if not needs_resposta_migration:
+        missing_cols = [col for col in colunas_resposta_desejadas if col not in resposta_cols]
+        extra_cols = [col for col in resposta_cols if col not in colunas_resposta_desejadas]
+        needs_resposta_migration = bool(missing_cols or extra_cols)
+
+    if needs_resposta_migration:
         c.execute("PRAGMA foreign_keys = OFF")
         try:
             c.execute("ALTER TABLE resposta_fornecedor RENAME TO resposta_fornecedor_legacy")
@@ -1097,6 +1130,8 @@ def criar_base_dados_completa():
                     quantidade_final INTEGER,
                     moeda TEXT DEFAULT 'EUR',
                     preco_venda REAL,
+                    desconto REAL NOT NULL DEFAULT 0.0,
+                    preco_venda_desconto REAL,
                     observacoes TEXT,
                     data_resposta TEXT DEFAULT CURRENT_TIMESTAMP,
                     validade_preco TEXT,
@@ -1108,21 +1143,7 @@ def criar_base_dados_completa():
                 """
             )
 
-            colunas_novas = [
-                "id",
-                "fornecedor_id",
-                "rfq_id",
-                "artigo_id",
-                "descricao",
-                "custo",
-                "prazo_entrega",
-                "quantidade_final",
-                "moeda",
-                "preco_venda",
-                "observacoes",
-                "data_resposta",
-                "validade_preco",
-            ]
+            colunas_novas = colunas_resposta_desejadas
             valores_por_omissao = {
                 "descricao": "NULL",
                 "custo": "0.0",
@@ -1130,6 +1151,8 @@ def criar_base_dados_completa():
                 "quantidade_final": "NULL",
                 "moeda": "'EUR'",
                 "preco_venda": "NULL",
+                "desconto": "0.0",
+                "preco_venda_desconto": "preco_venda",
                 "observacoes": "NULL",
                 "data_resposta": "CURRENT_TIMESTAMP",
                 "validade_preco": "NULL",
