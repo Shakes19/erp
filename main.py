@@ -10,7 +10,6 @@ from functools import lru_cache
 from io import BytesIO
 import os
 import shutil
-import imghdr
 import tempfile
 import re
 import copy
@@ -4193,29 +4192,37 @@ class InquiryPDF(FPDF):
         y_logo = logo_cfg.get("y", 15)
         def _draw_logo(path_or_bytes):
             """Desenha logo redimensionando para altura máxima."""
+
             if isinstance(path_or_bytes, bytes):
                 img = Image.open(BytesIO(path_or_bytes))
             else:
                 img = Image.open(path_or_bytes)
-            w_px, h_px = img.size
-            ratio = h_px / w_px if w_px else 1
-            h_logo = logo_w * ratio
-            if h_logo > max_h:
-                logo_w_adj = max_h / ratio
-                h_logo = max_h
-            else:
-                logo_w_adj = logo_w
-            if isinstance(path_or_bytes, bytes):
-                img_type = imghdr.what(None, path_or_bytes) or "png"
-                with tempfile.NamedTemporaryFile(delete=False, suffix=f".{img_type}") as tmp:
-                    tmp.write(path_or_bytes)
-                    tmp_path = tmp.name
-                try:
-                    self.image(tmp_path, x_logo, y_logo, logo_w_adj, h_logo)
-                finally:
-                    os.remove(tmp_path)
-            else:
-                self.image(path_or_bytes, x_logo, y_logo, logo_w_adj, h_logo)
+
+            try:
+                w_px, h_px = img.size
+                ratio = h_px / w_px if w_px else 1
+                h_logo = logo_w * ratio
+                if h_logo > max_h:
+                    logo_w_adj = max_h / ratio
+                    h_logo = max_h
+                else:
+                    logo_w_adj = logo_w
+
+                if isinstance(path_or_bytes, bytes):
+                    img_type = (img.format or "PNG").lower()
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix=f".{img_type}"
+                    ) as tmp:
+                        tmp.write(path_or_bytes)
+                        tmp_path = tmp.name
+                    try:
+                        self.image(tmp_path, x_logo, y_logo, logo_w_adj, h_logo)
+                    finally:
+                        os.remove(tmp_path)
+                else:
+                    self.image(path_or_bytes, x_logo, y_logo, logo_w_adj, h_logo)
+            finally:
+                img.close()
 
         if logo_bytes:
             _draw_logo(logo_bytes)
