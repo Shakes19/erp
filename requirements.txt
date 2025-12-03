@@ -10,6 +10,5 @@ sqlalchemy
 bcrypt
 cryptography
 Pillow
-standard-imghdr
 pypdf
 extract_msg
