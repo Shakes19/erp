@@ -23,7 +23,6 @@ from PIL import Image, UnidentifiedImageError
 import pandas as pd
 import altair as alt
 from streamlit_option_menu import option_menu
-import requests
 from db import (
     criar_processo,
     criar_base_dados_completa,
@@ -369,35 +368,6 @@ def _obter_ou_criar_artigo(
 
 
 LOGGER = logging.getLogger(__name__)
-
-TARGET_FIELDS = {
-    "description": "Description of the item or service",
-    "quantity": "Total quantity",
-    "unit_price": "Unit price (specified currency)",
-    "unit_weight": "Unit weight (kg)",
-    "hs_code": "HS Code",
-    "country_of_origin": "Country of origin",
-    "delivery_date": "Delivery date/lead time",
-    "price_validity": "Price/offer validity",
-}
-
-PROMPT_TEMPLATE = """
-You are an assistant specialized in reading commercial proposals in PDF format.
-Extract the following fields from the text below and return a valid JSON object.
-Expected fields (keep the keys exactly the same):
-{field_list}
-
-Rules:
-- Use an empty string if a field is not available.
-- Do not invent values; only use the provided text.
-- Use ISO dates (YYYY-MM-DD) when possible.
-- Respond only with valid JSON, without additional commentary.
-
-Proposal text:
-"""{content}"""
-"""
-
-MAX_OLLAMA_PROMPT_CHARS = 20000
 
 LOGO_PATH = "assets/logo.png"
 FALLBACK_PAGE_ICON = "📦"
@@ -5712,90 +5682,6 @@ def extrair_primeira_palavra_alfanumerica(texto: str) -> str:
     return correspondencia.group(0) if correspondencia else ""
 
 
-def _extrair_texto_pdf_bytes(pdf_bytes: bytes) -> str:
-    """Extrai texto de um PDF para análise pela IA."""
-
-    if not pdf_bytes:
-        return ""
-
-    try:
-        reader = PdfReader(BytesIO(pdf_bytes))
-    except Exception as exc:  # pragma: no cover - fallback defensivo
-        LOGGER.warning("Não foi possível abrir o PDF para IA: %s", exc)
-        return ""
-
-    textos: list[str] = []
-    for idx, page in enumerate(reader.pages):
-        try:
-            conteudo = page.extract_text() or ""
-        except Exception as exc:  # pragma: no cover - fallback defensivo
-            LOGGER.warning(
-                "Falha ao extrair texto da página %s do PDF do fornecedor: %s",
-                idx + 1,
-                exc,
-            )
-            continue
-        conteudo = conteudo.strip()
-        if conteudo:
-            textos.append(conteudo)
-
-    return "\n\n".join(textos).strip()
-
-
-def _criar_prompt_ollama(conteudo: str) -> str:
-    field_list = json.dumps(TARGET_FIELDS, indent=4, ensure_ascii=False)
-    texto_limpo = (conteudo or "").strip()
-    if len(texto_limpo) > MAX_OLLAMA_PROMPT_CHARS:
-        texto_limpo = texto_limpo[:MAX_OLLAMA_PROMPT_CHARS]
-    return PROMPT_TEMPLATE.format(field_list=field_list, content=texto_limpo)
-
-
-def _analisar_pdf_resposta_fornecedor(
-    pdf_bytes: bytes,
-) -> tuple[dict[str, str] | None, str | None]:
-    """Analisa um PDF de resposta de fornecedor usando o modelo local do Ollama."""
-
-    texto_pdf = _extrair_texto_pdf_bytes(pdf_bytes)
-    if not texto_pdf:
-        return None, "Não foi possível extrair texto do PDF enviado."
-
-    prompt = _criar_prompt_ollama(texto_pdf)
-    try:
-        response = requests.post(
-            "http://localhost:11434/api/generate",
-            json={"model": "qwen3:8b", "prompt": prompt, "stream": False},
-            timeout=120,
-        )
-        response.raise_for_status()
-    except requests.RequestException as exc:  # pragma: no cover - dependência externa
-        LOGGER.warning("Falha ao contactar o Ollama: %s", exc)
-        return None, "Não foi possível contactar o serviço de IA local (Ollama)."
-
-    try:
-        payload = response.json()
-    except json.JSONDecodeError as exc:  # pragma: no cover - dependência externa
-        LOGGER.warning("Resposta inválida do Ollama: %s", exc)
-        return None, "Resposta inválida do serviço de IA."
-
-    resposta_txt = (
-        (payload.get("response") or payload.get("output") or "").strip()
-    )
-    if not resposta_txt:
-        return None, "O serviço de IA devolveu uma resposta vazia."
-
-    try:
-        parsed = json.loads(resposta_txt)
-    except json.JSONDecodeError:
-        LOGGER.warning("Resposta da IA não é JSON válido: %s", resposta_txt)
-        return None, "A resposta da IA não está em JSON válido."
-
-    if not isinstance(parsed, dict):
-        return None, "A resposta da IA não contém um objeto JSON."
-
-    resultado = {campo: str(parsed.get(campo, "") or "") for campo in TARGET_FIELDS}
-    return resultado, None
-
-
 def agrupar_marcas_por_inicial(marcas: list[str]) -> dict[str, list[str]]:
     """Agrupa marcas pela sua primeira letra alfanumérica."""
 
@@ -6004,52 +5890,6 @@ def responder_cotacao_dialog(cotacao):
             if st.session_state[anexos_resposta_key]:
                 for idx, (nome_resposta, resposta_bytes) in enumerate(st.session_state[anexos_resposta_key], start=1):
                     exibir_pdf(f"📄 Resposta carregada {idx} - {nome_resposta}", resposta_bytes, expanded=False)
-
-                ai_result_key = f"ai_analysis_result_{cotacao['id']}"
-                ai_error_key = f"ai_analysis_error_{cotacao['id']}"
-                ai_selected_key = f"ai_analysis_selected_{cotacao['id']}"
-
-                anexos_disponiveis = st.session_state[anexos_resposta_key]
-                if anexos_disponiveis:
-                    labels = [
-                        f"PDF {idx} — {nome}"
-                        for idx, (nome, _) in enumerate(anexos_disponiveis, start=1)
-                    ]
-                    stored_selection = st.session_state.get(ai_selected_key, 0)
-                    if not isinstance(stored_selection, int) or stored_selection >= len(anexos_disponiveis):
-                        st.session_state[ai_selected_key] = 0
-                        stored_selection = 0
-
-                    with st.expander("🤖 Extrair dados do PDF com IA (Ollama)", expanded=False):
-                        selected_idx = st.selectbox(
-                            "Selecionar PDF",
-                            options=list(range(len(anexos_disponiveis))),
-                            format_func=lambda i: labels[i],
-                            index=stored_selection,
-                            key=ai_selected_key,
-                        )
-
-                        if st.button(
-                            "Analisar PDF",
-                            key=f"run_ai_pdf_{cotacao['id']}",
-                            use_container_width=True,
-                        ):
-                            nome_pdf, conteudo_pdf = anexos_disponiveis[selected_idx]
-                            with st.spinner(f"A analisar {nome_pdf} com o modelo qwen3:8b (Ollama)..."):
-                                resultado_ai, erro_ai = _analisar_pdf_resposta_fornecedor(conteudo_pdf)
-                            st.session_state[ai_result_key] = resultado_ai
-                            st.session_state[ai_error_key] = erro_ai
-
-                        erro_ai = st.session_state.get(ai_error_key)
-                        if erro_ai:
-                            st.error(erro_ai)
-
-                        resultado_ai = st.session_state.get(ai_result_key)
-                        if resultado_ai:
-                            st.success(
-                                "Campos extraídos automaticamente a partir do PDF do fornecedor."
-                            )
-                            st.json(resultado_ai)
 
             margens_por_marca_ui: dict[str, float] = {}
             if detalhes['artigos']:
@@ -11092,3 +10932,4 @@ st.markdown("""
         Sistema myERP | Desenvolvido por Ricardo Nogueira | © 2025
     </div>
 """, unsafe_allow_html=True)
+
