@@ -381,21 +381,23 @@ TARGET_FIELDS = {
     "price_validity": "Price/offer validity",
 }
 
-PROMPT_TEMPLATE = """
-You are an assistant specialized in reading commercial proposals in PDF format.
-Extract the following fields from the text below and return a valid JSON object.
-Expected fields (keep the keys exactly the same):
-{field_list}
+PROMPT_TEMPLATE = textwrap.dedent(
+    """
+    You are an assistant specialized in reading commercial proposals in PDF format.
+    Extract the following fields from the text below and return a valid JSON object.
+    Expected fields (keep the keys exactly the same):
+    {field_list}
 
-Rules:
-- Use an empty string if a field is not available.
-- Do not invent values; only use the provided text.
-- Use ISO dates (YYYY-MM-DD) when possible.
-- Respond only with valid JSON, without additional commentary.
+    Rules:
+    - Use an empty string if a field is not available.
+    - Do not invent values; only use the provided text.
+    - Use ISO dates (YYYY-MM-DD) when possible.
+    - Respond only with valid JSON, without additional commentary.
 
-Proposal text:
-"""{content}"""
-"""
+    Proposal text:
+    \"\"\"{content}\"\"\"
+    """
+)
 
 MAX_OLLAMA_PROMPT_CHARS = 20000
 
