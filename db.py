@@ -456,7 +456,8 @@ def criar_base_dados_completa():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT NOT NULL UNIQUE,
             morada TEXT,
-            condicoes_pagamento TEXT
+            condicoes_pagamento TEXT,
+            tempo_envio REAL
         )
         """
     )
@@ -468,6 +469,8 @@ def criar_base_dados_completa():
         c.execute(
             "ALTER TABLE cliente_empresa ADD COLUMN condicoes_pagamento TEXT"
         )
+    if "tempo_envio" not in empresa_cols:
+        c.execute("ALTER TABLE cliente_empresa ADD COLUMN tempo_envio REAL")
 
     # Tabela de clientes
     c.execute(

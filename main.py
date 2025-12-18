@@ -1708,7 +1708,7 @@ def listar_empresas():
     devolvendo uma lista vazia.
     """
     return fetch_all(
-        "SELECT id, nome, morada, condicoes_pagamento FROM cliente_empresa ORDER BY nome",
+        "SELECT id, nome, morada, condicoes_pagamento, tempo_envio FROM cliente_empresa ORDER BY nome",
         ensure_schema=True,
     )
 
@@ -1735,7 +1735,7 @@ def listar_clientes():
     )
 
 
-def inserir_empresa(nome, morada="", condicoes_pagamento=""):
+def inserir_empresa(nome, morada="", condicoes_pagamento="", tempo_envio=None):
     """Inserir nova empresa de cliente"""
 
     nome_limpo = (nome or "").strip()
@@ -1754,8 +1754,8 @@ def inserir_empresa(nome, morada="", condicoes_pagamento=""):
             return existente[0]
 
         c.execute(
-            "INSERT INTO cliente_empresa (nome, morada, condicoes_pagamento) VALUES (?, ?, ?)",
-            (nome_limpo, morada, condicoes_pagamento),
+            "INSERT INTO cliente_empresa (nome, morada, condicoes_pagamento, tempo_envio) VALUES (?, ?, ?, ?)",
+            (nome_limpo, morada, condicoes_pagamento, tempo_envio),
         )
         conn.commit()
         listar_empresas.clear()
@@ -1764,7 +1764,7 @@ def inserir_empresa(nome, morada="", condicoes_pagamento=""):
         conn.close()
         if "no such table" in str(e).lower():
             criar_base_dados()
-            return inserir_empresa(nome_limpo, morada, condicoes_pagamento)
+            return inserir_empresa(nome_limpo, morada, condicoes_pagamento, tempo_envio)
         raise
     finally:
         try:
@@ -1773,13 +1773,13 @@ def inserir_empresa(nome, morada="", condicoes_pagamento=""):
             pass
 
 
-def atualizar_empresa(empresa_id, nome, morada="", condicoes_pagamento=""):
+def atualizar_empresa(empresa_id, nome, morada="", condicoes_pagamento="", tempo_envio=None):
     """Atualizar dados de uma empresa"""
     conn = obter_conexao()
     c = conn.cursor()
     c.execute(
-        "UPDATE cliente_empresa SET nome = ?, morada = ?, condicoes_pagamento = ? WHERE id = ?",
-        (nome, morada, condicoes_pagamento, empresa_id),
+        "UPDATE cliente_empresa SET nome = ?, morada = ?, condicoes_pagamento = ?, tempo_envio = ? WHERE id = ?",
+        (nome, morada, condicoes_pagamento, tempo_envio, empresa_id),
     )
     conn.commit()
     conn.close()
@@ -4259,11 +4259,25 @@ class InquiryPDF(FPDF):
         for i, col in enumerate(bank_cols):
             x = 15 + i * col_w
             self.set_xy(x, start_y)
-            for k, v in col.items():
+            bank_name = col.get("Bank", "")
+            iban = col.get("IBAN", "")
+            extras = {k: v for k, v in col.items() if k not in {"Bank", "IBAN"}}
+
+            line_parts = []
+            if bank_name or "Bank" in col:
+                line_parts.append(f"Bank: {bank_name}")
+            if iban or "IBAN" in col:
+                line_parts.append(f"IBAN: {iban}")
+
+            self.set_font("Helvetica", "", 9)
+            self.multi_cell(col_w, 4, "    ".join(part for part in line_parts if part).strip())
+
+            for label, value in extras.items():
                 self.set_font("Helvetica", "B", 9)
-                self.cell(col_w, 4, k, ln=1)
+                self.cell(col_w, 4, label, ln=1)
                 self.set_font("Helvetica", "", 9)
-                self.multi_cell(col_w, 4, v)
+                self.multi_cell(col_w, 4, value)
+
             max_y = max(max_y, self.get_y())
         # Última coluna com info legal
         legal_x = 15 + len(bank_cols) * col_w
@@ -4573,10 +4587,10 @@ class ClientQuotationPDF(InquiryPDF):
         "font_style": "B",
         "font_size": 18,
         "title_color": "#1d1d1f",
-        "company_font": {"font": "Helvetica", "font_style": "B", "font_size": 12},
+        "company_font": {"font": "Helvetica", "font_style": "", "font_size": 12},
         "company_color": "#1d1d1f",
         "issuer_font": {"font": "Helvetica", "font_style": "B", "font_size": 10},
-        "client_label": "Client",
+        "client_label": "",
         "client_label_font": {"font": "Helvetica", "font_style": "B", "font_size": 9},
         "metadata_font": {"font": "Helvetica", "font_style": "B", "font_size": 9},
         "metadata_value_font": {"font": "Helvetica", "font_style": "", "font_size": 9},
@@ -4588,7 +4602,7 @@ class ClientQuotationPDF(InquiryPDF):
         "padding_top": 14,
         "company_line_height": 6,
         "title_align": "L",
-        "logo": {"path": "assets/logo.png", "w": 63, "max_h": 42, "top": 8},
+        "logo": {"path": "assets/logo.png", "w": 80, "max_h": 55, "top": 8},
         "metadata_box_fill": "#f4f6f8",
     }
 
@@ -4618,6 +4632,7 @@ class ClientQuotationPDF(InquiryPDF):
         "border_color": "#dfe3e8",
         "cell_padding": 2,
         "row_spacing": 7,
+        "header_spacing": 5,
     }
 
     CLIENT_TOTALS = {
@@ -4717,6 +4732,25 @@ class ClientQuotationPDF(InquiryPDF):
             number = 0.0
         return f"€ {number:,.2f}"
 
+    def _parse_number(self, value):
+        if value is None:
+            return None
+        try:
+            if isinstance(value, (int, float)):
+                return float(value)
+            text = str(value).strip().replace(",", ".")
+            return float(text)
+        except (TypeError, ValueError):
+            return None
+
+    def _format_number(self, value):
+        number = self._parse_number(value)
+        if number is None:
+            return ""
+        if number.is_integer():
+            return str(int(number))
+        return f"{number:.2f}".rstrip("0").rstrip(".")
+
     def _quote_meta_lines(self):
         lines = []
         for label in ("Quote #", "Your Ref", "Quote Date", "Due Date"):
@@ -4784,7 +4818,7 @@ class ClientQuotationPDF(InquiryPDF):
         padding_top = header_cfg.get("padding_top", 12)
         client_lines = [line for line in [self.company_name, *self.company_address] if line]
         if not client_lines:
-            client_lines = ["Client"]
+            client_lines = [""]
 
         start_y = padding_top
         self.set_xy(self.l_margin, start_y)
@@ -4924,6 +4958,9 @@ class ClientQuotationPDF(InquiryPDF):
             self.cell(w, header_h, h, border=1, align=a, fill=True)
         self.ln()
         self.set_text_color(*self._color_tuple(table_cfg.get("body_text_color"), (15, 20, 26)))
+        spacing = max(float(table_cfg.get("header_spacing", 0)), 0)
+        if spacing:
+            self.ln(spacing)
 
     def add_item(self, idx, item):
         table_cfg = self._table_cfg()
@@ -4945,12 +4982,24 @@ class ClientQuotationPDF(InquiryPDF):
         desc_width = max(widths[2] - 2 * padding, 1)
         lines = self.split_text(desc, desc_width)
         weight = item.get("peso") if item.get("peso") is not None else ""
-        try:
-            weight_val = float(weight)
+        weight_val = self._parse_number(weight)
+        if weight_val is not None and weight_val != 0:
             unit_weight = f"{weight_val:.2f} kg"
-        except (TypeError, ValueError):
-            unit_weight = str(weight) if weight else ""
-        eta = item.get("prazo_entrega") or ""
+        elif weight not in (None, "") and weight_val is None:
+            unit_weight = str(weight)
+        else:
+            unit_weight = ""
+        eta = item.get("prazo_entrega")
+        shipping_time = item.get("tempo_envio")
+        eta_number = self._parse_number(eta)
+        shipping_number = self._parse_number(shipping_time)
+        if eta_number is not None or shipping_number is not None:
+            total_eta = (eta_number or 0) + (shipping_number or 0)
+            eta_display = self._format_number(total_eta)
+        elif eta not in (None, ""):
+            eta_display = str(eta)
+        else:
+            eta_display = ""
         hs_code = item.get("hs_code")
         origem = item.get("pais_origem")
         extra_parts = []
@@ -4984,7 +5033,7 @@ class ClientQuotationPDF(InquiryPDF):
             if i == 0:
                 self.set_text_color(*body_color)
                 self.cell(widths[3], row_h, unit_weight, border=border, align=aligns[3])
-                self.cell(widths[4], row_h, str(eta), border=border, align=aligns[4])
+                self.cell(widths[4], row_h, eta_display, border=border, align=aligns[4])
                 self.cell(widths[5], row_h, str(quantidade) if quantidade is not None else "", border=border, align=aligns[5])
                 self.set_text_color(*currency_color)
                 self.cell(widths[6], row_h, self._format_currency(preco_venda or 0), border=border, align=aligns[6])
@@ -5307,6 +5356,7 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
                    ce.nome AS empresa_nome,
                    ce.morada AS empresa_morada,
                    ce.condicoes_pagamento,
+                   ce.tempo_envio,
                    COALESCE(c.nome, ''),
                    COALESCE(c.email, ''),
                    u.nome AS user_nome,
@@ -5338,14 +5388,15 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
             "empresa_nome": row[4],
             "empresa_morada": row[5],
             "condicoes_pagamento": row[6],
-            "cliente_nome": row[7],
-            "cliente_email": row[8],
-            "user_nome": row[9] if len(row) > 9 else "",
-            "user_email": row[10] if len(row) > 10 else "",
-            "processo_numero": row[11] if len(row) > 11 else "",
-            "processo_id": row[12] if len(row) > 12 else None,
-            "cliente_final_nome": row[13] if len(row) > 13 else "",
-            "cliente_final_pais": row[14] if len(row) > 14 else "",
+            "tempo_envio": row[7],
+            "cliente_nome": row[8],
+            "cliente_email": row[9],
+            "user_nome": row[10] if len(row) > 10 else "",
+            "user_email": row[11] if len(row) > 11 else "",
+            "processo_numero": row[12] if len(row) > 12 else "",
+            "processo_id": row[13] if len(row) > 13 else None,
+            "cliente_final_nome": row[14] if len(row) > 14 else "",
+            "cliente_final_pais": row[15] if len(row) > 15 else "",
         }
 
         resposta_ids_set = {
@@ -5411,6 +5462,7 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
                     'unidade': row[3],
                     'preco_venda': row[4],
                     'prazo_entrega': row[5],
+                    'tempo_envio': rfq_data.get("tempo_envio"),
                     'peso': row[6] or 0,
                     'hs_code': row[7] or '',
                     'pais_origem': row[8] or '',
@@ -10593,6 +10645,9 @@ elif menu_option == "⚙️ Configurações":
                         nome_emp = st.text_input("Nome Empresa *")
                         morada_emp = st.text_area("Morada", height=120)
                         cond_pag_emp = st.text_input("Condições Pagamento")
+                        tempo_envio_emp = st.number_input(
+                            "Tempo de envio (dias)", min_value=0, step=1, value=0
+                        )
                         btn_add_empresa_cols = st.columns([1, 0.4])
                         with btn_add_empresa_cols[1]:
                             adicionar_empresa = st.form_submit_button(
@@ -10602,7 +10657,12 @@ elif menu_option == "⚙️ Configurações":
 
                     if adicionar_empresa:
                         if nome_emp:
-                            inserir_empresa(nome_emp, morada_emp, cond_pag_emp)
+                            inserir_empresa(
+                                nome_emp,
+                                morada_emp,
+                                cond_pag_emp,
+                                tempo_envio_emp,
+                            )
                             st.success(f"Empresa {nome_emp} adicionada!")
                         else:
                             st.error("Nome é obrigatório")
@@ -10617,6 +10677,12 @@ elif menu_option == "⚙️ Configurações":
                                 morada_edit = st.text_area("Morada", emp[2] or "", height=120)
                                 cond_pag_edit = st.text_input(
                                     "Condições Pagamento", emp[3] or "",
+                                )
+                                tempo_envio_edit = st.number_input(
+                                    "Tempo de envio (dias)",
+                                    min_value=0,
+                                    step=1,
+                                    value=int(emp[4] or 0),
                                 )
                                 col_eliminar, col_guardar = st.columns(2)
                                 with col_guardar:
@@ -10640,7 +10706,11 @@ elif menu_option == "⚙️ Configurações":
 
                                 if guardar_empresa:
                                     atualizar_empresa(
-                                        emp[0], nome_edit, morada_edit, cond_pag_edit
+                                        emp[0],
+                                        nome_edit,
+                                        morada_edit,
+                                        cond_pag_edit,
+                                        tempo_envio_edit,
                                     )
                                     st.success("Empresa atualizada")
                                     st.rerun()
