@@ -56,61 +56,108 @@
   },
   "cliente": {
     "header": {
-      "title": "QUOTATION",
-      "font": "Arial",
+      "title": "QUOTE",
+      "font": "Helvetica",
       "font_style": "B",
-      "font_size": 16,
+      "font_size": 18,
+      "title_color": "#1d1d1f",
+      "company_font": {
+        "font": "Helvetica",
+        "font_style": "B",
+        "font_size": 14
+      },
+      "company_color": "#1d1d1f",
+      "metadata_font": {
+        "font": "Helvetica",
+        "font_style": "B",
+        "font_size": 9
+      },
+      "metadata_value_font": {
+        "font": "Helvetica",
+        "font_style": "",
+        "font_size": 9
+      },
+      "metadata_label_color": "#4a4d52",
+      "metadata_value_color": "#0f141a",
+      "title_height": 10,
+      "title_spacing": 6,
+      "after_title_spacing": 6,
+      "padding_top": 14,
+      "company_line_height": 6,
       "logo": {
         "path": "assets/logo.png",
-        "x": 160,
-        "y": 15,
-        "w": 40
+        "w": 32,
+        "max_h": 22
       },
-      "line_height": 5,
-      "spacing": 3
+      "metadata_box_fill": "#f4f6f8"
     },
     "body": {
-      "font": "Arial",
-      "font_size": 12
+      "font": "Helvetica",
+      "font_size": 10,
+      "reference_spacing": 6
     },
     "table": {
       "headers": [
-        "#",
-        "Item No.",
+        "QTY",
         "Description",
-        "Qty",
         "Unit Price",
-        "Total",
-        "ETA",
-        "Weight"
+        "Amount"
       ],
       "widths": [
-        8,
         18,
-        78,
-        12,
-        18,
-        20,
-        12,
-        14
+        94,
+        34,
+        34
       ],
-      "font": "Arial",
+      "alignments": [
+        "C",
+        "L",
+        "R",
+        "R"
+      ],
+      "font": "Helvetica",
       "font_style": "B",
       "font_size": 9,
-      "row_font_size": 8
+      "header_height": 8,
+      "row_height": 6,
+      "row_font": "Helvetica",
+      "row_font_style": "",
+      "row_font_size": 9,
+      "header_fill": "#202428",
+      "header_text_color": "#ffffff",
+      "body_text_color": "#0f141a",
+      "currency_text_color": "#0f141a",
+      "border_color": "#dfe3e8",
+      "cell_padding": 2,
+      "row_spacing": 2
     },
     "totals": {
-      "font": "Arial",
+      "font": "Helvetica",
       "font_style": "B",
       "font_size": 11,
-      "label_width": 115,
-      "total_width": 30,
-      "extra_width": 45
+      "fill": "#f0f2f5",
+      "text_color": "#0f141a",
+      "label": "Total",
+      "row_height": 8
     },
-    "conditions": [
-      "Proposal validity: 30 days",
-      "Prices do not include VAT",
-      "Payment terms: To be agreed"
-    ]
+    "terms": {
+      "heading": "Terms & Conditions",
+      "heading_font": {
+        "font": "Helvetica",
+        "font_style": "B",
+        "font_size": 10
+      },
+      "font": {
+        "font": "Helvetica",
+        "font_style": "",
+        "font_size": 9
+      },
+      "spacing": 4,
+      "lines": [
+        "Proposal validity: 30 days",
+        "Prices do not include VAT",
+        "Payment terms: To be agreed"
+      ]
+    }
   }
 }
