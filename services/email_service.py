@@ -22,13 +22,13 @@ import streamlit as st
 from db import get_connection
 
 
-# Configuração SMTP provisória e forçada para Gmail.
+# Configuração SMTP provisória e forçada para Outlook 365.
 #
 # O projeto está com problemas de envio e precisamos de uma solução rápida, por
 # isso fixamos aqui o servidor/porta e forçamos STARTTLS em vez de depender das
 # configurações guardadas na base de dados.
 DEFAULT_SMTP_CONFIG = {
-    "server": "smtp.gmail.com",
+    "server": "smtp.office365.com",
     "port": 587,
     "use_tls": True,
     "use_ssl": False,
@@ -226,4 +226,3 @@ def send_email(
         )
         msg.attach(part)
     server.send_message(msg)
-
