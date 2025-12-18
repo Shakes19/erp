@@ -18,6 +18,15 @@ def ensure_latin1(value: str | int | float | None) -> str:
         text = ""
     else:
         text = str(value)
+
+    text = text.replace("€", "\x80")
+
+    for encoding in ("latin-1", "cp1252"):
+        try:
+            return text.encode(encoding, errors="strict").decode(encoding)
+        except UnicodeEncodeError:
+            continue
+
     return text.encode("latin-1", errors="replace").decode("latin-1")
 @st.cache_data(show_spinner=False)
 def load_pdf_config(tipo):

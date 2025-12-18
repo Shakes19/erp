@@ -4519,7 +4519,7 @@ class InquiryPDF(FPDF):
         if spacing:
             self.ln(spacing)
 
-    def gerar(
+def gerar(
         self,
         fornecedor,
         data,
@@ -4564,54 +4564,139 @@ class InquiryPDF(FPDF):
 
 
 class ClientQuotationPDF(InquiryPDF):
-    """PDF para orçamento ao cliente com layout semelhante ao PDF de pedido."""
+    """PDF para orçamento ao cliente com layout modernizado."""
+
+    CLIENT_HEADER = {
+        "title": "QUOTE",
+        "font": "Helvetica",
+        "font_style": "B",
+        "font_size": 18,
+        "title_color": "#1d1d1f",
+        "company_font": {"font": "Helvetica", "font_style": "B", "font_size": 14},
+        "company_color": "#1d1d1f",
+        "metadata_font": {"font": "Helvetica", "font_style": "B", "font_size": 9},
+        "metadata_value_font": {"font": "Helvetica", "font_style": "", "font_size": 9},
+        "metadata_label_color": "#4a4d52",
+        "metadata_value_color": "#0f141a",
+        "title_height": 10,
+        "title_spacing": 6,
+        "after_title_spacing": 6,
+        "padding_top": 14,
+        "company_line_height": 6,
+        "logo": {"path": "assets/logo.png", "w": 32, "max_h": 22},
+        "metadata_box_fill": "#f4f6f8",
+    }
+
+    CLIENT_BODY = {
+        "font": "Helvetica",
+        "font_style": "",
+        "font_size": 10,
+        "reference_spacing": 6,
+    }
+
+    CLIENT_TABLE = {
+        "headers": ["QTY", "Description", "Unit Price", "Amount"],
+        "widths": [18, 94, 34, 34],
+        "alignments": ["C", "L", "R", "R"],
+        "font": "Helvetica",
+        "font_style": "B",
+        "font_size": 9,
+        "header_height": 8,
+        "row_height": 6,
+        "row_font": "Helvetica",
+        "row_font_style": "",
+        "row_font_size": 9,
+        "header_fill": "#202428",
+        "header_text_color": "#ffffff",
+        "body_text_color": "#0f141a",
+        "currency_text_color": "#0f141a",
+        "border_color": "#dfe3e8",
+        "cell_padding": 2,
+        "row_spacing": 2,
+    }
+
+    CLIENT_TOTALS = {
+        "font": "Helvetica",
+        "font_style": "B",
+        "font_size": 11,
+        "fill": "#f0f2f5",
+        "text_color": "#0f141a",
+        "label": "Total",
+        "row_height": 8,
+    }
+
+    CLIENT_TERMS = {
+        "heading": "Terms & Conditions",
+        "heading_font": {"font": "Helvetica", "font_style": "B", "font_size": 10},
+        "font": {"font": "Helvetica", "font_style": "", "font_size": 9},
+        "spacing": 4,
+    }
 
     def __init__(self, config=None):
         super().__init__(config=config)
+        self.company_name = ""
+        self.company_address: list[str] = []
+        self.quote_metadata: dict[str, str] = {}
+        self._body_start_y: float | None = None
 
-    def add_title(self):
-        title = self.cfg.get("header", {}).get("title", "QUOTATION")
-        self.set_font("Helvetica", "B", 16)
-        self.cell(0, 8, title, ln=1)
-        self.ln(4)
+    def _header_cfg(self):
+        return self._merge_cfg(self.cfg.get("header"), self.CLIENT_HEADER)
 
-    def add_reference(self, our_ref, your_ref=""):
-        self.set_font("Helvetica", "B", 11)
-        self.cell(40, 5, "Our Reference:")
-        self.set_font("Helvetica", "", 11)
-        self.cell(0, 5, our_ref, ln=1)
-        if your_ref:
-            self.set_font("Helvetica", "B", 11)
-            self.cell(40, 5, "Your Reference:")
-            self.set_font("Helvetica", "", 11)
-            self.cell(0, 5, your_ref, ln=1)
-        self.ln(4)
+    def _body_cfg(self):
+        return self._merge_cfg(self.cfg.get("body"), self.CLIENT_BODY)
 
-    def table_header(self):
-        table_cfg = self.cfg.get("table", {})
-        headers = table_cfg.get(
-            "headers",
-            [
-                "#",
-                "Item No.",
-                "Description",
-                "Qty",
-                "Unit Price",
-                "Total",
-                "Lead Time",
-                "Weight",
-            ],
-        )
-        widths = table_cfg.get(
-            "widths", [8, 18, 78, 12, 18, 20, 12, 14]
-        )
-        font = table_cfg.get("font", "Arial")
-        style = table_cfg.get("font_style", "B")
-        size = table_cfg.get("font_size", 9)
-        self.set_font(font, style, size)
-        for w, h in zip(widths, headers):
-            self.cell(w, 7, h, border="B", align="C")
-        self.ln()
+    def _table_cfg(self):
+        return self._merge_cfg(self.cfg.get("table"), self.CLIENT_TABLE)
+
+    def _totals_cfg(self):
+        return self._merge_cfg(self.cfg.get("totals"), self.CLIENT_TOTALS)
+
+    def _terms_cfg(self):
+        base = self._merge_cfg(self.cfg.get("terms"), self.CLIENT_TERMS)
+        if "lines" not in base:
+            base["lines"] = self.cfg.get(
+                "conditions",
+                [
+                    "Proposal validity: 30 days",
+                    "Prices do not include VAT",
+                    "Payment terms: To be agreed",
+                ],
+            )
+        return base
+
+    @staticmethod
+    def _color_tuple(value, default=(0, 0, 0)):
+        if isinstance(value, (list, tuple)) and len(value) == 3:
+            try:
+                return tuple(int(max(0, min(255, float(v)))) for v in value)
+            except (TypeError, ValueError):
+                return default
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("#") and len(text) in (4, 7):
+                try:
+                    if len(text) == 4:
+                        r, g, b = (int(text[i] * 2, 16) for i in (1, 2, 3))
+                    else:
+                        r, g, b = (int(text[i:i+2], 16) for i in (1, 3, 5))
+                    return (r, g, b)
+                except ValueError:
+                    return default
+        return default
+
+    def _format_currency(self, value):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            number = 0.0
+        return f"€ {number:,.2f}"
+
+    def _quote_meta_lines(self):
+        lines = []
+        for label in ("Quote #", "Quote Date", "Due Date"):
+            val = self.quote_metadata.get(label) or "—"
+            lines.append((label, val))
+        return lines
 
     def _split_long_word(self, word, max_width):
         """Divide palavras longas para caberem dentro da largura disponível."""
@@ -4665,138 +4750,324 @@ class ClientQuotationPDF(InquiryPDF):
 
         return lines if lines else [""]
 
+    def header(self):
+        header_cfg = self._header_cfg()
+        content_width = self.w - self.l_margin - self.r_margin
+        left_w = content_width * 0.55
+        right_w = content_width - left_w
+        padding_top = header_cfg.get("padding_top", 12)
+        company_lines = [line for line in [self.company_name, *self.company_address] if line]
+        if not company_lines:
+            company_lines = ["Company"]
+
+        start_y = padding_top
+        self.set_y(start_y)
+        self.set_x(self.l_margin)
+        self.set_font(*self._font_tuple(header_cfg.get("company_font"), ("Helvetica", "B", 14)))
+        self.set_text_color(*self._color_tuple(header_cfg.get("company_color"), (0, 0, 0)))
+        self.multi_cell(left_w, header_cfg.get("company_line_height", 6), "\n".join(company_lines))
+        left_end_y = self.get_y()
+
+        logo_cfg = header_cfg.get("logo", {})
+        logo_path = logo_cfg.get("path", self.cfg.get("logo_path", LOGO_PATH))
+        logo_bytes = self.cfg.get("logo_bytes")
+        logo_w = logo_cfg.get("w", 32)
+        max_h = logo_cfg.get("max_h", 22)
+        x_right = self.l_margin + left_w
+        current_y = start_y
+
+        def _draw_logo(path_or_bytes):
+            nonlocal current_y
+            try:
+                if isinstance(path_or_bytes, bytes):
+                    img = Image.open(BytesIO(path_or_bytes))
+                else:
+                    img = Image.open(path_or_bytes)
+                try:
+                    w_px, h_px = img.size
+                    ratio = h_px / w_px if w_px else 1
+                    h_logo = logo_w * ratio
+                    final_w = logo_w
+                    if h_logo > max_h:
+                        final_w = max_h / ratio if ratio else logo_w
+                        h_logo = max_h
+                    x_logo = self.w - self.r_margin - final_w
+                    if isinstance(path_or_bytes, bytes):
+                        img_type = (img.format or "PNG").lower()
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{img_type}") as tmp:
+                            tmp.write(path_or_bytes)
+                            tmp_path = tmp.name
+                        try:
+                            self.image(tmp_path, x_logo, current_y, final_w, h_logo)
+                        finally:
+                            os.remove(tmp_path)
+                    else:
+                        self.image(path_or_bytes, x_logo, current_y, final_w, h_logo)
+                    current_y += h_logo + 2
+                finally:
+                    img.close()
+            except Exception:
+                pass
+
+        if logo_bytes:
+            _draw_logo(logo_bytes)
+        elif os.path.exists(logo_path):
+            _draw_logo(logo_path)
+
+        meta_box_fill = self._color_tuple(header_cfg.get("metadata_box_fill"), (244, 246, 248))
+        meta_label_color = self._color_tuple(header_cfg.get("metadata_label_color"), (74, 77, 82))
+        meta_value_color = self._color_tuple(header_cfg.get("metadata_value_color"), (15, 20, 26))
+
+        self.set_draw_color(*meta_box_fill)
+        self.set_fill_color(*meta_box_fill)
+        self.set_xy(x_right, current_y)
+        meta_lines = self._quote_meta_lines()
+        line_height = header_cfg.get("company_line_height", 6)
+        box_height = max(line_height * len(meta_lines), 18)
+        self.rect(x_right, current_y, right_w, box_height, style="F")
+        label_font = header_cfg.get("metadata_font")
+        value_font = header_cfg.get("metadata_value_font")
+        meta_start_y = current_y + 1
+        for idx, (label, value) in enumerate(meta_lines):
+            line_y = meta_start_y + idx * line_height
+            self.set_xy(x_right + 2, line_y)
+            self.set_font(*self._font_tuple(label_font, ("Helvetica", "B", 9)))
+            self.set_text_color(*meta_label_color)
+            self.cell(right_w / 2.2, line_height, label)
+            self.set_font(*self._font_tuple(value_font, ("Helvetica", "", 9)))
+            self.set_text_color(*meta_value_color)
+            self.cell(right_w / 2, line_height, value, ln=1, align="R")
+
+        current_y = meta_start_y + len(meta_lines) * line_height
+        max_y = max(left_end_y, current_y)
+        self.set_y(max_y + header_cfg.get("title_spacing", 6))
+        self.set_text_color(*self._color_tuple(header_cfg.get("title_color"), (29, 29, 31)))
+        self.set_font(*self._font_tuple(header_cfg, ("Helvetica", "B", 18)))
+        self.cell(content_width, header_cfg.get("title_height", 10), header_cfg.get("title", "QUOTE"), ln=1, align="C")
+        self.ln(header_cfg.get("after_title_spacing", 6))
+        self._body_start_y = self.get_y()
+        self.set_text_color(0, 0, 0)
+
+    def add_reference(self, our_ref, your_ref=""):
+        body_cfg = self._body_cfg()
+        self.set_font(*self._font_tuple(body_cfg, ("Helvetica", "", 10)))
+        if our_ref:
+            self.cell(0, 5, f"Reference: {our_ref}", ln=1)
+        if your_ref:
+            self.cell(0, 5, f"Client Ref.: {your_ref}", ln=1)
+        spacing = body_cfg.get("reference_spacing", 6)
+        if spacing:
+            self.ln(spacing)
+
+    def table_header(self):
+        table_cfg = self._table_cfg()
+        headers = table_cfg.get("headers", self.CLIENT_TABLE["headers"])
+        widths = table_cfg.get("widths", self.CLIENT_TABLE["widths"])
+        aligns = table_cfg.get("alignments", self.CLIENT_TABLE["alignments"])
+        self.set_font(*self._font_tuple(table_cfg, ("Helvetica", "B", 9)))
+        self.set_fill_color(*self._color_tuple(table_cfg.get("header_fill"), (32, 36, 40)))
+        self.set_text_color(*self._color_tuple(table_cfg.get("header_text_color"), (255, 255, 255)))
+        header_h = table_cfg.get("header_height", 8)
+        self.set_draw_color(*self._color_tuple(table_cfg.get("header_fill"), (32, 36, 40)))
+        for w, h, a in zip(widths, headers, aligns):
+            self.cell(w, header_h, h, border=1, align=a, fill=True)
+        self.ln()
+        self.set_text_color(*self._color_tuple(table_cfg.get("body_text_color"), (15, 20, 26)))
+
     def add_item(self, idx, item):
-        table_cfg = self.cfg.get("table", {})
-        widths = table_cfg.get("widths", [8, 18, 78, 12, 18, 20, 12, 14])
-        row_font = table_cfg.get("font", "Arial")
-        row_size = table_cfg.get("row_font_size", 8)
-        self.set_font(row_font, "", row_size)
+        table_cfg = self._table_cfg()
+        widths = table_cfg.get("widths", self.CLIENT_TABLE["widths"])
+        aligns = table_cfg.get("alignments", self.CLIENT_TABLE["alignments"])
+        padding = max(float(table_cfg.get("cell_padding", 2)), 0)
+        row_h = table_cfg.get("row_height", 6)
+        row_font = {
+            "font": table_cfg.get("row_font", table_cfg.get("font")),
+            "font_style": table_cfg.get("row_font_style", ""),
+            "font_size": table_cfg.get("row_font_size", table_cfg.get("font_size", 9)),
+        }
+        self.set_font(*self._font_tuple(row_font, ("Helvetica", "", 9)))
 
-        preco_venda = float(item["preco_venda"])
-        quantidade = int(item["quantidade_final"])
-        total = preco_venda * quantidade
-
+        quantidade = item.get("quantidade_final") if item.get("quantidade_final") is not None else item.get("quantidade")
+        preco_venda = item.get("preco_venda")
+        total = (float(preco_venda or 0) * float(quantidade or 0)) if preco_venda is not None else 0.0
         desc = item.get("descricao") or ""
-        max_desc_width = max(widths[2] - 1, 1)
-        lines = self.split_text(desc, max_desc_width)
+        desc_width = max(widths[1] - 2 * padding, 1)
+        lines = self.split_text(desc, desc_width)
         hs_code = item.get("hs_code")
         origem = item.get("pais_origem")
-        if hs_code or origem:
-            parts = []
-            if hs_code:
-                parts.append(f"HS Code: {hs_code}")
-            if origem:
-                parts.append(f"Origin: {origem}")
-            lines.append(" ".join(parts))
-        line_count = len(lines)
-        row_height = line_count * 6
+        extra_parts = []
+        if hs_code:
+            extra_parts.append(f"HS Code: {hs_code}")
+        if origem:
+            extra_parts.append(f"Origin: {origem}")
+        if extra_parts:
+            lines.extend(self.split_text(" ".join(extra_parts), desc_width))
 
-        if self.get_y() + row_height > self.page_break_trigger:
+        line_count = len(lines)
+        total_height = line_count * row_h
+
+        if self.get_y() + total_height > self.page_break_trigger:
             self.add_page()
             self.table_header()
 
+        border_color = self._color_tuple(table_cfg.get("border_color"), (223, 227, 232))
+        self.set_draw_color(*border_color)
+        currency_color = self._color_tuple(table_cfg.get("currency_text_color"), (15, 20, 26))
+
         for i, line in enumerate(lines):
-            border = "B" if i == line_count - 1 else ""
-            self.cell(widths[0], 6, str(idx) if i == 0 else "", border=border, align="C")
-            self.cell(widths[1], 6, (item.get("artigo_num") or "")[:10] if i == 0 else "", border=border)
-            self.cell(widths[2], 6, line, border=border)
+            is_last = i == line_count - 1
+            border = "B" if is_last else ""
+            self.set_x(self.l_margin)
+            self.cell(widths[0], row_h, str(quantidade) if i == 0 else "", border=border, align=aligns[0])
+            self.cell(widths[1], row_h, line, border=border, align=aligns[1])
             if i == 0:
-                self.cell(widths[3], 6, str(quantidade), border=border, align="C")
-                self.cell(widths[4], 6, f"EUR {preco_venda:.2f}", border=border, align="R")
-                self.cell(widths[5], 6, f"EUR {total:.2f}", border=border, align="R")
-                prazo_bruto = item.get("prazo_entrega")
-                lead_time_display = ""
-                if prazo_bruto not in (None, ""):
-                    prazo_texto = str(prazo_bruto)
-                    try:
-                        prazo_valor = float(prazo_bruto)
-                    except (TypeError, ValueError):
-                        lead_time_display = f"{prazo_texto}d"
-                    else:
-                        if prazo_valor > 0:
-                            if prazo_valor.is_integer():
-                                prazo_texto = str(int(prazo_valor))
-                            lead_time_display = f"{prazo_texto}d"
-                self.cell(widths[6], 6, lead_time_display, border=border, align="C")
-                self.cell(widths[7], 6, f"{(item.get('peso') or 0):.1f}kg", border=border, align="C")
+                self.set_text_color(*currency_color)
+                self.cell(widths[2], row_h, self._format_currency(preco_venda or 0), border=border, align=aligns[2])
+                self.cell(widths[3], row_h, self._format_currency(total), border=border, align=aligns[3])
+                self.set_text_color(*self._color_tuple(table_cfg.get("body_text_color"), (15, 20, 26)))
             else:
-                for w in widths[3:]:
-                    self.cell(w, 6, "", border=border)
+                self.cell(widths[2], row_h, "", border=border)
+                self.cell(widths[3], row_h, "", border=border)
             self.ln()
+
+        spacing = table_cfg.get("row_spacing", 2)
+        if spacing:
+            self.ln(spacing)
 
         return total
 
-    def add_total(self, total_geral, peso_total):
-        totals_cfg = self.cfg.get("totals", {})
-        font = totals_cfg.get("font", "Arial")
-        style = totals_cfg.get("font_style", "B")
-        size = totals_cfg.get("font_size", 11)
-        label_w = totals_cfg.get("label_width", 131)
-        total_w = totals_cfg.get("total_width", 20)
-        extra_w = totals_cfg.get("extra_width", 39)
-        conditions = self.cfg.get(
-            "conditions",
-            [
-                "Proposal validity: 30 days",
-                "Prices do not include VAT",
-                "Payment terms: To be agreed",
-            ],
-        )
-        cond_h = 5 * len(conditions)
-        block_h = 8 + 5 + cond_h
-        start_y = self.h - self.b_margin - block_h
-        if self.get_y() > start_y:
-            self.add_page()
-            start_y = self.h - self.b_margin - block_h
-        self.set_y(start_y)
-        self.set_font(font, style, size)
-        self.cell(label_w, 8, "TOTAL:", border=1, align="R")
-        self.cell(total_w, 8, f"EUR {total_geral:.2f}", border=1, align="C")
-        self.cell(extra_w, 8, f"Total Weight: {peso_total:.1f}kg", border=1, align="C")
-        self.ln()
-        self.ln(5)
-        self.set_font(font, "", size - 1)
-        for cond in conditions:
-            self.cell(0, 5, cond, ln=1)
+    def add_total(self, total_geral):
+        table_cfg = self._table_cfg()
+        totals_cfg = self._totals_cfg()
+        widths = table_cfg.get("widths", self.CLIENT_TABLE["widths"])
+        label_width = sum(widths[:-1])
+        amount_width = widths[-1]
+        row_h = totals_cfg.get("row_height", 8)
+        fill_color = self._color_tuple(totals_cfg.get("fill"), (240, 242, 245))
+        text_color = self._color_tuple(totals_cfg.get("text_color"), (15, 20, 26))
+        self.set_fill_color(*fill_color)
+        self.set_text_color(*text_color)
+        self.set_draw_color(*fill_color)
+        self.set_font(*self._font_tuple(totals_cfg, ("Helvetica", "B", 11)))
+        self.cell(label_width, row_h, totals_cfg.get("label", "Total"), border="T", align="R", fill=True)
+        self.cell(amount_width, row_h, self._format_currency(total_geral), border="T", align="R", fill=True)
+        self.ln(row_h + 2)
+        self.set_text_color(0, 0, 0)
+
+    def add_terms(self):
+        terms_cfg = self._terms_cfg()
+        spacing = terms_cfg.get("spacing", 4)
+        heading = terms_cfg.get("heading")
+        lines = terms_cfg.get("lines", [])
+        if heading:
+            self.set_font(*self._font_tuple(terms_cfg.get("heading_font"), ("Helvetica", "B", 10)))
+            self.cell(0, 5, heading, ln=1)
+        if lines:
+            self.set_font(*self._font_tuple(terms_cfg.get("font"), ("Helvetica", "", 9)))
+            for line in lines:
+                self.multi_cell(0, 5, line)
+        if spacing:
+            self.ln(spacing)
 
     def gerar(self, rfq_info, solicitante_info, itens_resposta, user_info=None):
-        addr_lines = []
-        if solicitante_info.get("empresa_nome"):
-            addr_lines.append(str(solicitante_info["empresa_nome"]).strip())
+        self.company_name = (solicitante_info.get("empresa_nome") or "").strip()
+        address_parts: list[str] = []
         if solicitante_info.get("empresa_morada"):
-            addr_lines.extend(
-                linha.strip()
-                for linha in str(solicitante_info["empresa_morada"]).splitlines()
-                if linha.strip()
-            )
+            for line in str(solicitante_info.get("empresa_morada") or "").splitlines():
+                clean = line.strip()
+                if clean:
+                    address_parts.append(clean)
         if solicitante_info.get("nome"):
-            addr_lines.append(str(solicitante_info["nome"]).strip())
+            address_parts.append(str(solicitante_info.get("nome")).strip())
         if solicitante_info.get("email"):
-            addr_lines.append(str(solicitante_info["email"]).strip())
-        metadata = {"Date": rfq_info["data"]}
-        self.recipient = {
-            "address": addr_lines,
-            "metadata": metadata,
+            address_parts.append(str(solicitante_info.get("email")).strip())
+        self.company_address = address_parts
+
+        quote_number = rfq_info.get("processo") or rfq_info.get("referencia") or ""
+        quote_date = rfq_info.get("data") or ""
+        due_date = rfq_info.get("due_date")
+        if not due_date:
+            try:
+                base_date = datetime.strptime(str(rfq_info.get("data")), "%d/%m/%Y")
+            except (TypeError, ValueError):
+                try:
+                    base_date = datetime.fromisoformat(str(rfq_info.get("data")))
+                except Exception:
+                    base_date = None
+            if base_date:
+                due_date = (base_date + timedelta(days=14)).strftime("%d/%m/%Y")
+        self.quote_metadata = {
+            "Quote #": quote_number or "—",
+            "Quote Date": quote_date or "—",
+            "Due Date": due_date or "—",
         }
+
         self.add_page()
-        self.add_title()
-        self.add_reference(rfq_info.get("processo", ""), rfq_info.get("referencia", ""))
+        if self._body_start_y is not None:
+            self.set_y(self._body_start_y)
         self.table_header()
         total_geral = 0.0
-        peso_total = 0.0
         for idx, item in enumerate(itens_resposta, 1):
             total_item = self.add_item(idx, item)
             total_geral += total_item
-            quantidade_utilizada = item.get("quantidade_final")
-            if quantidade_utilizada is None:
-                quantidade_utilizada = item.get("quantidade")
-            try:
-                quantidade_num = float(quantidade_utilizada)
-            except (TypeError, ValueError):
-                quantidade_num = 0.0
-            peso_total += float(item.get("peso") or 0) * quantidade_num
-        self.add_total(total_geral, peso_total)
+
+        block_height = self._totals_cfg().get("row_height", 8) + 2
+        block_height += max(len(self._terms_cfg().get("lines", [])), 1) * 5
+        if self.get_y() + block_height > self.page_break_trigger:
+            self.add_page()
+            self.table_header()
+
+        self.add_total(total_geral)
+        self.add_terms()
         return self.output(dest="S").encode("latin-1", errors="replace")
+
+
+def gerar_pdf_cliente_exemplo(config: dict | None = None) -> bytes:
+    """Construir um PDF de orçamento de exemplo para pré-visualização."""
+
+    base_config = copy.deepcopy(config or load_pdf_config("cliente") or {})
+    pdf_cliente = ClientQuotationPDF(base_config)
+    hoje = date.today()
+    itens_exemplo = [
+        {
+            "artigo_num": "ACM-100",
+            "descricao": "High performance hydraulic pump with stainless steel housing and replaceable cartridge.",
+            "quantidade_final": 2,
+            "quantidade": 2,
+            "unidade": "pcs",
+            "preco_venda": 1290.5,
+            "peso": 8.4,
+            "hs_code": "8413.70",
+            "pais_origem": "PT",
+        },
+        {
+            "artigo_num": "ACM-245",
+            "descricao": "Control valve block, anodised, including fittings and mounting hardware.",
+            "quantidade_final": 3,
+            "quantidade": 3,
+            "unidade": "pcs",
+            "preco_venda": 480.0,
+            "peso": 3.1,
+            "hs_code": "8481.20",
+            "pais_origem": "DE",
+        },
+    ]
+
+    return pdf_cliente.gerar(
+        rfq_info={
+            "data": hoje.strftime("%d/%m/%Y"),
+            "processo": "Q-2024-001",
+            "referencia": "ACME-Q",
+            "due_date": (hoje + timedelta(days=14)).strftime("%d/%m/%Y"),
+        },
+        solicitante_info={
+            "empresa_nome": "Acme Parts Ltd.",
+            "empresa_morada": "123 Industrial Avenue\nPorto, Portugal",
+            "nome": "Jane Smith",
+            "email": "jane.smith@example.com",
+        },
+        itens_resposta=itens_exemplo,
+    )
 # ========================== FUNÇÕES DE GESTÃO DE PDFs ==========================
 
 def gerar_e_armazenar_pdf(rfq_id, fornecedor_id, data, artigos):
@@ -5077,23 +5348,26 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
 
         pagamento = rfq_data.get("condicoes_pagamento")
         if pagamento:
-            conds = config.get(
-                "conditions",
-                [
-                    "Proposal validity: 30 days",
-                    "Prices do not include VAT",
-                    "Payment terms: To be agreed",
-                ],
-            )
+            conds = config.get("conditions")
+            terms_block = config.get("terms", {})
+            term_lines = terms_block.get("lines") or conds or [
+                "Proposal validity: 30 days",
+                "Prices do not include VAT",
+                "Payment terms: To be agreed",
+            ]
             updated = False
-            for i, cond in enumerate(conds):
+            for i, cond in enumerate(term_lines):
                 if "payment terms" in cond.lower():
-                    conds[i] = f"Payment terms: {pagamento}"
+                    term_lines[i] = f"Payment terms: {pagamento}"
                     updated = True
                     break
             if not updated:
-                conds.append(f"Payment terms: {pagamento}")
-            config["conditions"] = conds
+                term_lines.append(f"Payment terms: {pagamento}")
+            if terms_block:
+                terms_block["lines"] = term_lines
+                config["terms"] = terms_block
+            else:
+                config["conditions"] = term_lines
         pdf_cliente = ClientQuotationPDF(config)
         pdf_bytes = pdf_cliente.gerar(
             rfq_info={
@@ -10798,6 +11072,36 @@ elif menu_option == "⚙️ Configurações":
                 "Altere textos, tamanhos de letra e posições editando o JSON acima."
             )
 
+            if tipo_layout == "cliente":
+                st.divider()
+                col_preview, col_download = st.columns([2, 1])
+                with col_preview:
+                    if st.button("👁️ Pré-visualizar PDF de Cotação", use_container_width=True):
+                        try:
+                            cfg_preview = json.loads(st.session_state.get(f"layout_{tipo_layout}", config_texto))
+                        except json.JSONDecodeError as e:
+                            st.error(f"JSON inválido para gerar pré-visualização: {e}")
+                        else:
+                            try:
+                                preview_bytes = gerar_pdf_cliente_exemplo(cfg_preview)
+                            except Exception as exc:
+                                st.error(f"Erro ao gerar pré-visualização: {exc}")
+                            else:
+                                st.session_state["preview_pdf_cliente_bytes"] = preview_bytes
+                                st.success("Pré-visualização criada!")
+
+                preview_bytes = st.session_state.get("preview_pdf_cliente_bytes")
+                if preview_bytes:
+                    exibir_pdf("Pré-visualização de Quotation", preview_bytes, use_expander=False, height=500)
+                    with col_download:
+                        st.download_button(
+                            "⬇️ Download da Pré-visualização",
+                            data=preview_bytes,
+                            file_name="quotation_preview.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                        )
+
         with tab_layout_email:
             st.subheader("Layout dos Emails")
             opcoes_email = {
@@ -10932,4 +11236,3 @@ st.markdown("""
         Sistema myERP | Desenvolvido por Ricardo Nogueira | © 2025
     </div>
 """, unsafe_allow_html=True)
-
