@@ -4519,7 +4519,7 @@ class InquiryPDF(FPDF):
         if spacing:
             self.ln(spacing)
 
-def gerar(
+    def gerar(
         self,
         fornecedor,
         data,
@@ -4529,7 +4529,8 @@ def gerar(
         cliente_final_nome="",
         cliente_final_pais="",
     ):
-        """Gera o PDF e devolve bytes"""
+        """Gera o PDF e devolve bytes."""
+
         addr_lines = [fornecedor.get("nome", "")]
         if fornecedor.get("morada"):
             addr_lines.extend(fornecedor["morada"].splitlines())
@@ -4646,7 +4647,27 @@ class ClientQuotationPDF(InquiryPDF):
         return self._merge_cfg(self.cfg.get("body"), self.CLIENT_BODY)
 
     def _table_cfg(self):
-        return self._merge_cfg(self.cfg.get("table"), self.CLIENT_TABLE)
+        merged = self._merge_cfg(self.cfg.get("table"), self.CLIENT_TABLE)
+        expected_len = len(self.CLIENT_TABLE["headers"])
+
+        def _valid_list(values):
+            return isinstance(values, list) and len(values) == expected_len
+
+        if not _valid_list(merged.get("headers")):
+            merged["headers"] = list(self.CLIENT_TABLE["headers"])
+        if not _valid_list(merged.get("alignments")):
+            merged["alignments"] = list(self.CLIENT_TABLE["alignments"])
+
+        widths = merged.get("widths")
+        if not _valid_list(widths):
+            merged["widths"] = list(self.CLIENT_TABLE["widths"])
+        else:
+            try:
+                merged["widths"] = [float(w) for w in widths]
+            except (TypeError, ValueError):
+                merged["widths"] = list(self.CLIENT_TABLE["widths"])
+
+        return merged
 
     def _totals_cfg(self):
         return self._merge_cfg(self.cfg.get("totals"), self.CLIENT_TOTALS)
