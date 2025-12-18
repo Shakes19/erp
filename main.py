@@ -4253,9 +4253,18 @@ class InquiryPDF(FPDF):
             ],
         )
         legal_info = self.cfg.get("legal_info", ["VAT ID: PT123"])
+        vat_info = None
+        filtered_legal: list[str] = []
+        for line in legal_info:
+            if vat_info is None and isinstance(line, str) and "VAT" in line.upper():
+                vat_info = line
+                continue
+            filtered_legal.append(line)
+        legal_info = filtered_legal
         start_y = self.get_y()
         col_w = (self.w - 30) / (len(bank_cols) + 1)
         max_y = start_y
+        vat_used = False
         for i, col in enumerate(bank_cols):
             x = 15 + i * col_w
             self.set_xy(x, start_y)
@@ -4267,7 +4276,11 @@ class InquiryPDF(FPDF):
             if bank_name or "Bank" in col:
                 line_parts.append(f"Bank: {bank_name}")
             if iban or "IBAN" in col:
-                line_parts.append(f"IBAN: {iban}")
+                iban_line = f"IBAN: {iban}"
+                if vat_info and not vat_used:
+                    iban_line = f"{iban_line}    {vat_info}"
+                    vat_used = True
+                line_parts.append(iban_line)
 
             self.set_font("Helvetica", "", 9)
             self.multi_cell(col_w, 4, "    ".join(part for part in line_parts if part).strip())
@@ -4283,7 +4296,10 @@ class InquiryPDF(FPDF):
         legal_x = 15 + len(bank_cols) * col_w
         self.set_xy(legal_x, start_y)
         self.set_font("Helvetica", "", 9)
-        self.multi_cell(col_w, 4, "\n".join(legal_info), align="R")
+        if legal_info:
+            self.multi_cell(col_w, 4, "\n".join(legal_info), align="R")
+        else:
+            self.multi_cell(col_w, 4, "", align="R")
         max_y = max(max_y, self.get_y())
         self.set_y(max_y)
 
@@ -4827,7 +4843,7 @@ class ClientQuotationPDF(InquiryPDF):
             self.set_font(*self._font_tuple(header_cfg.get("client_label_font"), ("Helvetica", "B", 9)))
             self.set_text_color(*self._color_tuple(header_cfg.get("metadata_label_color"), (74, 77, 82)))
             self.cell(left_w, header_cfg.get("company_line_height", 6), client_label, ln=1)
-        self.set_font(*self._font_tuple(header_cfg.get("company_font"), ("Helvetica", "B", 12)))
+        self.set_font(*self._font_tuple(header_cfg.get("company_font"), ("Helvetica", "", 12)))
         self.set_text_color(*self._color_tuple(header_cfg.get("company_color"), (0, 0, 0)))
         self.multi_cell(left_w, header_cfg.get("company_line_height", 6), "\n".join(client_lines))
         left_end_y = self.get_y()
@@ -4983,9 +4999,12 @@ class ClientQuotationPDF(InquiryPDF):
         lines = self.split_text(desc, desc_width)
         weight = item.get("peso") if item.get("peso") is not None else ""
         weight_val = self._parse_number(weight)
-        if weight_val is not None and weight_val != 0:
-            unit_weight = f"{weight_val:.2f} kg"
-        elif weight not in (None, "") and weight_val is None:
+        if weight_val is not None:
+            if weight_val == 0:
+                unit_weight = "-"
+            else:
+                unit_weight = f"{weight_val:.2f} kg"
+        elif weight not in (None, ""):
             unit_weight = str(weight)
         else:
             unit_weight = ""
@@ -4995,7 +5014,7 @@ class ClientQuotationPDF(InquiryPDF):
         shipping_number = self._parse_number(shipping_time)
         if eta_number is not None or shipping_number is not None:
             total_eta = (eta_number or 0) + (shipping_number or 0)
-            eta_display = self._format_number(total_eta)
+            eta_display = "-" if total_eta == 0 else self._format_number(total_eta)
         elif eta not in (None, ""):
             eta_display = str(eta)
         else:
