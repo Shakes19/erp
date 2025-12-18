@@ -4588,7 +4588,7 @@ class ClientQuotationPDF(InquiryPDF):
         "padding_top": 14,
         "company_line_height": 6,
         "title_align": "R",
-        "logo": {"path": "assets/logo.png", "w": 32, "max_h": 22},
+        "logo": {"path": "assets/logo.png", "w": 42, "max_h": 28, "top": 8},
         "metadata_box_fill": "#f4f6f8",
     }
 
@@ -4719,7 +4719,7 @@ class ClientQuotationPDF(InquiryPDF):
 
     def _quote_meta_lines(self):
         lines = []
-        for label in ("Quote #", "Quote Date", "Due Date"):
+        for label in ("Quote #", "Your Ref", "Quote Date", "Due Date"):
             val = self.quote_metadata.get(label) or "—"
             lines.append((label, val))
         return lines
@@ -4813,11 +4813,13 @@ class ClientQuotationPDF(InquiryPDF):
         logo_bytes = self.cfg.get("logo_bytes")
         logo_w = logo_cfg.get("w", 32)
         max_h = logo_cfg.get("max_h", 22)
+        logo_top = max(float(logo_cfg.get("top", self.t_margin)), self.t_margin)
         x_right = self.l_margin + left_w
         current_y = start_y
+        logo_bottom: float | None = None
 
         def _draw_logo(path_or_bytes):
-            nonlocal current_y
+            nonlocal logo_bottom
             try:
                 if isinstance(path_or_bytes, bytes):
                     img = Image.open(BytesIO(path_or_bytes))
@@ -4832,18 +4834,19 @@ class ClientQuotationPDF(InquiryPDF):
                         final_w = max_h / ratio if ratio else logo_w
                         h_logo = max_h
                     x_logo = self.w - self.r_margin - final_w
+                    y_logo = logo_top
                     if isinstance(path_or_bytes, bytes):
                         img_type = (img.format or "PNG").lower()
                         with tempfile.NamedTemporaryFile(delete=False, suffix=f".{img_type}") as tmp:
                             tmp.write(path_or_bytes)
                             tmp_path = tmp.name
                         try:
-                            self.image(tmp_path, x_logo, current_y, final_w, h_logo)
+                            self.image(tmp_path, x_logo, y_logo, final_w, h_logo)
                         finally:
                             os.remove(tmp_path)
                     else:
-                        self.image(path_or_bytes, x_logo, current_y, final_w, h_logo)
-                    current_y += h_logo + 2
+                        self.image(path_or_bytes, x_logo, y_logo, final_w, h_logo)
+                    logo_bottom = y_logo + h_logo
                 finally:
                     img.close()
             except Exception:
@@ -4857,6 +4860,9 @@ class ClientQuotationPDF(InquiryPDF):
         meta_box_fill = self._color_tuple(header_cfg.get("metadata_box_fill"), (244, 246, 248))
         meta_label_color = self._color_tuple(header_cfg.get("metadata_label_color"), (74, 77, 82))
         meta_value_color = self._color_tuple(header_cfg.get("metadata_value_color"), (15, 20, 26))
+
+        if logo_bottom is not None:
+            current_y = max(current_y, logo_bottom + 2)
 
         self.set_draw_color(*meta_box_fill)
         self.set_fill_color(*meta_box_fill)
@@ -5061,6 +5067,7 @@ class ClientQuotationPDF(InquiryPDF):
         self.issuer_lines = issuer_lines
 
         quote_number = rfq_info.get("processo") or rfq_info.get("referencia") or ""
+        your_ref = rfq_info.get("your_ref") or rfq_info.get("referencia") or ""
         quote_date = rfq_info.get("data") or ""
         due_date = rfq_info.get("due_date")
         if not due_date:
@@ -5075,6 +5082,7 @@ class ClientQuotationPDF(InquiryPDF):
                 due_date = (base_date + timedelta(days=14)).strftime("%d/%m/%Y")
         self.quote_metadata = {
             "Quote #": quote_number or "—",
+            "Your Ref": your_ref or "—",
             "Quote Date": quote_date or "—",
             "Due Date": due_date or "—",
         }
@@ -5135,6 +5143,7 @@ def gerar_pdf_cliente_exemplo(config: dict | None = None) -> bytes:
             "data": hoje.strftime("%d/%m/%Y"),
             "processo": "Q-2024-001",
             "referencia": "ACME-Q",
+            "your_ref": "ACME-Q",
             "due_date": (hoje + timedelta(days=14)).strftime("%d/%m/%Y"),
         },
         solicitante_info={
@@ -5358,6 +5367,7 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
                    COALESCE(a.peso, 0),
                    COALESCE(a.hs_code, ''),
                    COALESCE(a.pais_origem, ''),
+                   rf.validade_preco,
                    COALESCE(ra.ordem, rf.id) AS ordem
         FROM resposta_fornecedor rf
         JOIN artigo a ON rf.artigo_id = a.id
@@ -5377,21 +5387,41 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
                 (rfq_id,),
             )
 
-        itens_resposta = [
-            {
-                'artigo_num': row[0] or '',
-                'descricao': limitar_descricao_artigo(row[1]),
-                'quantidade_final': row[2],
-                'quantidade': row[2],
-                'unidade': row[3],
-                'preco_venda': row[4],
-                'prazo_entrega': row[5],
-                'peso': row[6] or 0,
-                'hs_code': row[7] or '',
-                'pais_origem': row[8] or ''
-            }
-            for row in c.fetchall()
-        ]
+        def _parse_validade_preco(value):
+            if not value:
+                return None
+            if isinstance(value, datetime):
+                return value.date()
+            if isinstance(value, date):
+                return value
+            try:
+                return datetime.fromisoformat(str(value)).date()
+            except (TypeError, ValueError):
+                return None
+
+        validade_datas: list[date] = []
+        itens_resposta = []
+        for row in c.fetchall():
+            validade_dt = _parse_validade_preco(row[9])
+            if validade_dt:
+                validade_datas.append(validade_dt)
+            itens_resposta.append(
+                {
+                    'artigo_num': row[0] or '',
+                    'descricao': limitar_descricao_artigo(row[1]),
+                    'quantidade_final': row[2],
+                    'quantidade': row[2],
+                    'unidade': row[3],
+                    'preco_venda': row[4],
+                    'prazo_entrega': row[5],
+                    'peso': row[6] or 0,
+                    'hs_code': row[7] or '',
+                    'pais_origem': row[8] or '',
+                    'validade_preco': validade_dt.strftime("%d/%m/%Y") if validade_dt else "",
+                }
+            )
+
+        due_date_str = min(validade_datas).strftime("%d/%m/%Y") if validade_datas else ""
 
         if not itens_resposta:
             st.error("Nenhuma resposta encontrada para esta RFQ")
@@ -5451,6 +5481,8 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
                 'data': _format_iso_date(rfq_data["data"]),
                 'processo': rfq_data["processo_numero"] or '',
                 'referencia': rfq_data["referencia"] or '',
+                'your_ref': rfq_data["referencia"] or '',
+                'due_date': due_date_str or None,
             },
             solicitante_info={
                 'empresa_nome': rfq_data["empresa_nome"] or '',
