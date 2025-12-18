@@ -4782,21 +4782,11 @@ class ClientQuotationPDF(InquiryPDF):
         left_w = content_width * 0.55
         right_w = content_width - left_w
         padding_top = header_cfg.get("padding_top", 12)
-        issuer_lines = self.issuer_lines[:]
         client_lines = [line for line in [self.company_name, *self.company_address] if line]
         if not client_lines:
             client_lines = ["Client"]
 
         start_y = padding_top
-        self.set_y(start_y)
-        self.set_x(self.l_margin)
-        issuer_font = header_cfg.get("issuer_font") or header_cfg.get("metadata_font")
-        if issuer_lines:
-            self.set_font(*self._font_tuple(issuer_font, ("Helvetica", "B", 10)))
-            self.set_text_color(*self._color_tuple(header_cfg.get("metadata_label_color"), (74, 77, 82)))
-            self.multi_cell(left_w, header_cfg.get("company_line_height", 6), "\n".join(issuer_lines))
-            start_y = self.get_y() + 2
-
         self.set_xy(self.l_margin, start_y)
         client_label = header_cfg.get("client_label", "")
         if client_label:
@@ -4813,7 +4803,7 @@ class ClientQuotationPDF(InquiryPDF):
         logo_bytes = self.cfg.get("logo_bytes")
         logo_w = logo_cfg.get("w", 32)
         max_h = logo_cfg.get("max_h", 22)
-        logo_top = max(float(logo_cfg.get("top", self.t_margin)), self.t_margin)
+        logo_top = max(float(logo_cfg.get("top", start_y)), start_y, self.t_margin)
         x_right = self.l_margin + left_w
         current_y = start_y
         logo_bottom: float | None = None
@@ -4857,36 +4847,45 @@ class ClientQuotationPDF(InquiryPDF):
         elif os.path.exists(logo_path):
             _draw_logo(logo_path)
 
+        top_row_end = max(left_end_y, logo_bottom or start_y)
+        current_y = top_row_end + 4
+
         meta_box_fill = self._color_tuple(header_cfg.get("metadata_box_fill"), (244, 246, 248))
         meta_label_color = self._color_tuple(header_cfg.get("metadata_label_color"), (74, 77, 82))
         meta_value_color = self._color_tuple(header_cfg.get("metadata_value_color"), (15, 20, 26))
 
-        if logo_bottom is not None:
-            current_y = max(current_y, logo_bottom + 2)
-
         self.set_draw_color(*meta_box_fill)
         self.set_fill_color(*meta_box_fill)
-        self.set_xy(x_right, current_y)
+        self.set_xy(self.l_margin, current_y)
         meta_lines = self._quote_meta_lines()
         line_height = header_cfg.get("company_line_height", 6)
         box_height = max(line_height * len(meta_lines), 18)
-        self.rect(x_right, current_y, right_w, box_height, style="F")
+        self.rect(self.l_margin, current_y, left_w, box_height, style="F")
         label_font = header_cfg.get("metadata_font")
         value_font = header_cfg.get("metadata_value_font")
         meta_start_y = current_y + 1
         for idx, (label, value) in enumerate(meta_lines):
             line_y = meta_start_y + idx * line_height
-            self.set_xy(x_right + 2, line_y)
+            self.set_xy(self.l_margin + 2, line_y)
             self.set_font(*self._font_tuple(label_font, ("Helvetica", "B", 9)))
             self.set_text_color(*meta_label_color)
-            self.cell(right_w / 2.2, line_height, label)
+            self.cell(left_w / 2.4, line_height, label)
             self.set_font(*self._font_tuple(value_font, ("Helvetica", "", 9)))
             self.set_text_color(*meta_value_color)
-            self.cell(right_w / 2, line_height, value, ln=1, align="R")
+            self.cell(left_w / 2, line_height, value, ln=1, align="R")
 
-        current_y = meta_start_y + len(meta_lines) * line_height
-        max_y = max(left_end_y, current_y)
-        self.set_y(max_y + header_cfg.get("title_spacing", 6))
+        issuer_lines = self.issuer_lines[:]
+        issuer_font = header_cfg.get("issuer_font") or header_cfg.get("metadata_font")
+        issuer_start_y = current_y
+        if issuer_lines:
+            self.set_xy(x_right, issuer_start_y)
+            self.set_font(*self._font_tuple(issuer_font, ("Helvetica", "B", 10)))
+            self.set_text_color(*self._color_tuple(header_cfg.get("metadata_label_color"), (74, 77, 82)))
+            self.multi_cell(right_w, header_cfg.get("company_line_height", 6), "\n".join(issuer_lines), align="R")
+        issuer_end_y = self.get_y() if issuer_lines else current_y + box_height
+
+        current_y = max(meta_start_y + len(meta_lines) * line_height, issuer_end_y)
+        self.set_y(current_y + header_cfg.get("title_spacing", 6))
         self.set_text_color(*self._color_tuple(header_cfg.get("title_color"), (29, 29, 31)))
         self.set_font(*self._font_tuple(header_cfg, ("Helvetica", "B", 18)))
         self.cell(
