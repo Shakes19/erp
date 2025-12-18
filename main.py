@@ -4573,8 +4573,11 @@ class ClientQuotationPDF(InquiryPDF):
         "font_style": "B",
         "font_size": 18,
         "title_color": "#1d1d1f",
-        "company_font": {"font": "Helvetica", "font_style": "B", "font_size": 14},
+        "company_font": {"font": "Helvetica", "font_style": "B", "font_size": 12},
         "company_color": "#1d1d1f",
+        "issuer_font": {"font": "Helvetica", "font_style": "B", "font_size": 10},
+        "client_label": "Client",
+        "client_label_font": {"font": "Helvetica", "font_style": "B", "font_size": 9},
         "metadata_font": {"font": "Helvetica", "font_style": "B", "font_size": 9},
         "metadata_value_font": {"font": "Helvetica", "font_style": "", "font_size": 9},
         "metadata_label_color": "#4a4d52",
@@ -4584,6 +4587,7 @@ class ClientQuotationPDF(InquiryPDF):
         "after_title_spacing": 6,
         "padding_top": 14,
         "company_line_height": 6,
+        "title_align": "R",
         "logo": {"path": "assets/logo.png", "w": 32, "max_h": 22},
         "metadata_box_fill": "#f4f6f8",
     }
@@ -4596,9 +4600,9 @@ class ClientQuotationPDF(InquiryPDF):
     }
 
     CLIENT_TABLE = {
-        "headers": ["QTY", "Description", "Unit Price", "Amount"],
-        "widths": [18, 94, 34, 34],
-        "alignments": ["C", "L", "R", "R"],
+        "headers": ["#", "Item No.", "Description", "Unit weight", "ETA", "Qty", "Unit Price", "Total Price"],
+        "widths": [10, 20, 64, 20, 18, 14, 22, 22],
+        "alignments": ["C", "C", "L", "R", "C", "C", "R", "R"],
         "font": "Helvetica",
         "font_style": "B",
         "font_size": 9,
@@ -4638,6 +4642,7 @@ class ClientQuotationPDF(InquiryPDF):
         self.company_name = ""
         self.company_address: list[str] = []
         self.quote_metadata: dict[str, str] = {}
+        self.issuer_lines: list[str] = []
         self._body_start_y: float | None = None
 
     def _header_cfg(self):
@@ -4777,16 +4782,30 @@ class ClientQuotationPDF(InquiryPDF):
         left_w = content_width * 0.55
         right_w = content_width - left_w
         padding_top = header_cfg.get("padding_top", 12)
-        company_lines = [line for line in [self.company_name, *self.company_address] if line]
-        if not company_lines:
-            company_lines = ["Company"]
+        issuer_lines = self.issuer_lines[:]
+        client_lines = [line for line in [self.company_name, *self.company_address] if line]
+        if not client_lines:
+            client_lines = ["Client"]
 
         start_y = padding_top
         self.set_y(start_y)
         self.set_x(self.l_margin)
-        self.set_font(*self._font_tuple(header_cfg.get("company_font"), ("Helvetica", "B", 14)))
+        issuer_font = header_cfg.get("issuer_font") or header_cfg.get("metadata_font")
+        if issuer_lines:
+            self.set_font(*self._font_tuple(issuer_font, ("Helvetica", "B", 10)))
+            self.set_text_color(*self._color_tuple(header_cfg.get("metadata_label_color"), (74, 77, 82)))
+            self.multi_cell(left_w, header_cfg.get("company_line_height", 6), "\n".join(issuer_lines))
+            start_y = self.get_y() + 2
+
+        self.set_xy(self.l_margin, start_y)
+        client_label = header_cfg.get("client_label", "")
+        if client_label:
+            self.set_font(*self._font_tuple(header_cfg.get("client_label_font"), ("Helvetica", "B", 9)))
+            self.set_text_color(*self._color_tuple(header_cfg.get("metadata_label_color"), (74, 77, 82)))
+            self.cell(left_w, header_cfg.get("company_line_height", 6), client_label, ln=1)
+        self.set_font(*self._font_tuple(header_cfg.get("company_font"), ("Helvetica", "B", 12)))
         self.set_text_color(*self._color_tuple(header_cfg.get("company_color"), (0, 0, 0)))
-        self.multi_cell(left_w, header_cfg.get("company_line_height", 6), "\n".join(company_lines))
+        self.multi_cell(left_w, header_cfg.get("company_line_height", 6), "\n".join(client_lines))
         left_end_y = self.get_y()
 
         logo_cfg = header_cfg.get("logo", {})
@@ -4864,7 +4883,13 @@ class ClientQuotationPDF(InquiryPDF):
         self.set_y(max_y + header_cfg.get("title_spacing", 6))
         self.set_text_color(*self._color_tuple(header_cfg.get("title_color"), (29, 29, 31)))
         self.set_font(*self._font_tuple(header_cfg, ("Helvetica", "B", 18)))
-        self.cell(content_width, header_cfg.get("title_height", 10), header_cfg.get("title", "QUOTE"), ln=1, align="C")
+        self.cell(
+            content_width,
+            header_cfg.get("title_height", 10),
+            header_cfg.get("title", "QUOTE"),
+            ln=1,
+            align=header_cfg.get("title_align", "R"),
+        )
         self.ln(header_cfg.get("after_title_spacing", 6))
         self._body_start_y = self.get_y()
         self.set_text_color(0, 0, 0)
@@ -4912,8 +4937,15 @@ class ClientQuotationPDF(InquiryPDF):
         preco_venda = item.get("preco_venda")
         total = (float(preco_venda or 0) * float(quantidade or 0)) if preco_venda is not None else 0.0
         desc = item.get("descricao") or ""
-        desc_width = max(widths[1] - 2 * padding, 1)
+        desc_width = max(widths[2] - 2 * padding, 1)
         lines = self.split_text(desc, desc_width)
+        weight = item.get("peso") if item.get("peso") is not None else ""
+        try:
+            weight_val = float(weight)
+            unit_weight = f"{weight_val:.2f} kg"
+        except (TypeError, ValueError):
+            unit_weight = str(weight) if weight else ""
+        eta = item.get("prazo_entrega") or ""
         hs_code = item.get("hs_code")
         origem = item.get("pais_origem")
         extra_parts = []
@@ -4934,21 +4966,31 @@ class ClientQuotationPDF(InquiryPDF):
         border_color = self._color_tuple(table_cfg.get("border_color"), (223, 227, 232))
         self.set_draw_color(*border_color)
         currency_color = self._color_tuple(table_cfg.get("currency_text_color"), (15, 20, 26))
+        body_color = self._color_tuple(table_cfg.get("body_text_color"), (15, 20, 26))
+        item_no = item.get("artigo_num") or ""
 
         for i, line in enumerate(lines):
             is_last = i == line_count - 1
             border = "B" if is_last else ""
             self.set_x(self.l_margin)
-            self.cell(widths[0], row_h, str(quantidade) if i == 0 else "", border=border, align=aligns[0])
-            self.cell(widths[1], row_h, line, border=border, align=aligns[1])
+            self.cell(widths[0], row_h, str(idx) if i == 0 else "", border=border, align=aligns[0])
+            self.cell(widths[1], row_h, item_no if i == 0 else "", border=border, align=aligns[1])
+            self.cell(widths[2], row_h, line, border=border, align=aligns[2])
             if i == 0:
+                self.set_text_color(*body_color)
+                self.cell(widths[3], row_h, unit_weight, border=border, align=aligns[3])
+                self.cell(widths[4], row_h, str(eta), border=border, align=aligns[4])
+                self.cell(widths[5], row_h, str(quantidade) if quantidade is not None else "", border=border, align=aligns[5])
                 self.set_text_color(*currency_color)
-                self.cell(widths[2], row_h, self._format_currency(preco_venda or 0), border=border, align=aligns[2])
-                self.cell(widths[3], row_h, self._format_currency(total), border=border, align=aligns[3])
-                self.set_text_color(*self._color_tuple(table_cfg.get("body_text_color"), (15, 20, 26)))
+                self.cell(widths[6], row_h, self._format_currency(preco_venda or 0), border=border, align=aligns[6])
+                self.cell(widths[7], row_h, self._format_currency(total), border=border, align=aligns[7])
+                self.set_text_color(*body_color)
             else:
-                self.cell(widths[2], row_h, "", border=border)
                 self.cell(widths[3], row_h, "", border=border)
+                self.cell(widths[4], row_h, "", border=border)
+                self.cell(widths[5], row_h, "", border=border)
+                self.cell(widths[6], row_h, "", border=border)
+                self.cell(widths[7], row_h, "", border=border)
             self.ln()
 
         spacing = table_cfg.get("row_spacing", 2)
@@ -5003,6 +5045,20 @@ class ClientQuotationPDF(InquiryPDF):
         if solicitante_info.get("email"):
             address_parts.append(str(solicitante_info.get("email")).strip())
         self.company_address = address_parts
+        issuer_lines: list[str] = []
+        for line in self.cfg.get("company_lines") or []:
+            if line is None:
+                continue
+            for sub_line in str(line).splitlines():
+                clean = sub_line.strip()
+                if clean:
+                    issuer_lines.append(clean)
+        if not issuer_lines and user_info:
+            for key in ("nome", "email"):
+                val = (user_info.get(key) or "").strip()
+                if val:
+                    issuer_lines.append(val)
+        self.issuer_lines = issuer_lines
 
         quote_number = rfq_info.get("processo") or rfq_info.get("referencia") or ""
         quote_date = rfq_info.get("data") or ""
