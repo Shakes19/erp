@@ -4312,12 +4312,8 @@ class InquiryPDF(FPDF):
                 else 1
             )
             logo_h = logo_w * logo_ratio
-            margin_px = 50
-            px_to_mm = 0.2645833333
-            margin_mm = margin_px * px_to_mm
-            x = self.w - margin_mm - logo_w
-            y = self.h - margin_mm - logo_h
-            x = max(self.l_margin, x)
+            x = self.w - self.r_margin - logo_w
+            y = self.h - self.b_margin - logo_h
             y = max(max_y + 2, y)
             self.image(
                 LOGO_PATH,
@@ -4631,7 +4627,7 @@ class ClientQuotationPDF(InquiryPDF):
 
     CLIENT_TABLE = {
         "headers": ["#", "Item No.", "Description", "Unit weight", "ETA", "Qty", "Unit Price", "Total Price"],
-        "widths": [10, 20, 64, 20, 18, 14, 22, 22],
+        "widths": [7, 20, 72, 20, 18, 9, 22, 22],
         "alignments": ["C", "C", "L", "R", "C", "C", "R", "R"],
         "font": "Helvetica",
         "font_style": "B",
@@ -5014,7 +5010,7 @@ class ClientQuotationPDF(InquiryPDF):
         shipping_number = self._parse_number(shipping_time)
         if eta_number is not None or shipping_number is not None:
             total_eta = (eta_number or 0) + (shipping_number or 0)
-            eta_display = "-" if total_eta == 0 else self._format_number(total_eta)
+            eta_display = "" if total_eta == 0 else self._format_number(total_eta)
         elif eta not in (None, ""):
             eta_display = str(eta)
         else:
