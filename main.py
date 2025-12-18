@@ -10073,7 +10073,7 @@ elif menu_option == "⚙️ Configurações":
                                 "Margem (%)",
                                 min_value=0.0,
                                 max_value=100.0,
-                                value=15.0,
+                                value=10.0,
                                 step=0.5,
                             )
                             fornecedor_sel = st.selectbox(
@@ -10554,8 +10554,8 @@ elif menu_option == "⚙️ Configurações":
             }
 
             provider_defaults = {
-                "Gmail": {"server": "smtp.gmail.com", "port": 587, "use_tls": True, "use_ssl": False},
                 "Outlook": {"server": "smtp.office365.com", "port": 587, "use_tls": True, "use_ssl": False},
+                "Gmail": {"server": "smtp.gmail.com", "port": 587, "use_tls": True, "use_ssl": False},  
                 "Outro": {},
             }
 
