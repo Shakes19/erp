@@ -64,9 +64,20 @@
       "company_font": {
         "font": "Helvetica",
         "font_style": "B",
-        "font_size": 14
+        "font_size": 12
       },
       "company_color": "#1d1d1f",
+      "issuer_font": {
+        "font": "Helvetica",
+        "font_style": "B",
+        "font_size": 10
+      },
+      "client_label": "Client",
+      "client_label_font": {
+        "font": "Helvetica",
+        "font_style": "B",
+        "font_size": 9
+      },
       "metadata_font": {
         "font": "Helvetica",
         "font_style": "B",
@@ -84,6 +95,7 @@
       "after_title_spacing": 6,
       "padding_top": 14,
       "company_line_height": 6,
+      "title_align": "R",
       "logo": {
         "path": "assets/logo.png",
         "w": 32,
@@ -98,20 +110,32 @@
     },
     "table": {
       "headers": [
-        "QTY",
+        "#",
+        "Item No.",
         "Description",
+        "Unit weight",
+        "ETA",
+        "Qty",
         "Unit Price",
-        "Amount"
+        "Total Price"
       ],
       "widths": [
+        10,
+        20,
+        64,
+        20,
         18,
-        94,
-        34,
-        34
+        14,
+        22,
+        22
       ],
       "alignments": [
         "C",
+        "C",
         "L",
+        "R",
+        "C",
+        "C",
         "R",
         "R"
       ],
