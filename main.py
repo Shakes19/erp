@@ -4587,8 +4587,8 @@ class ClientQuotationPDF(InquiryPDF):
         "after_title_spacing": 6,
         "padding_top": 14,
         "company_line_height": 6,
-        "title_align": "R",
-        "logo": {"path": "assets/logo.png", "w": 42, "max_h": 28, "top": 8},
+        "title_align": "L",
+        "logo": {"path": "assets/logo.png", "w": 63, "max_h": 42, "top": 8},
         "metadata_box_fill": "#f4f6f8",
     }
 
@@ -4617,7 +4617,7 @@ class ClientQuotationPDF(InquiryPDF):
         "currency_text_color": "#0f141a",
         "border_color": "#dfe3e8",
         "cell_padding": 2,
-        "row_spacing": 2,
+        "row_spacing": 7,
     }
 
     CLIENT_TOTALS = {
@@ -5047,8 +5047,6 @@ class ClientQuotationPDF(InquiryPDF):
                     address_parts.append(clean)
         if solicitante_info.get("nome"):
             address_parts.append(str(solicitante_info.get("nome")).strip())
-        if solicitante_info.get("email"):
-            address_parts.append(str(solicitante_info.get("email")).strip())
         self.company_address = address_parts
         issuer_lines: list[str] = []
         for line in self.cfg.get("company_lines") or []:
@@ -5431,8 +5429,6 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
         empresa = obter_config_empresa()
         if empresa:
             linhas = [empresa.get("nome") or "", empresa.get("morada") or ""]
-            if empresa.get("telefone"):
-                linhas.append(f"Tel: {empresa['telefone']}")
             if empresa.get("website"):
                 linhas.append(empresa["website"])
             if rfq_data.get("user_nome"):

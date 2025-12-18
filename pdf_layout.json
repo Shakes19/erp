@@ -95,11 +95,11 @@
       "after_title_spacing": 6,
       "padding_top": 14,
       "company_line_height": 6,
-      "title_align": "R",
+      "title_align": "L",
       "logo": {
         "path": "assets/logo.png",
-        "w": 42,
-        "max_h": 28,
+        "w": 63,
+        "max_h": 42,
         "top": 8
       },
       "metadata_box_fill": "#f4f6f8"
@@ -154,7 +154,7 @@
       "currency_text_color": "#0f141a",
       "border_color": "#dfe3e8",
       "cell_padding": 2,
-      "row_spacing": 2
+      "row_spacing": 7
     },
     "totals": {
       "font": "Helvetica",
