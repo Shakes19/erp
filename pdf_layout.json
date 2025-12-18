@@ -98,8 +98,9 @@
       "title_align": "R",
       "logo": {
         "path": "assets/logo.png",
-        "w": 32,
-        "max_h": 22
+        "w": 42,
+        "max_h": 28,
+        "top": 8
       },
       "metadata_box_fill": "#f4f6f8"
     },
