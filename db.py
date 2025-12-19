@@ -97,6 +97,15 @@ def decrypt_email_password(value: str | bytes | None) -> str | None:
         return token
 
 
+def _strip_or_none(value: object) -> str | None:
+    """Return ``value`` as a stripped string or ``None`` when empty."""
+
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def has_user_email_password(user_id: int | None) -> bool:
     """Return ``True`` when ``user_id`` has an email password stored."""
 
@@ -129,6 +138,68 @@ def get_user_email_password(user_id: int | None) -> str | None:
     if not row:
         return None
     return decrypt_email_password(row[0])
+
+
+def get_user_graph_config(user_id: int | None) -> dict[str, str]:
+    """Return the OAuth2/Graph configuration stored for ``user_id``."""
+
+    if not user_id:
+        return {}
+
+    try:
+        row = fetch_one(
+            """
+            SELECT graph_tenant_id, graph_client_id, graph_client_secret, graph_sender
+              FROM utilizador
+             WHERE id = ?
+            """,
+            (user_id,),
+        )
+    except sqlite3.OperationalError:
+        return {}
+
+    if not row:
+        return {}
+
+    tenant_id, client_id, client_secret, sender = row
+    return {
+        "tenant_id": (tenant_id or "").strip(),
+        "client_id": (client_id or "").strip(),
+        "client_secret": decrypt_email_password(client_secret) or "",
+        "sender": (sender or "").strip(),
+    }
+
+
+def save_user_graph_config(user_id: int | None, config: dict[str, str | None]) -> None:
+    """Persist OAuth2/Graph configuration for ``user_id``."""
+
+    if not user_id:
+        return
+
+    tenant_id = _strip_or_none(config.get("tenant_id"))
+    client_id = _strip_or_none(config.get("client_id"))
+    client_secret = _strip_or_none(config.get("client_secret"))
+    sender = _strip_or_none(config.get("sender"))
+
+    with managed_cursor() as (conn, cursor):
+        cursor.execute(
+            """
+            UPDATE utilizador
+               SET graph_tenant_id = ?,
+                   graph_client_id = ?,
+                   graph_client_secret = ?,
+                   graph_sender = ?
+             WHERE id = ?
+            """,
+            (
+                tenant_id,
+                client_id,
+                encrypt_email_password(client_secret),
+                sender,
+                user_id,
+            ),
+        )
+        conn.commit()
 
 
 @lru_cache(maxsize=None)
@@ -1326,7 +1397,11 @@ def criar_base_dados_completa():
             nome TEXT,
             email TEXT,
             role TEXT NOT NULL,
-            email_password TEXT
+            email_password TEXT,
+            graph_tenant_id TEXT,
+            graph_client_id TEXT,
+            graph_client_secret TEXT,
+            graph_sender TEXT
         )
         """
     )
@@ -1336,6 +1411,14 @@ def criar_base_dados_completa():
     user_columns = [row[1] for row in c.fetchall()]
     if "email_password" not in user_columns:
         c.execute("ALTER TABLE utilizador ADD COLUMN email_password TEXT")
+    for col in (
+        "graph_tenant_id",
+        "graph_client_id",
+        "graph_client_secret",
+        "graph_sender",
+    ):
+        if col not in user_columns:
+            c.execute(f"ALTER TABLE utilizador ADD COLUMN {col} TEXT")
 
     # Converter palavras-passe de email antigas para formato encriptado
     c.execute(

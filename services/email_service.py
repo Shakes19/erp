@@ -23,7 +23,7 @@ import msal
 import requests
 import streamlit as st
 
-from db import get_connection
+from db import get_connection, get_user_graph_config, save_user_graph_config
 
 
 # Configuração SMTP por omissão para garantir um fallback funcional quando a
@@ -84,8 +84,11 @@ def _load_graph_config_file() -> dict:
         return {}
 
 
-def load_graph_config() -> dict:
+def load_graph_config(user_id: int | None = None) -> dict:
     """Return the stored Microsoft Graph OAuth2 configuration."""
+
+    if user_id:
+        return get_user_graph_config(user_id)
 
     data = _load_graph_config_file()
     return {
@@ -96,32 +99,36 @@ def load_graph_config() -> dict:
     }
 
 
-def save_graph_config(config: dict) -> None:
-    """Persist Microsoft Graph OAuth2 configuration to disk."""
+def save_graph_config(config: dict, user_id: int | None = None) -> None:
+    """Persist Microsoft Graph OAuth2 configuration."""
 
     payload = {
         key: str(config.get(key) or "").strip()
         for key in ("tenant_id", "client_id", "client_secret", "sender")
     }
 
-    cleaned = {k: v for k, v in payload.items() if v}
-
-    if cleaned:
-        with GRAPH_CONFIG_FILE.open("w", encoding="utf-8") as handle:
-            json.dump(cleaned, handle, ensure_ascii=False, indent=2)
+    if user_id:
+        save_user_graph_config(user_id, payload)
     else:
-        GRAPH_CONFIG_FILE.unlink(missing_ok=True)
+        cleaned = {k: v for k, v in payload.items() if v}
 
-    for env_key, value in (
-        ("M365_TENANT_ID", payload.get("tenant_id", "")),
-        ("M365_CLIENT_ID", payload.get("client_id", "")),
-        ("M365_CLIENT_SECRET", payload.get("client_secret", "")),
-        ("M365_SENDER", payload.get("sender", "")),
-    ):
-        if value:
-            os.environ[env_key] = value
-        elif env_key in os.environ:
-            del os.environ[env_key]
+        if cleaned:
+            with GRAPH_CONFIG_FILE.open("w", encoding="utf-8") as handle:
+                json.dump(cleaned, handle, ensure_ascii=False, indent=2)
+        else:
+            GRAPH_CONFIG_FILE.unlink(missing_ok=True)
+
+    if not user_id:
+        for env_key, value in (
+            ("M365_TENANT_ID", payload.get("tenant_id", "")),
+            ("M365_CLIENT_ID", payload.get("client_id", "")),
+            ("M365_CLIENT_SECRET", payload.get("client_secret", "")),
+            ("M365_SENDER", payload.get("sender", "")),
+        ):
+            if value:
+                os.environ[env_key] = value
+            elif env_key in os.environ:
+                del os.environ[env_key]
 
     try:
         load_graph_config.clear()
@@ -167,18 +174,18 @@ def save_email_layout(tipo: str, config: dict[str, str]) -> None:
         pass
 
 
-def _graph_settings(sender_hint: str | None = None) -> dict | None:
-    stored_config = load_graph_config()
-    tenant_id = (os.getenv("M365_TENANT_ID") or stored_config.get("tenant_id") or "").strip()
-    client_id = (os.getenv("M365_CLIENT_ID") or stored_config.get("client_id") or "").strip()
+def _graph_settings(sender_hint: str | None = None, user_id: int | None = None) -> dict | None:
+    stored_config = load_graph_config(user_id)
+    tenant_id = (stored_config.get("tenant_id") or os.getenv("M365_TENANT_ID") or "").strip()
+    client_id = (stored_config.get("client_id") or os.getenv("M365_CLIENT_ID") or "").strip()
     client_secret = (
-        os.getenv("M365_CLIENT_SECRET")
-        or stored_config.get("client_secret")
+        stored_config.get("client_secret")
+        or os.getenv("M365_CLIENT_SECRET")
         or ""
     ).strip()
     sender = (
-        os.getenv("M365_SENDER")
-        or stored_config.get("sender")
+        stored_config.get("sender")
+        or os.getenv("M365_SENDER")
         or sender_hint
         or ""
     ).strip()
@@ -193,10 +200,10 @@ def _graph_settings(sender_hint: str | None = None) -> dict | None:
     return None
 
 
-def has_graph_oauth_config(sender_hint: str | None = None) -> bool:
+def has_graph_oauth_config(sender_hint: str | None = None, user_id: int | None = None) -> bool:
     """Indica se existem variáveis de ambiente suficientes para OAuth2 (Graph)."""
 
-    return _graph_settings(sender_hint) is not None
+    return _graph_settings(sender_hint, user_id) is not None
 
 
 @st.cache_data(show_spinner=False, ttl=3300)
@@ -372,6 +379,7 @@ def send_email(
     use_tls: Optional[bool] = None,
     use_ssl: Optional[bool] = None,
     attachments: Optional[list[tuple[str, bytes, Optional[str]]]] = None,
+    user_id: int | None = None,
 ) -> None:
     """Enviar email reutilizando a ligação SMTP em cache."""
 
@@ -396,7 +404,7 @@ def send_email(
     if attachments:
         anexos_para_enviar.extend(attachments)
 
-    graph_cfg = _graph_settings(email_user)
+    graph_cfg = _graph_settings(email_user, user_id)
     if graph_cfg:
         sender_email = graph_cfg["sender"]
         _send_email_via_graph(
