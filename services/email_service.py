@@ -6,7 +6,9 @@ dados para evitar duplicação de lógica noutros pontos da aplicação.
 
 from __future__ import annotations
 
+import base64
 import json
+import os
 import smtplib
 import sqlite3
 from email import encoders
@@ -17,6 +19,8 @@ from pathlib import Path
 from typing import Optional
 from mimetypes import guess_type
 
+import msal
+import requests
 import streamlit as st
 
 from db import get_connection
@@ -103,6 +107,97 @@ def save_email_layout(tipo: str, config: dict[str, str]) -> None:
         load_email_layout.clear()
     except AttributeError:
         pass
+
+
+def _graph_settings(sender_hint: str | None = None) -> dict | None:
+    tenant_id = (os.getenv("M365_TENANT_ID") or "").strip()
+    client_id = (os.getenv("M365_CLIENT_ID") or "").strip()
+    client_secret = (os.getenv("M365_CLIENT_SECRET") or "").strip()
+    sender = (os.getenv("M365_SENDER") or sender_hint or "").strip()
+
+    if all([tenant_id, client_id, client_secret, sender]):
+        return {
+            "tenant_id": tenant_id,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "sender": sender,
+        }
+    return None
+
+
+def has_graph_oauth_config(sender_hint: str | None = None) -> bool:
+    """Indica se existem variáveis de ambiente suficientes para OAuth2 (Graph)."""
+
+    return _graph_settings(sender_hint) is not None
+
+
+@st.cache_data(show_spinner=False, ttl=3300)
+def _get_graph_access_token(tenant_id: str, client_id: str, client_secret: str) -> str:
+    """Obter token de acesso para Microsoft Graph (app-only)."""
+
+    app = msal.ConfidentialClientApplication(
+        client_id=client_id,
+        authority=f"https://login.microsoftonline.com/{tenant_id}",
+        client_credential=client_secret,
+    )
+    token = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+    if "access_token" not in token:
+        raise RuntimeError(
+            f"Falha ao obter token OAuth2: {token.get('error_description') or token}"
+        )
+    return str(token["access_token"])
+
+
+def _build_graph_attachment(nome_ficheiro: str, dados: bytes, mime: str | None) -> dict:
+    content_type = mime or guess_type(nome_ficheiro)[0] or "application/octet-stream"
+    return {
+        "@odata.type": "#microsoft.graph.fileAttachment",
+        "name": nome_ficheiro,
+        "contentType": content_type,
+        "contentBytes": base64.b64encode(dados).decode("ascii"),
+    }
+
+
+def _send_email_via_graph(
+    destino: str,
+    assunto: str,
+    corpo: str,
+    sender_email: str,
+    graph_cfg: dict,
+    attachments: list[tuple[str, bytes, Optional[str]]],
+) -> None:
+    access_token = _get_graph_access_token(
+        graph_cfg["tenant_id"], graph_cfg["client_id"], graph_cfg["client_secret"]
+    )
+    message = {
+        "message": {
+            "subject": assunto,
+            "body": {"contentType": "Text", "content": corpo or ""},
+            "from": {"emailAddress": {"address": sender_email}},
+            "toRecipients": [{"emailAddress": {"address": destino}}],
+            "attachments": [
+                _build_graph_attachment(nome, dados, mime)
+                for nome, dados, mime in attachments
+            ],
+        },
+        "saveToSentItems": False,
+    }
+
+    response = requests.post(
+        f"https://graph.microsoft.com/v1.0/users/{sender_email}/sendMail",
+        headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+        json=message,
+        timeout=30,
+    )
+
+    if response.status_code >= 400:
+        try:
+            error_detail = response.json()
+        except ValueError:
+            error_detail = response.text
+        raise RuntimeError(
+            f"Envio via Microsoft Graph falhou ({response.status_code}): {error_detail}"
+        )
 
 
 @st.cache_data(show_spinner=False, ttl=60)
@@ -227,6 +322,25 @@ def send_email(
     email_password = (email_password or "").strip()
     destino = (destino or "").strip()
 
+    anexos_para_enviar: list[tuple[str, bytes, Optional[str]]] = []
+    if pdf_bytes:
+        anexos_para_enviar.append((pdf_filename, pdf_bytes, "application/pdf"))
+    if attachments:
+        anexos_para_enviar.extend(attachments)
+
+    graph_cfg = _graph_settings(email_user)
+    if graph_cfg:
+        sender_email = graph_cfg["sender"]
+        _send_email_via_graph(
+            destino,
+            assunto,
+            corpo,
+            sender_email,
+            graph_cfg,
+            anexos_para_enviar,
+        )
+        return
+
     if not email_user or not email_password:
         raise RuntimeError(
             "O email de origem e a palavra-passe são obrigatórios (sem espaços)."
@@ -292,12 +406,6 @@ def send_email(
     msg["To"] = destino
     msg["Subject"] = assunto
     msg.attach(MIMEText(corpo, "plain"))
-
-    anexos_para_enviar: list[tuple[str, bytes, Optional[str]]] = []
-    if pdf_bytes:
-        anexos_para_enviar.append((pdf_filename, pdf_bytes, "application/pdf"))
-    if attachments:
-        anexos_para_enviar.extend(attachments)
 
     for nome_ficheiro, dados, mime in anexos_para_enviar:
         tipo_mime = mime or guess_type(nome_ficheiro)[0] or "application/octet-stream"

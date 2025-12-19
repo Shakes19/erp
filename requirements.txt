@@ -12,3 +12,5 @@ cryptography
 Pillow
 pypdf
 extract_msg
+msal
+requests
