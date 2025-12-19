@@ -22,11 +22,8 @@ import streamlit as st
 from db import get_connection
 
 
-# Configuração SMTP provisória e forçada para Outlook 365.
-#
-# O projeto está com problemas de envio e precisamos de uma solução rápida, por
-# isso fixamos aqui o servidor/porta e forçamos STARTTLS em vez de depender das
-# configurações guardadas na base de dados.
+# Configuração SMTP por omissão para garantir um fallback funcional quando a
+# base de dados ainda não possui valores guardados.
 DEFAULT_SMTP_CONFIG = {
     "server": "smtp.office365.com",
     "port": 587,
@@ -112,14 +109,53 @@ def save_email_layout(tipo: str, config: dict[str, str]) -> None:
 def get_system_email_config() -> dict:
     """Fetch SMTP settings stored under "Configurações de Sistema > Email".
 
-    Legacy bases de dados podem não possuir a coluna ``ativo`` ou até a própria
-    tabela, por isso são tratadas todas as exceções e devolvida a configuração
-    por omissão quando necessário.
+    Se a tabela/colunas estiverem ausentes (bases legacy), devolve-se a
+    configuração por defeito. Caso contrário, é usado o último registo ativo ou
+    o mais recente disponível.
     """
 
-    # Solução provisória: ignoramos a configuração persistida e devolvemos os
-    # valores fixos do Gmail para garantir STARTTLS na porta 587.
-    return DEFAULT_SMTP_CONFIG.copy()
+    config = DEFAULT_SMTP_CONFIG.copy()
+    conn: sqlite3.Connection | None = None
+
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                "SELECT smtp_server, smtp_port, use_tls, use_ssl "
+                "FROM configuracao_email WHERE ativo = TRUE ORDER BY id DESC LIMIT 1"
+            )
+        except sqlite3.OperationalError:
+            # Bases de dados antigas podem não ter a coluna "ativo".
+            cursor.execute(
+                "SELECT smtp_server, smtp_port, use_tls, use_ssl "
+                "FROM configuracao_email ORDER BY id DESC LIMIT 1"
+            )
+
+        row = cursor.fetchone()
+    except sqlite3.Error:
+        row = None
+    finally:
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
+
+    if row:
+        server, port, use_tls_val, use_ssl_val = row
+
+        if server:
+            config["server"] = server
+        if port:
+            config["port"] = int(port)
+        if use_tls_val is not None:
+            config["use_tls"] = bool(use_tls_val)
+        if use_ssl_val is not None:
+            config["use_ssl"] = bool(use_ssl_val)
+
+    return config
 
 
 @st.cache_resource(ttl=60)
