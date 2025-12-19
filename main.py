@@ -55,6 +55,7 @@ from services.pdf_service import (
 from services.email_service import (
     clear_email_cache,
     get_system_email_config,
+    has_graph_oauth_config,
     load_email_layout,
     save_email_layout,
     send_email,
@@ -3606,10 +3607,11 @@ def enviar_email_orcamento(
             )
             return False
 
+        oauth_disponivel = has_graph_oauth_config(email_user)
         email_password = _obter_palavra_passe_email_sessao()
-        if not email_password:
+        if not email_password and not oauth_disponivel:
             st.error(
-                "Introduza a palavra-passe do email em 'Perfil > Configuração de Email' para esta sessão."
+                "Introduza a palavra-passe do email em 'Perfil > Configuração de Email' para esta sessão ou configure OAuth2 (Microsoft Graph)."
             )
             return False
 
@@ -3857,14 +3859,15 @@ def enviar_email_pedido_fornecedor(
             _registar_estado_envio(False)
             return resultado
 
+        oauth_disponivel = has_graph_oauth_config(email_user)
         email_password = _obter_palavra_passe_email_sessao()
-        if not email_password:
+        if not email_password and not oauth_disponivel:
             mensagem = (
-                f"Email para {fornecedor_nome} não enviado: introduza a palavra-passe do email em 'Perfil > Configuração de Email'."
+                f"Email para {fornecedor_nome} não enviado: introduza a palavra-passe do email em 'Perfil > Configuração de Email' ou configure OAuth2 (Microsoft Graph)."
             )
             resultado["mensagem"] = mensagem
             st.error(
-                "Introduza a palavra-passe do email em 'Perfil > Configuração de Email' para esta sessão."
+                "Introduza a palavra-passe do email em 'Perfil > Configuração de Email' para esta sessão ou configure OAuth2 (Microsoft Graph)."
             )
             _registar_estado_envio(False)
             return resultado

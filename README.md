@@ -94,6 +94,12 @@ aplicadas imediatamente.
 - A palavra-passe de e-mail **não** é armazenada na BD. Define a variável de ambiente `EMAIL_PASSWORD` para permitir o envio de emails.
 - As configurações de e-mail (servidor e porta) podem ser ajustadas em "Configurações > Email".
 - Para envio de e-mails via Gmail, usa uma "App Password" em vez da palavra-passe normal.
+- Para Outlook/Microsoft 365 podes ativar OAuth2 (Graph API) definindo as variáveis de ambiente:
+  - `M365_TENANT_ID`
+  - `M365_CLIENT_ID`
+  - `M365_CLIENT_SECRET`
+  - `M365_SENDER` (email da mailbox que enviará as mensagens)
+  Quando presentes, o sistema envia via Microsoft Graph sem precisar de guardar a palavra-passe SMTP do utilizador.
 
 ### ⏰ Backup automático diário
 
