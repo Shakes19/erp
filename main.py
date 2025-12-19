@@ -57,7 +57,9 @@ from services.email_service import (
     get_system_email_config,
     has_graph_oauth_config,
     load_email_layout,
+    load_graph_config,
     save_email_layout,
+    save_graph_config,
     send_email,
 )
 
@@ -10317,6 +10319,59 @@ elif menu_option == "👤 Perfil":
                     st.success("Dados de email atualizados com sucesso!")
                 else:
                     st.error("Erro ao atualizar dados de email")
+
+            graph_config = load_graph_config()
+            with st.expander("Autenticação Microsoft Graph (OAuth2)", expanded=bool(graph_config.get("tenant_id"))):
+                st.caption(
+                    "Utilize OAuth2 para enviar emails via Microsoft 365 sem guardar palavras-passe SMTP."
+                )
+                with st.form("graph_email_form"):
+                    col_graph_1, col_graph_2 = st.columns(2)
+                    with col_graph_1:
+                        tenant_id_input = st.text_input(
+                            "Tenant ID (Directory ID)",
+                            value=graph_config.get("tenant_id", ""),
+                            help="ID do diretório (GUID) do Azure AD.",
+                        ).strip()
+                        client_id_input = st.text_input(
+                            "Client ID (Application ID)",
+                            value=graph_config.get("client_id", ""),
+                            help="ID da aplicação registada no Azure AD.",
+                        ).strip()
+                    with col_graph_2:
+                        client_secret_input = st.text_input(
+                            "Client Secret",
+                            value=graph_config.get("client_secret", ""),
+                            type="password",
+                            help="Segredo gerado na aplicação do Azure AD.",
+                        ).strip()
+                        sender_email_input = st.text_input(
+                            "Remetente (email da mailbox)",
+                            value=graph_config.get("sender") or (user[4] or ""),
+                            help="Endereço da caixa de correio usada para enviar os emails.",
+                        ).strip()
+
+                    save_graph = st.form_submit_button("💾 Guardar OAuth2")
+
+                if save_graph:
+                    provided_values = [tenant_id_input, client_id_input, client_secret_input, sender_email_input]
+                    if any(provided_values) and not all(provided_values):
+                        st.error(
+                            "Preencha todos os campos do OAuth2 ou deixe-os todos em branco para remover a configuração."
+                        )
+                    else:
+                        save_graph_config(
+                            {
+                                "tenant_id": tenant_id_input,
+                                "client_id": client_id_input,
+                                "client_secret": client_secret_input,
+                                "sender": sender_email_input,
+                            }
+                        )
+                        if all(provided_values):
+                            st.success("Configuração Microsoft Graph guardada com sucesso!")
+                        else:
+                            st.info("Configuração Microsoft Graph removida.")
     else:
         st.error("Utilizador não encontrado")
 
