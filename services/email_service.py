@@ -212,11 +212,57 @@ def send_email(
 ) -> None:
     """Enviar email reutilizando a ligação SMTP em cache."""
 
+    def _coerce_bool(value: object, default: bool) -> bool:
+        if value is None:
+            return default
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "t", "yes", "sim", "on"}:
+                return True
+            if normalized in {"0", "false", "f", "no", "nao", "off"}:
+                return False
+        return bool(value)
+
+    email_user = (email_user or "").strip()
+    email_password = (email_password or "").strip()
+    destino = (destino or "").strip()
+
+    if not email_user or not email_password:
+        raise RuntimeError(
+            "O email de origem e a palavra-passe são obrigatórios (sem espaços)."
+        )
+
     config = get_system_email_config()
-    server_host = smtp_server or config["server"]
+    server_host = (smtp_server or config["server"] or "").strip()
     server_port = smtp_port or config["port"]
-    tls_flag = config.get("use_tls", True) if use_tls is None else use_tls
-    ssl_flag = config.get("use_ssl", False) if use_ssl is None else use_ssl
+    tls_flag = _coerce_bool(config.get("use_tls", True) if use_tls is None else use_tls, True)
+    ssl_flag = _coerce_bool(config.get("use_ssl", False) if use_ssl is None else use_ssl, False)
+
+    host_lower = server_host.lower()
+    is_outlook = any(key in host_lower for key in ("outlook", "office365", "office"))
+
+    # Normalizar protocolo de segurança para evitar combinações inválidas que a
+    # Microsoft rejeita silenciosamente.
+    if server_port == 587:
+        ssl_flag = False
+        tls_flag = True if use_tls is None else bool(tls_flag)
+    elif server_port == 465:
+        ssl_flag = True
+        tls_flag = False
+
+    if ssl_flag and tls_flag:
+        # Priorizar SSL apenas quando o porto o exige; caso contrário manter TLS.
+        if server_port == 465:
+            tls_flag = False
+        else:
+            ssl_flag = False
+
+    if is_outlook and server_port != 587:
+        # Outlook/Office365 apenas aceita STARTTLS em 587; força-se o porto e o
+        # modo corretos para evitar erros de autenticação enganadores.
+        server_port = 587
+        ssl_flag = False
+        tls_flag = True
 
     try:
         server = get_smtp_connection(
@@ -229,8 +275,13 @@ def send_email(
         )
     except smtplib.SMTPAuthenticationError as exc:
         clear_email_cache()
+        hint = (
+            " Confirme que está a usar o porto 587 com STARTTLS ou uma App Password."
+            if is_outlook
+            else ""
+        )
         raise RuntimeError(
-            "Autenticação no servidor SMTP falhou. Verifique o email, a palavra-passe ou utilize uma App Password."
+            "Autenticação no servidor SMTP falhou. Verifique o email, a palavra-passe ou utilize uma App Password." + hint
         ) from exc
     except smtplib.SMTPException:
         clear_email_cache()

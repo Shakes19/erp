@@ -10272,7 +10272,7 @@ elif menu_option == "👤 Perfil":
             user_id = st.session_state.get("user_id")
             has_configured_email_password = has_user_email_password(user_id)
             with st.form("email_form"):
-                email_edit = st.text_input("Username", value=user[4] or "")
+                email_edit = st.text_input("Username", value=user[4] or "").strip()
                 default_pw_value = (
                     EMAIL_PASSWORD_PLACEHOLDER if has_configured_email_password else ""
                 )
@@ -10284,7 +10284,7 @@ elif menu_option == "👤 Perfil":
                         "A palavra-passe é guardada com hash (não reversível). "
                         "Introduza um novo valor para a disponibilizar nesta sessão ou deixe em branco para remover."
                     ),
-                )
+                ).strip()
                 sub_email = st.form_submit_button("💾 Guardar")
 
             if sub_email:
@@ -10293,7 +10293,7 @@ elif menu_option == "👤 Perfil":
                 elif not email_pw_edit:
                     email_password_param = ""
                 else:
-                    email_password_param = email_pw_edit
+                    email_password_param = email_pw_edit.strip()
 
                 if atualizar_utilizador(
                     user[0],
