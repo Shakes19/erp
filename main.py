@@ -3542,6 +3542,7 @@ def configurar_margem_marca(fornecedor_id, marca, margem_percentual):
 # ========================== FUNÇÕES DE EMAIL ==========================
 
 EMAIL_PASSWORD_PLACEHOLDER = "********"
+GRAPH_SECRET_PLACEHOLDER = "********"
 
 
 def _obter_palavra_passe_email_sessao() -> str | None:
@@ -3599,7 +3600,8 @@ def enviar_email_orcamento(
         smtp_port = config_email["port"]
 
         # Credenciais do utilizador atual
-        current_user = obter_utilizador_por_id(st.session_state.get("user_id"))
+        current_user_id = st.session_state.get("user_id")
+        current_user = obter_utilizador_por_id(current_user_id)
         if current_user and current_user[4]:
             email_user = current_user[4]
             nome_utilizador = current_user[3]
@@ -3609,7 +3611,7 @@ def enviar_email_orcamento(
             )
             return False
 
-        oauth_disponivel = has_graph_oauth_config(email_user)
+        oauth_disponivel = has_graph_oauth_config(email_user, current_user_id)
         email_password = _obter_palavra_passe_email_sessao()
         if not email_password and not oauth_disponivel:
             st.error(
@@ -3683,6 +3685,7 @@ def enviar_email_orcamento(
             smtp_port=smtp_port,
             email_user=email_user,
             email_password=email_password,
+            user_id=current_user_id,
         )
         print("✅ Email enviado com sucesso!")
         return True
@@ -3846,7 +3849,8 @@ def enviar_email_pedido_fornecedor(
         smtp_server = config_email["server"]
         smtp_port = config_email["port"]
 
-        current_user = obter_utilizador_por_id(st.session_state.get("user_id"))
+        current_user_id = st.session_state.get("user_id")
+        current_user = obter_utilizador_por_id(current_user_id)
         if current_user and current_user[4]:
             email_user = current_user[4]
             nome_utilizador = current_user[3]
@@ -3861,7 +3865,7 @@ def enviar_email_pedido_fornecedor(
             _registar_estado_envio(False)
             return resultado
 
-        oauth_disponivel = has_graph_oauth_config(email_user)
+        oauth_disponivel = has_graph_oauth_config(email_user, current_user_id)
         email_password = _obter_palavra_passe_email_sessao()
         if not email_password and not oauth_disponivel:
             mensagem = (
@@ -3948,6 +3952,7 @@ def enviar_email_pedido_fornecedor(
             email_user=email_user,
             email_password=email_password,
             attachments=anexos_extra,
+            user_id=current_user_id,
         )
 
         mensagem = f"Email para {fornecedor_nome} enviado com sucesso."
@@ -10320,7 +10325,7 @@ elif menu_option == "👤 Perfil":
                 else:
                     st.error("Erro ao atualizar dados de email")
 
-            graph_config = load_graph_config()
+            graph_config = load_graph_config(user[0])
             with st.expander("Autenticação Microsoft Graph (OAuth2)", expanded=bool(graph_config.get("tenant_id"))):
                 st.caption(
                     "Utilize OAuth2 para enviar emails via Microsoft 365 sem guardar palavras-passe SMTP."
@@ -10339,9 +10344,14 @@ elif menu_option == "👤 Perfil":
                             help="ID da aplicação registada no Azure AD.",
                         ).strip()
                     with col_graph_2:
+                        secret_display_value = (
+                            GRAPH_SECRET_PLACEHOLDER
+                            if graph_config.get("client_secret")
+                            else ""
+                        )
                         client_secret_input = st.text_input(
                             "Client Secret",
-                            value=graph_config.get("client_secret", ""),
+                            value=secret_display_value,
                             type="password",
                             help="Segredo gerado na aplicação do Azure AD.",
                         ).strip()
@@ -10354,7 +10364,17 @@ elif menu_option == "👤 Perfil":
                     save_graph = st.form_submit_button("💾 Guardar OAuth2")
 
                 if save_graph:
-                    provided_values = [tenant_id_input, client_id_input, client_secret_input, sender_email_input]
+                    if (
+                        graph_config.get("client_secret")
+                        and client_secret_input == GRAPH_SECRET_PLACEHOLDER
+                    ):
+                        effective_secret = graph_config.get("client_secret", "")
+                    elif not client_secret_input:
+                        effective_secret = ""
+                    else:
+                        effective_secret = client_secret_input
+
+                    provided_values = [tenant_id_input, client_id_input, effective_secret, sender_email_input]
                     if any(provided_values) and not all(provided_values):
                         st.error(
                             "Preencha todos os campos do OAuth2 ou deixe-os todos em branco para remover a configuração."
@@ -10364,9 +10384,10 @@ elif menu_option == "👤 Perfil":
                             {
                                 "tenant_id": tenant_id_input,
                                 "client_id": client_id_input,
-                                "client_secret": client_secret_input,
+                                "client_secret": effective_secret,
                                 "sender": sender_email_input,
-                            }
+                            },
+                            user_id=user[0],
                         )
                         if all(provided_values):
                             st.success("Configuração Microsoft Graph guardada com sucesso!")
