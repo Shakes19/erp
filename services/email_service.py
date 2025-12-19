@@ -36,6 +36,7 @@ DEFAULT_SMTP_CONFIG = {
 }
 
 EMAIL_LAYOUT_FILE = Path("email_layout.json")
+GRAPH_CONFIG_FILE = Path("graph_config.json")
 
 DEFAULT_EMAIL_LAYOUT = {
     "cotacao_cliente": {
@@ -69,6 +70,63 @@ DEFAULT_EMAIL_LAYOUT = {
         ),
     },
 }
+
+
+def _load_graph_config_file() -> dict:
+    if not GRAPH_CONFIG_FILE.exists():
+        return {}
+
+    try:
+        with GRAPH_CONFIG_FILE.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def load_graph_config() -> dict:
+    """Return the stored Microsoft Graph OAuth2 configuration."""
+
+    data = _load_graph_config_file()
+    return {
+        "tenant_id": str(data.get("tenant_id") or "").strip(),
+        "client_id": str(data.get("client_id") or "").strip(),
+        "client_secret": str(data.get("client_secret") or "").strip(),
+        "sender": str(data.get("sender") or "").strip(),
+    }
+
+
+def save_graph_config(config: dict) -> None:
+    """Persist Microsoft Graph OAuth2 configuration to disk."""
+
+    payload = {
+        key: str(config.get(key) or "").strip()
+        for key in ("tenant_id", "client_id", "client_secret", "sender")
+    }
+
+    cleaned = {k: v for k, v in payload.items() if v}
+
+    if cleaned:
+        with GRAPH_CONFIG_FILE.open("w", encoding="utf-8") as handle:
+            json.dump(cleaned, handle, ensure_ascii=False, indent=2)
+    else:
+        GRAPH_CONFIG_FILE.unlink(missing_ok=True)
+
+    for env_key, value in (
+        ("M365_TENANT_ID", payload.get("tenant_id", "")),
+        ("M365_CLIENT_ID", payload.get("client_id", "")),
+        ("M365_CLIENT_SECRET", payload.get("client_secret", "")),
+        ("M365_SENDER", payload.get("sender", "")),
+    ):
+        if value:
+            os.environ[env_key] = value
+        elif env_key in os.environ:
+            del os.environ[env_key]
+
+    try:
+        load_graph_config.clear()
+    except AttributeError:
+        pass
 
 
 def _load_email_layout_file() -> dict:
@@ -110,10 +168,20 @@ def save_email_layout(tipo: str, config: dict[str, str]) -> None:
 
 
 def _graph_settings(sender_hint: str | None = None) -> dict | None:
-    tenant_id = (os.getenv("M365_TENANT_ID") or "").strip()
-    client_id = (os.getenv("M365_CLIENT_ID") or "").strip()
-    client_secret = (os.getenv("M365_CLIENT_SECRET") or "").strip()
-    sender = (os.getenv("M365_SENDER") or sender_hint or "").strip()
+    stored_config = load_graph_config()
+    tenant_id = (os.getenv("M365_TENANT_ID") or stored_config.get("tenant_id") or "").strip()
+    client_id = (os.getenv("M365_CLIENT_ID") or stored_config.get("client_id") or "").strip()
+    client_secret = (
+        os.getenv("M365_CLIENT_SECRET")
+        or stored_config.get("client_secret")
+        or ""
+    ).strip()
+    sender = (
+        os.getenv("M365_SENDER")
+        or stored_config.get("sender")
+        or sender_hint
+        or ""
+    ).strip()
 
     if all([tenant_id, client_id, client_secret, sender]):
         return {
