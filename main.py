@@ -4024,24 +4024,33 @@ class InquiryPDF(FPDF):
         "title": "INQUIRY",
         "font": "Helvetica",
         "font_style": "B",
-        "font_size": 16,
-        "spacing": 4,
-        "line_height": 5,
-        "metadata_font": {"font": "Helvetica", "font_style": "B", "font_size": 10},
-        "metadata_value_font": {
-            "font": "Helvetica",
-            "font_style": "",
-            "font_size": 10,
-        },
+        "font_size": 18,
+        "title_color": "#1d1d1f",
+        "title_align": "L",
+        "title_height": 10,
+        "title_spacing": 6,
+        "after_title_spacing": 6,
+        "line_height": 6,
+        "padding_top": 14,
+        "recipient_label": "Supplier",
+        "recipient_label_font": {"font": "Helvetica", "font_style": "B", "font_size": 9},
+        "metadata_font": {"font": "Helvetica", "font_style": "B", "font_size": 9},
+        "metadata_value_font": {"font": "Helvetica", "font_style": "", "font_size": 9},
+        "metadata_label_color": "#4a4d52",
+        "metadata_value_color": "#0f141a",
+        "metadata_box_fill": "#f4f6f8",
+        "metadata_order": ["Date", "Reference", "Page"],
         "address_font": {"font": "Helvetica", "font_style": "", "font_size": 10},
+        "address_color": "#1d1d1f",
         "company_font": {"font": "Helvetica", "font_style": "", "font_size": 9},
+        "company_color": "#4a4d52",
     }
 
     DEFAULT_BODY = {
         "font": "Helvetica",
         "font_style": "",
-        "font_size": 11,
-        "reference_spacing": 4,
+        "font_size": 10,
+        "reference_spacing": 6,
         "intro_spacing": 4,
         "intro_text": "Please quote us for:",
         "greeting_named": "Dear Mr./Ms. {nome_contacto},",
@@ -4054,14 +4063,18 @@ class InquiryPDF(FPDF):
         "alignments": ["C", "C", "C", "C", "L"],
         "font": "Helvetica",
         "font_style": "B",
-        "font_size": 11,
+        "font_size": 9,
         "header_height": 8,
-        "header_spacing": 4,
+        "header_spacing": 5,
         "row_font": "Helvetica",
         "row_font_style": "",
-        "row_font_size": 10,
-        "row_height": 5,
-        "row_spacing": 3,
+        "row_font_size": 9,
+        "row_height": 6,
+        "row_spacing": 7,
+        "header_fill": "#202428",
+        "header_text_color": "#ffffff",
+        "body_text_color": "#0f141a",
+        "border_color": "#dfe3e8",
     }
 
     def __init__(self, config=None):
@@ -4112,6 +4125,26 @@ class InquiryPDF(FPDF):
             )
         return fallback
 
+    @staticmethod
+    def _color_tuple(value, default=(0, 0, 0)):
+        if isinstance(value, (list, tuple)) and len(value) == 3:
+            try:
+                return tuple(int(max(0, min(255, float(v)))) for v in value)
+            except (TypeError, ValueError):
+                return default
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("#") and len(text) in (4, 7):
+                try:
+                    if len(text) == 4:
+                        r, g, b = (int(text[i] * 2, 16) for i in (1, 2, 3))
+                    else:
+                        r, g, b = (int(text[i:i+2], 16) for i in (1, 3, 5))
+                    return (r, g, b)
+                except ValueError:
+                    return default
+        return default
+
     # ------------------------------------------------------------------
     #  Overrides de escrita para garantir segurança com caracteres
     #  Unicode fora do intervalo Latin-1.
@@ -4152,33 +4185,19 @@ class InquiryPDF(FPDF):
     #  Header e Footer
     # ------------------------------------------------------------------
     def header(self):
-        """Cabeçalho com duas colunas e grelha de metadados"""
+        """Cabeçalho com layout moderno alinhado ao PDF de cotação."""
         header_cfg = self._header_cfg()
         logo_cfg = header_cfg.get("logo", {})
         logo_path = logo_cfg.get("path", self.cfg.get("logo_path", LOGO_PATH))
         logo_bytes = self.cfg.get("logo_bytes")
 
-        line_height = header_cfg.get("line_height", 5)
+        content_width = self.w - self.l_margin - self.r_margin
+        left_w = content_width * 0.55
+        right_w = content_width - left_w
+        start_y = header_cfg.get("padding_top", 14)
 
-        # Grelha de metadados no lado esquerdo
-        meta = self.recipient.get("metadata", {})
-        meta.setdefault("Page", str(self.page_no()))
-        start_y = 15
-        for label, value in meta.items():
-            self.set_xy(15, start_y)
-            self.set_font(*self._font_tuple(header_cfg.get("metadata_font"), ("Helvetica", "B", 10)))
-            self.cell(25, line_height, f"{label}:")
-            self.set_font(*self._font_tuple(header_cfg.get("metadata_value_font"), ("Helvetica", "", 10)))
-            # ``FPDF.cell`` internally calls ``replace`` on the value passed in,
-            # which fails if a non-string (e.g. an int) is provided.  Converting
-            # to ``str`` ensures metadata like numeric references or dates are
-            # handled without errors when generating PDFs.
-            self.cell(45, line_height, str(value), ln=1)
-            start_y += line_height
-
-        # Bloco do destinatário abaixo dos metadados
-        address_line_height = header_cfg.get("address_line_height", line_height)
-        self.set_xy(15, start_y + address_line_height)
+        # Bloco do destinatário (lado esquerdo)
+        address_line_height = header_cfg.get("address_line_height", header_cfg.get("line_height", 6))
         recip = self.recipient.get("address", [])
         recipient_lines: list[str] = []
         for line in recip:
@@ -4188,21 +4207,29 @@ class InquiryPDF(FPDF):
                 clean = sub_line.strip()
                 if clean:
                     recipient_lines.append(clean)
+        self.set_xy(self.l_margin, start_y)
+        recipient_label = header_cfg.get("recipient_label", "")
+        if recipient_label:
+            self.set_font(*self._font_tuple(header_cfg.get("recipient_label_font"), ("Helvetica", "B", 9)))
+            self.set_text_color(*self._color_tuple(header_cfg.get("metadata_label_color"), (74, 77, 82)))
+            self.cell(left_w, address_line_height, recipient_label, ln=1)
         self.set_font(*self._font_tuple(header_cfg.get("address_font"), ("Helvetica", "", 10)))
+        self.set_text_color(*self._color_tuple(header_cfg.get("address_color"), (29, 29, 31)))
         for line in recipient_lines:
             # Garantir que cada linha é string para evitar erros de ``replace``
             # caso algum campo seja numérico.
-            self.cell(80, address_line_height, str(line), ln=1)
-            start_y += address_line_height
+            self.cell(left_w, address_line_height, str(line), ln=1)
+        left_end_y = self.get_y()
 
         # Bloco da empresa (logo + contactos) no lado direito
-        max_h = 30  # altura máxima para evitar sobreposição com contactos
-        logo_w = logo_cfg.get("w", 70)
-        x_logo = logo_cfg.get("x", self.w - self.r_margin - logo_w)
-        y_logo = logo_cfg.get("y", 15)
+        max_h = logo_cfg.get("max_h", 55)
+        logo_w = logo_cfg.get("w", 80)
+        logo_top = max(float(logo_cfg.get("top", start_y)), start_y, self.t_margin)
+        x_right = self.l_margin + left_w
         def _draw_logo(path_or_bytes):
             """Desenha logo redimensionando para altura máxima."""
 
+            nonlocal logo_w, logo_bottom
             if isinstance(path_or_bytes, bytes):
                 img = Image.open(BytesIO(path_or_bytes))
             else:
@@ -4226,14 +4253,16 @@ class InquiryPDF(FPDF):
                         tmp.write(path_or_bytes)
                         tmp_path = tmp.name
                     try:
-                        self.image(tmp_path, x_logo, y_logo, logo_w_adj, h_logo)
+                        self.image(tmp_path, self.w - self.r_margin - logo_w_adj, logo_top, logo_w_adj, h_logo)
                     finally:
                         os.remove(tmp_path)
                 else:
-                    self.image(path_or_bytes, x_logo, y_logo, logo_w_adj, h_logo)
+                    self.image(path_or_bytes, self.w - self.r_margin - logo_w_adj, logo_top, logo_w_adj, h_logo)
+                logo_bottom = logo_top + h_logo
             finally:
                 img.close()
 
+        logo_bottom: float | None = None
         if logo_bytes:
             _draw_logo(logo_bytes)
         elif os.path.exists(logo_path):
@@ -4242,12 +4271,65 @@ class InquiryPDF(FPDF):
             "company_lines",
             ["Ricardo Nogueira", "Rua Exemplo 123", "4455-123 Porto", "Portugal"],
         )
-        self.set_xy(self.w - 15 - 70, 45)
-        self.set_font(*self._font_tuple(header_cfg.get("company_font"), ("Helvetica", "", 9)))
-        self.multi_cell(70, 4, "\n".join(company_lines), align="R")
 
-        # Ajustar posição para início do corpo
-        self.set_y(70)
+        top_row_end = max(left_end_y, logo_bottom or start_y)
+        current_y = top_row_end + 4
+
+        meta = dict(self.recipient.get("metadata", {}))
+        meta.setdefault("Page", str(self.page_no()))
+        meta_order = header_cfg.get("metadata_order") or list(meta.keys())
+        meta_lines: list[tuple[str, str]] = []
+        for label in meta_order:
+            if label in meta:
+                meta_lines.append((label, str(meta[label]) if meta[label] is not None else ""))
+        meta_label_set = {label for label, _ in meta_lines}
+        for label, value in meta.items():
+            if label not in meta_label_set:
+                meta_lines.append((label, str(value) if value is not None else ""))
+
+        meta_box_fill = self._color_tuple(header_cfg.get("metadata_box_fill"), (244, 246, 248))
+        meta_label_color = self._color_tuple(header_cfg.get("metadata_label_color"), (74, 77, 82))
+        meta_value_color = self._color_tuple(header_cfg.get("metadata_value_color"), (15, 20, 26))
+        line_height = header_cfg.get("line_height", 6)
+        box_height = max(line_height * len(meta_lines), 18)
+        self.set_draw_color(*meta_box_fill)
+        self.set_fill_color(*meta_box_fill)
+        self.set_xy(self.l_margin, current_y)
+        self.rect(self.l_margin, current_y, left_w, box_height, style="F")
+        label_font = header_cfg.get("metadata_font")
+        value_font = header_cfg.get("metadata_value_font")
+        meta_start_y = current_y + 1
+        for idx, (label, value) in enumerate(meta_lines):
+            line_y = meta_start_y + idx * line_height
+            self.set_xy(self.l_margin + 2, line_y)
+            self.set_font(*self._font_tuple(label_font, ("Helvetica", "B", 9)))
+            self.set_text_color(*meta_label_color)
+            self.cell(left_w / 2.4, line_height, label)
+            self.set_font(*self._font_tuple(value_font, ("Helvetica", "", 9)))
+            self.set_text_color(*meta_value_color)
+            self.cell(left_w / 2, line_height, value, ln=1, align="R")
+
+        current_y = max(meta_start_y + len(meta_lines) * line_height, current_y + box_height)
+
+        if company_lines:
+            self.set_xy(x_right, current_y - box_height)
+            self.set_font(*self._font_tuple(header_cfg.get("company_font"), ("Helvetica", "", 9)))
+            self.set_text_color(*self._color_tuple(header_cfg.get("company_color"), (74, 77, 82)))
+            self.multi_cell(right_w, 4, "\n".join(company_lines), align="R")
+            current_y = max(current_y, self.get_y())
+
+        self.set_y(current_y + header_cfg.get("title_spacing", 6))
+        self.set_text_color(*self._color_tuple(header_cfg.get("title_color"), (29, 29, 31)))
+        self.set_font(*self._font_tuple(header_cfg, ("Helvetica", "B", 18)))
+        self.cell(
+            content_width,
+            header_cfg.get("title_height", 10),
+            header_cfg.get("title", "INQUIRY"),
+            ln=1,
+            align=header_cfg.get("title_align", "L"),
+        )
+        self.ln(header_cfg.get("after_title_spacing", 6))
+        self.set_text_color(0, 0, 0)
 
     def footer(self):
         """Rodapé com linha e detalhes bancários"""
@@ -4476,15 +4558,19 @@ class InquiryPDF(FPDF):
     def table_header(self):
         table_cfg = self._table_cfg()
         col_w = self._table_col_widths()
-        self.set_font(*self._font_tuple(table_cfg, ("Helvetica", "B", 11)))
+        self.set_font(*self._font_tuple(table_cfg, ("Helvetica", "B", 9)))
         headers = table_cfg.get("headers", self.DEFAULT_TABLE["headers"])
         aligns = table_cfg.get("alignments", self.DEFAULT_TABLE["alignments"])
         header_height = table_cfg.get("header_height", 8)
+        self.set_fill_color(*self._color_tuple(table_cfg.get("header_fill"), (32, 36, 40)))
+        self.set_text_color(*self._color_tuple(table_cfg.get("header_text_color"), (255, 255, 255)))
+        self.set_draw_color(*self._color_tuple(table_cfg.get("header_fill"), (32, 36, 40)))
         for w, h, a in zip(col_w, headers, aligns):
-            self.cell(w, header_height, h, align=a, border="B")
+            self.cell(w, header_height, h, align=a, border=1, fill=True)
         # Move below header row and add uma linha em branco antes do primeiro item
         self.ln()
-        spacing = table_cfg.get("header_spacing", 4)
+        self.set_text_color(*self._color_tuple(table_cfg.get("body_text_color"), (15, 20, 26)))
+        spacing = table_cfg.get("header_spacing", 5)
         if spacing:
             self.ln(spacing)
 
@@ -4499,6 +4585,7 @@ class InquiryPDF(FPDF):
             "font_size": table_cfg.get("row_font_size", 10),
         }
         self.set_font(*self._font_tuple(row_font, ("Helvetica", "", 10)))
+        self.set_draw_color(*self._color_tuple(table_cfg.get("border_color"), (223, 227, 232)))
         # Preparar texto do item
         # ``descricao`` might be ``None`` if the item was partially filled in
         # the UI, so fall back to an empty string before splitting.
@@ -4582,6 +4669,7 @@ class InquiryPDF(FPDF):
             "address": [l for l in addr_lines if l],
             "metadata": {
                 "Date": data,
+                "Reference": referencia,
             },
         }
         self.add_page()
