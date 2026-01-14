@@ -5103,7 +5103,7 @@ class ClientQuotationPDF(InquiryPDF):
         shipping_number = self._parse_number(shipping_time)
         if eta_number is not None or shipping_number is not None:
             total_eta = (eta_number or 0) + (shipping_number or 0)
-            eta_display = "" if total_eta == 0 else self._format_number(total_eta)
+            eta_display = "" if total_eta == 0 else f"{self._format_number(total_eta)} Weeks"
         elif eta not in (None, ""):
             eta_display = str(eta)
         else:
@@ -6505,7 +6505,7 @@ def responder_cotacao_dialog(cotacao):
 
                     with col_prazo:
                         prazo = st.number_input(
-                            "Prazo (dias)",
+                            "Prazo (semanas)",
                             min_value=0,
                             step=1,
                             value=int(artigo.get("prazo") or 0),
@@ -6759,7 +6759,7 @@ def criar_cotacao_cliente_dialog(
                 help_linhas.append(f"Fornecedor: {fornecedor_nome}")
             prazo = resposta.get("prazo_entrega")
             if prazo:
-                help_linhas.append(f"Prazo de entrega: {prazo} dia(s)")
+                help_linhas.append(f"Prazo de entrega: {prazo} semana(s)")
             if validade_fmt:
                 help_linhas.append(f"Validade: {validade_fmt}")
             help_text = "\n".join([linha for linha in help_linhas if linha]) or None
@@ -10823,7 +10823,7 @@ elif menu_option == "⚙️ Configurações":
                         morada_emp = st.text_area("Morada", height=120)
                         cond_pag_emp = st.text_input("Condições Pagamento")
                         tempo_envio_emp = st.number_input(
-                            "Tempo de envio (dias)", min_value=0, step=1, value=0
+                            "Tempo de envio (semanas)", min_value=0, step=1, value=0
                         )
                         btn_add_empresa_cols = st.columns([1, 0.4])
                         with btn_add_empresa_cols[1]:
@@ -10856,7 +10856,7 @@ elif menu_option == "⚙️ Configurações":
                                     "Condições Pagamento", emp[3] or "",
                                 )
                                 tempo_envio_edit = st.number_input(
-                                    "Tempo de envio (dias)",
+                                    "Tempo de envio (semanas)",
                                     min_value=0,
                                     step=1,
                                     value=int(emp[4] or 0),
