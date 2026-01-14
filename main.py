@@ -4486,11 +4486,6 @@ class InquiryPDF(FPDF):
 
     def add_title(self):
         header_cfg = self._header_cfg()
-        self.set_font(*self._font_tuple(header_cfg, ("Helvetica", "B", 16)))
-        title = header_cfg.get("title", "INQUIRY")
-        height = header_cfg.get("title_height", 8)
-        self.cell(0, height, title, ln=1)
-
         info_lines: list[tuple[str, str]] = []
         nome_final = (self.final_client_name or "").strip()
         pais_final = (self.final_client_country or "").strip()
