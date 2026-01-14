@@ -6098,13 +6098,13 @@ def mostrar_dialogo_editar_artigo() -> None:
                 cancelar = st.form_submit_button(
                     "Cancelar",
                     type="secondary",
-                    width="stretch",
+                    use_container_width=True,
                 )
             with col_botoes[1]:
                 guardar = st.form_submit_button(
                     "Guardar alterações",
                     type="primary",
-                    width="stretch",
+                    use_container_width=True,
                 )
 
         if cancelar:
@@ -6609,10 +6609,10 @@ def responder_cotacao_dialog(cotacao):
             )
 
             with col1:
-                submeter = st.form_submit_button("💾 Guardar", type="primary", width="stretch")
+                submeter = st.form_submit_button("💾 Guardar", type="primary", use_container_width=True)
 
             with col2:
-                cancelar = st.form_submit_button("❌ Cancelar", type="secondary", width="stretch")
+                cancelar = st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True)
 
         if submeter:
             respostas_validas = [r for r in respostas if r[1] > 0]
@@ -7521,7 +7521,7 @@ with st.sidebar:
     st.markdown("---")
 
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("Sair", icon="🚪", key="sidebar_logout", width="stretch"):
+    if st.button("Sair", icon="🚪", key="sidebar_logout", use_container_width=True):
         st.session_state.logged_in = False
         st.session_state.role = None
         st.session_state.user_id = None
@@ -7806,11 +7806,11 @@ elif menu_option == "📝 Nova Cotação":
             criar_cotacao = st.form_submit_button(
                 "🚀 Criar e Enviar",
                 type="primary",
-                width="stretch",
+                use_container_width=True,
             )
             criar_processo_sem_email = st.form_submit_button(
                 "📁 Criar (sem envio)",
-                width="stretch",
+                use_container_width=True,
             )
     
     # Processar ações
@@ -8544,7 +8544,7 @@ elif menu_option == "📩 Process Center":
                 key="utilizador_pend",
             )
         with col4:
-            if st.button("🔎 Pesquisar", key="refresh_pend", width="stretch"):
+            if st.button("🔎 Pesquisar", key="refresh_pend", use_container_width=True):
                 st.rerun()
 
         fornecedor_id_pend = fornecedor_options[fornecedor_sel_pend]
@@ -8747,7 +8747,7 @@ elif menu_option == "📩 Process Center":
                 key="utilizador_resp",
             )
         with col4:
-            if st.button("🔎 Pesquisar", key="refresh_resp", width="stretch"):
+            if st.button("🔎 Pesquisar", key="refresh_resp", use_container_width=True):
                 st.rerun()
 
         fornecedor_id_resp = fornecedor_options[fornecedor_sel_resp]
@@ -8890,7 +8890,7 @@ elif menu_option == "📩 Process Center":
                 key="utilizador_arq",
             )
         with col4:
-            if st.button("🔎 Pesquisar", key="refresh_arq", width="stretch"):
+            if st.button("🔎 Pesquisar", key="refresh_arq", use_container_width=True):
                 st.rerun()
 
         fornecedor_id_arq = fornecedor_options[fornecedor_sel_arq]
@@ -9030,7 +9030,7 @@ elif menu_option == "📩 Process Center":
                         )
                     with col_button:
                         submitted = st.form_submit_button(
-                            "🔎 Pesquisar", type="secondary", width="stretch"
+                            "🔎 Pesquisar", type="secondary", use_container_width=True
                         )
 
         if submitted:
@@ -9200,7 +9200,7 @@ elif menu_option == "📩 Process Center":
                                 for artigo in artigos_processo
                             ]
                         )
-                        st.dataframe(df_cliente, width="stretch", hide_index=True)
+                        st.dataframe(df_cliente, use_container_width=True, hide_index=True)
                     else:
                         st.info("Nenhum artigo registado para este processo.")
 
@@ -9330,7 +9330,7 @@ elif menu_option == "📩 Process Center":
                                 )
                                 st.dataframe(
                                     df_fornecedor,
-                                    width="stretch",
+                                    use_container_width=True,
                                     hide_index=True,
                                 )
                             else:
@@ -9772,10 +9772,10 @@ elif menu_option == "📊 Relatórios":
                             else:
                                 chart = chart.mark_line(point=True)
 
-                            st.altair_chart(chart, width="stretch")
+                            st.altair_chart(chart, use_container_width=True)
                             st.dataframe(
                                 df_resampled[metrics].round(2),
-                                width="stretch",
+                                use_container_width=True,
                             )
 
 elif menu_option == "📄 PDFs":
@@ -9866,7 +9866,7 @@ elif menu_option == "📄 PDFs":
                 )
             with col_button:
                 submitted = st.form_submit_button(
-                    "🔎 Pesquisar", type="secondary", width="stretch"
+                    "🔎 Pesquisar", type="secondary", use_container_width=True
                 )
 
     if submitted:
@@ -10137,7 +10137,7 @@ elif menu_option == "📦 Artigos":
                 <div class="stVerticalBlock"></div>
             """, unsafe_allow_html=True)
 
-            submitted = st.button("🔎 Pesquisar", type="secondary", width="stretch")
+            submitted = st.button("🔎 Pesquisar", type="secondary", use_container_width=True)
 
         filtro_normalizado = (filtro_artigos or "").strip()
         artigos_catalogo: list[dict[str, object]] = []
@@ -10211,7 +10211,7 @@ elif menu_option == "📦 Artigos":
                         if st.button(
                             "✏️",
                             key=f"editar_artigo_{artigo_id}",
-                            width="stretch",
+                            use_container_width=True,
                         ):
                             st.session_state["artigo_em_edicao"] = artigo
                             st.session_state["artigo_em_edicao_key"] = str(artigo_id)
@@ -10295,7 +10295,7 @@ elif menu_option == "📦 Artigos":
                 _, col_submit = st.columns([1, 0.3])
                 with col_submit:
                     submitted = st.form_submit_button(
-                        "➕ Adicionar", width="stretch"
+                        "➕ Adicionar", use_container_width=True
                     )
 
         if submitted:
@@ -10565,7 +10565,7 @@ elif menu_option == "⚙️ Configurações":
                         with btn_add_forn_cols[1]:
                             adicionar_fornecedor = st.form_submit_button(
                                 "➕ Adicionar",
-                                width="stretch",
+                                use_container_width=True,
                             )
 
                     if adicionar_fornecedor:
@@ -10705,7 +10705,7 @@ elif menu_option == "⚙️ Configurações":
                             with btn_add_marca_cols[1]:
                                 adicionar_marca = st.form_submit_button(
                                     "➕ Adicionar",
-                                    width="stretch",
+                                    use_container_width=True,
                                 )
 
                         if adicionar_marca:
@@ -10829,7 +10829,7 @@ elif menu_option == "⚙️ Configurações":
                         with btn_add_empresa_cols[1]:
                             adicionar_empresa = st.form_submit_button(
                                 "➕ Adicionar",
-                                width="stretch",
+                                use_container_width=True,
                             )
 
                     if adicionar_empresa:
@@ -10868,7 +10868,7 @@ elif menu_option == "⚙️ Configurações":
                                         unsafe_allow_html=True,
                                     )
                                     guardar_empresa = st.form_submit_button(
-                                        "💾 Guardar", width="stretch"
+                                        "💾 Guardar", use_container_width=True
                                     )
                                     st.markdown("</div>", unsafe_allow_html=True)
                                 with col_eliminar:
@@ -10877,7 +10877,7 @@ elif menu_option == "⚙️ Configurações":
                                         unsafe_allow_html=True,
                                     )
                                     eliminar_empresa = st.form_submit_button(
-                                        "🗑️ Eliminar", width="stretch"
+                                        "🗑️ Eliminar", use_container_width=True
                                     )
                                     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -10920,7 +10920,7 @@ elif menu_option == "⚙️ Configurações":
                             with btn_add_comercial_cols[1]:
                                 adicionar_comercial = st.form_submit_button(
                                     "➕ Adicionar",
-                                    width="stretch",
+                                    use_container_width=True,
                                 )
 
                         if adicionar_comercial:
@@ -11011,7 +11011,7 @@ elif menu_option == "⚙️ Configurações":
                         with btn_add_user_cols[1]:
                             adicionar_utilizador = st.form_submit_button(
                                 "➕ Adicionar",
-                                width="stretch",
+                                use_container_width=True,
                             )
 
                     if adicionar_utilizador:
@@ -11087,7 +11087,7 @@ elif menu_option == "⚙️ Configurações":
                     with btn_add_unidade_cols[1]:
                         adicionar_unidade = st.form_submit_button(
                             "➕ Adicionar",
-                            width="stretch",
+                            use_container_width=True,
                         )
 
                 if adicionar_unidade:
@@ -11348,7 +11348,7 @@ elif menu_option == "⚙️ Configurações":
             with create_col:
                 create_col.subheader("Backup")
 
-                if create_col.button("💾 Criar Backup", width="stretch"):
+                if create_col.button("💾 Criar Backup", use_container_width=True):
                     backup_path = backup_database()
                     if backup_path:
                         create_col.success(f"Backup criado: {backup_path}")
@@ -11362,7 +11362,7 @@ elif menu_option == "⚙️ Configurações":
                             data=backup_data,
                             file_name=backup_path,
                             mime="application/octet-stream",
-                            width="stretch",
+                            use_container_width=True,
                         )
 
             with restore_col:
@@ -11379,7 +11379,7 @@ elif menu_option == "⚙️ Configurações":
                     "⚠️ Restaurar Backup",
                     type="secondary",
                     disabled=restore_disabled,
-                    width="stretch",
+                    use_container_width=True,
                 ) and uploaded_backup:
                     # Guardar ficheiro temporário
                     temp_path = "temp_restore.db"
@@ -11427,7 +11427,7 @@ elif menu_option == "⚙️ Configurações":
                 st.divider()
                 col_preview, col_download = st.columns([2, 1])
                 with col_preview:
-                    if st.button("👁️ Pré-visualizar PDF de Cotação", width="stretch"):
+                    if st.button("👁️ Pré-visualizar PDF de Cotação", use_container_width=True):
                         try:
                             cfg_preview = json.loads(st.session_state.get(f"layout_{tipo_layout}", config_texto))
                         except json.JSONDecodeError as e:
@@ -11450,7 +11450,7 @@ elif menu_option == "⚙️ Configurações":
                             data=preview_bytes,
                             file_name="quotation_preview.pdf",
                             mime="application/pdf",
-                            width="stretch",
+                            use_container_width=True,
                         )
 
         with tab_layout_email:
