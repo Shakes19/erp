@@ -1993,7 +1993,7 @@ def criar_processo_com_artigos(artigos, cliente_id: int | None = None):
         for ordem, art in enumerate(artigos, 1):
             artigo_num = (art.get("artigo_num") or "").strip()
             marca_artigo = (art.get("marca") or "").strip()
-            descricao_artigo = (art.get("descricao") or "").strip()
+            descricao_artigo = normalizar_quebras_linha(art.get("descricao") or "").strip()
             quantidade_artigo = art.get("quantidade", 1)
             unidade_artigo = art.get("unidade", "Peças") or "Peças"
             try:
@@ -2166,7 +2166,7 @@ def criar_rfq(
             for ordem, art in enumerate(artigos, 1):
                 if art.get("descricao", "").strip():
                     marca_art = (art.get("marca") or "").strip()
-                    descricao_art = (art.get("descricao") or "").strip()
+                    descricao_art = normalizar_quebras_linha(art.get("descricao") or "").strip()
                     art["descricao"] = descricao_art
                     art["marca"] = marca_art
                     art["artigo_num"] = (art.get("artigo_num") or "").strip()
@@ -4446,7 +4446,7 @@ class InquiryPDF(FPDF):
             return [texto or ""]
 
         linhas_resultado: list[str] = []
-        texto_normalizado = ensure_latin1(texto)
+        texto_normalizado = normalizar_quebras_linha(ensure_latin1(texto))
 
         for linha_original in texto_normalizado.split("\n"):
             linha = linha_original.strip()
@@ -4884,7 +4884,7 @@ class ClientQuotationPDF(InquiryPDF):
         """Divide texto em linhas respeitando a largura máxima disponível."""
 
         lines = []
-        for part in text.split("\n"):
+        for part in normalizar_quebras_linha(text).split("\n"):
             words = part.split()
             if not words:
                 lines.append("")
