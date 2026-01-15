@@ -127,7 +127,7 @@ def atualizar_campos_artigo_catalogo(
     if info:
         descricao = info.get("descricao")
         if descricao is not None:
-            st.session_state[descricao_key] = descricao
+            st.session_state[descricao_key] = normalizar_quebras_linha(descricao)
 
         unidade = info.get("unidade")
         if unidade:
