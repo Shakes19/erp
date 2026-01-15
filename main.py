@@ -7041,7 +7041,24 @@ def extrair_dados_pdf(pdf_bytes):
 
     itens = []
     padrao_item = re.compile(r"^\s*(\d{3}\.\d{2})\s*(.*)")
-    padrao_piece_qtd = re.compile(r"Piece\s*(\d+)", re.IGNORECASE)
+    padrao_piece_qtd = re.compile(r"(?:Piece\s*(\d+)|(\d+)\s*Piece)", re.IGNORECASE)
+    palavras_quantidade = ("piece", "quantity", "qty")
+
+    def tem_indicador_quantidade(texto_linha: str) -> bool:
+        return any(palavra in texto_linha.lower() for palavra in palavras_quantidade)
+
+    def deve_assumir_quantidade(token_final: str, texto_linha: str) -> bool:
+        if not token_final.isdigit():
+            return False
+        if tem_indicador_quantidade(texto_linha):
+            return True
+        if texto_linha.strip().isdigit():
+            return False
+        return len(token_final) <= 3 and bool(re.search(r"[A-Za-z]", texto_linha))
+
+    def extrair_qtd_match_piece(match: re.Match) -> int | None:
+        grupo = match.group(1) or match.group(2)
+        return int(grupo) if grupo else None
 
     i = 0
     while i < len(linhas_pdf):
@@ -7055,11 +7072,12 @@ def extrair_dados_pdf(pdf_bytes):
 
             tokens = restante.split()
             if tokens and tokens[-1].isdigit():
-                quantidade_item = int(tokens[-1])
-                restante = " ".join(tokens[:-1]).strip()
+                if deve_assumir_quantidade(tokens[-1], restante):
+                    quantidade_item = int(tokens[-1])
+                    restante = " ".join(tokens[:-1]).strip()
             match_piece = padrao_piece_qtd.search(restante)
             if match_piece:
-                quantidade_item = int(match_piece.group(1))
+                quantidade_item = extrair_qtd_match_piece(match_piece)
                 restante = restante[:match_piece.start()].strip()
             if restante:
                 restante_limpo = limpar_ktb(restante)
@@ -7096,7 +7114,7 @@ def extrair_dados_pdf(pdf_bytes):
                     break
                 match_piece = padrao_piece_qtd.search(prox)
                 if match_piece:
-                    quantidade_item = int(match_piece.group(1))
+                    quantidade_item = extrair_qtd_match_piece(match_piece)
                     prox = prox[:match_piece.start()].strip()
                     if not prox:
                         j += 1
@@ -7105,7 +7123,11 @@ def extrair_dados_pdf(pdf_bytes):
                 if quantidade_item is None and tokens and tokens[-1].isdigit():
                     prev_lower = linhas_pdf[j-1].strip().lower() if j > 0 else ""
                     resto_tokens = " ".join(tokens[:-1]).strip()
-                    if resto_tokens or ("quantity" in prev_lower or "piece" in prev_lower):
+                    if (
+                        tem_indicador_quantidade(prox)
+                        or tem_indicador_quantidade(prev_lower)
+                        or deve_assumir_quantidade(tokens[-1], prox)
+                    ):
                         quantidade_item = int(tokens[-1])
                         prox = resto_tokens
                 if prox:
