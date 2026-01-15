@@ -7022,7 +7022,9 @@ def extrair_dados_pdf(pdf_bytes):
         extra = ""
         for linha in reversed(linhas_antes):
             linha = linha.strip()
-            if not linha or linha.lower() in {"quantity %", "unit", "piece", "quantity"} or linha.isdigit():
+            if not linha or linha.lower() in {"quantity %", "unit", "piece", "quantity"}:
+                continue
+            if linha.isdigit() and len(linha) <= 3:
                 continue
             if re.match(r"^[A-Za-z0-9-]+$", linha) and not padrao_item.search(linha):
                 extra = linha + (" " + extra if extra else "")
