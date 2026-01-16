@@ -6536,6 +6536,7 @@ def responder_cotacao_dialog(cotacao):
                     conn_margens.close()
 
             for i, artigo in enumerate(detalhes["artigos"], 1):
+                artigo_key = f"{cotacao['id']}_{artigo['id']}_{i}"
                 st.subheader(f"Artigo {i}: {artigo['artigo_num'] if artigo['artigo_num'] else 'S/N'}")
 
                 # Esquerda: Descrição  |  Direita: resto em grid 3xN
@@ -6546,7 +6547,7 @@ def responder_cotacao_dialog(cotacao):
                     descricao_editada = st.text_area(
                         "Descrição (editável)",
                         value=artigo["descricao"],
-                        key=f"desc_{artigo['id']}",
+                        key=f"desc_{artigo_key}",
                         height=223,
                     )
 
@@ -6559,14 +6560,14 @@ def responder_cotacao_dialog(cotacao):
                         hs_code = st.text_input(
                             "HS Code",
                             value=artigo.get("hs_code") or "",
-                            key=f"hs_{artigo['id']}",
+                            key=f"hs_{artigo_key}",
                         )
 
                     with col_pais:
                         pais_origem = st.text_input(
                             "País Origem",
                             value=artigo.get("pais_origem") or "",
-                            key=f"pais_{artigo['id']}",
+                            key=f"pais_{artigo_key}",
                         )
 
                     with col_peso:
@@ -6575,7 +6576,7 @@ def responder_cotacao_dialog(cotacao):
                             min_value=0.0,
                             step=0.1,
                             value=float(artigo.get("peso") or 0.0),
-                            key=f"peso_{artigo['id']}",
+                            key=f"peso_{artigo_key}",
                         )
 
                     # Puxar a linha de baixo para cima (reduzir margem vertical)
@@ -6593,7 +6594,7 @@ def responder_cotacao_dialog(cotacao):
                             f"Qtd (Original: {quantidade_original})",
                             min_value=1,
                             value=quantidade_original,
-                            key=f"qtd_{artigo['id']}",
+                            key=f"qtd_{artigo_key}",
                         )
 
                     with col_prazo:
@@ -6602,7 +6603,7 @@ def responder_cotacao_dialog(cotacao):
                             min_value=0,
                             step=1,
                             value=int(artigo.get("prazo") or 0),
-                            key=f"prazo_{artigo['id']}",
+                            key=f"prazo_{artigo_key}",
                         )
 
                     with col_validade:
@@ -6610,7 +6611,7 @@ def responder_cotacao_dialog(cotacao):
                         validade_preco = st.date_input(
                             "Validade Preço",
                             value=validade_default,
-                            key=f"val_{artigo['id']}",
+                            key=f"val_{artigo_key}",
                         )
 
                     # 3ª LINHA: Preço Compra ocupa toda a largura da coluna direita
@@ -6625,7 +6626,7 @@ def responder_cotacao_dialog(cotacao):
                             "Preço Compra (EUR)",
                             min_value=0.0,
                             step=0.01,
-                            key=f"custo_{artigo['id']}",
+                            key=f"custo_{artigo_key}",
                         )
 
                     with col_desconto:
@@ -6635,7 +6636,7 @@ def responder_cotacao_dialog(cotacao):
                             max_value=100.0,
                             step=0.1,
                             value=0.0,
-                            key=f"desconto_{artigo['id']}",
+                            key=f"desconto_{artigo_key}",
                             help="Percentual de desconto aplicado ao preço de venda.",
                         )
 
