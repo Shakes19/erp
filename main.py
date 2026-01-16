@@ -7095,10 +7095,17 @@ def extrair_dados_pdf(pdf_bytes):
     def tem_indicador_quantidade(texto_linha: str) -> bool:
         return any(palavra in texto_linha.lower() for palavra in palavras_quantidade)
 
+    def tem_numero_isolado_apos_pontuacao(texto_linha: str, token_final: str) -> bool:
+        if not token_final.isdigit() or len(token_final) != 1:
+            return False
+        return bool(re.search(rf"[:,]\s*{re.escape(token_final)}$", texto_linha))
+
     def deve_assumir_quantidade(token_final: str, texto_linha: str) -> bool:
         if re.search(r"\bMOQ\b", texto_linha, re.IGNORECASE):
             return False
         if not token_final.isdigit():
+            return False
+        if tem_numero_isolado_apos_pontuacao(texto_linha, token_final):
             return False
         if tem_indicador_quantidade(texto_linha):
             return True
