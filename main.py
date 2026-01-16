@@ -4024,6 +4024,67 @@ def guardar_pdf_uploads(rfq_id, tipo_pdf_base, ficheiros, *, processo_id=None):
         return False
 
 
+def adicionar_pdf_uploads(rfq_id, tipo_pdf_base, ficheiros, *, processo_id=None):
+    """Adicionar PDFs carregados pelo utilizador na tabela ``pdf_storage`` sem substituir."""
+
+    if not ficheiros:
+        return True
+
+    try:
+        conn = obter_conexao()
+        c = conn.cursor()
+
+        processo_alvo = processo_id or obter_processo_id_por_rfq(rfq_id, cursor=c)
+        if processo_alvo is None:
+            conn.close()
+            st.error("Processo associado à cotação não encontrado para guardar PDF.")
+            return False
+
+        c.execute(
+            """
+            SELECT tipo_pdf
+            FROM pdf_storage
+            WHERE processo_id = ? AND (
+                tipo_pdf = ? OR tipo_pdf LIKE ?
+            )
+            """,
+            (processo_alvo, tipo_pdf_base, f"{tipo_pdf_base}_%"),
+        )
+        existentes = {row[0] for row in c.fetchall()}
+        usados = set(existentes)
+        proximo_indice = 1
+
+        def _proximo_tipo() -> str:
+            nonlocal proximo_indice
+            while f"{tipo_pdf_base}_{proximo_indice}" in usados:
+                proximo_indice += 1
+            tipo = f"{tipo_pdf_base}_{proximo_indice}"
+            usados.add(tipo)
+            proximo_indice += 1
+            return tipo
+
+        for nome_ficheiro, bytes_ in ficheiros:
+            if len(ficheiros) == 1 and tipo_pdf_base not in usados:
+                tipo_pdf = tipo_pdf_base
+                usados.add(tipo_pdf)
+            else:
+                tipo_pdf = _proximo_tipo()
+            c.execute(
+                """
+                INSERT INTO pdf_storage (processo_id, tipo_pdf, pdf_data, tamanho_bytes, nome_ficheiro)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (processo_alvo, tipo_pdf, bytes_, len(bytes_), nome_ficheiro),
+            )
+
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"Erro a guardar PDF: {e}")
+        return False
+
+
 # ========================== CLASSES PDF ==========================
 
 class InquiryPDF(FPDF):
@@ -10072,7 +10133,9 @@ elif menu_option == "📄 PDFs":
                 else:
                     anexos_sem_associacao.append(entrada)
 
-            tab_view, tab_replace = st.tabs(["Visualizar PDFs", "Substituir PDFs"])
+            tab_view, tab_replace, tab_add = st.tabs(
+                ["Visualizar PDFs", "Substituir PDFs", "Adicionar PDF"]
+            )
 
             with tab_view:
                 pedidos_cliente = _entradas_por_prefixo("anexo_cliente")
@@ -10196,6 +10259,67 @@ elif menu_option == "📄 PDFs":
                                 st.rerun()
                 else:
                     st.info("Apenas administradores podem atualizar o PDF.")
+
+            with tab_add:
+                if st.session_state.get("role") == "admin":
+                    opcoes_adicao: list[dict[str, object]] = [
+                        {"label": "Pedido Cliente", "tipo": "anexo_cliente", "rfq_id": None, "multiple": True}
+                    ]
+                    for rfq in rfqs_processo:
+                        fornecedor_nome = rfq.get("fornecedor") or "Fornecedor"
+                        rfq_id = rfq.get("id")
+                        opcoes_adicao.append(
+                            {
+                                "label": f"Pedido Fornecedor - {fornecedor_nome}",
+                                "tipo": f"pedido_fornecedor_rfq_{rfq_id}",
+                                "rfq_id": rfq_id,
+                                "multiple": False,
+                            }
+                        )
+                        opcoes_adicao.append(
+                            {
+                                "label": f"Resposta Fornecedor - {fornecedor_nome}",
+                                "tipo": f"anexo_fornecedor_rfq_{rfq_id}",
+                                "rfq_id": rfq_id,
+                                "multiple": True,
+                            }
+                        )
+                    opcoes_adicao.append(
+                        {"label": "Resposta Cliente", "tipo": "cliente", "rfq_id": None, "multiple": False}
+                    )
+
+                    label_adicao = st.selectbox(
+                        "Tipo de PDF a adicionar",
+                        [item["label"] for item in opcoes_adicao],
+                        key=f"tipo_pdf_adicionar_{processo_id}",
+                    )
+                    selecionado = next(
+                        item for item in opcoes_adicao if item["label"] == label_adicao
+                    )
+                    novo_pdf = st.file_uploader(
+                        "Adicionar PDF",
+                        type=["pdf", "eml", "msg"],
+                        accept_multiple_files=selecionado["multiple"],
+                        key=f"upload_pdf_adicionar_{processo_id}",
+                    )
+                    if novo_pdf and st.button(
+                        "💾 Guardar PDF", key=f"guardar_pdf_adicionar_{processo_id}"
+                    ):
+                        anexos_novos = processar_upload_pdf(novo_pdf)
+                        if anexos_novos:
+                            sucesso = adicionar_pdf_uploads(
+                                selecionado["rfq_id"],
+                                selecionado["tipo"],
+                                anexos_novos,
+                                processo_id=processo_id,
+                            )
+                            if sucesso:
+                                st.success("PDF adicionado com sucesso!")
+                                obter_processos_para_gestao_pdf.clear()
+                                obter_rfqs_por_processo.clear()
+                                st.rerun()
+                else:
+                    st.info("Apenas administradores podem adicionar PDF.")
     else:
         st.info("Nenhum processo disponível")
 
