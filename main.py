@@ -50,6 +50,8 @@ from services.pdf_service import (
     save_pdf_config,
     obter_config_empresa,
     obter_pdf_da_db,
+    converter_eml_para_pdf,
+    converter_msg_para_pdf,
     processar_upload_pdf,
 )
 from services.email_service import (
@@ -3998,6 +4000,13 @@ def guardar_pdf_uploads(rfq_id, tipo_pdf_base, ficheiros, *, processo_id=None):
         )
 
         for idx, (nome_ficheiro, bytes_) in enumerate(ficheiros, start=1):
+            nome_lower = (nome_ficheiro or "").lower()
+            if nome_lower.endswith(".eml"):
+                nome_ficheiro = os.path.splitext(nome_ficheiro)[0] + ".pdf"
+                bytes_ = converter_eml_para_pdf(bytes_)
+            elif nome_lower.endswith(".msg"):
+                nome_ficheiro = os.path.splitext(nome_ficheiro)[0] + ".pdf"
+                bytes_ = converter_msg_para_pdf(bytes_)
             tipo_pdf = tipo_pdf_base if len(ficheiros) == 1 else f"{tipo_pdf_base}_{idx}"
             c.execute(
                 """
