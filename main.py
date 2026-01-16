@@ -6868,11 +6868,15 @@ def extrair_dados_pdf(pdf_bytes):
     """Extrai campos relevantes de um PDF de pedido de cotação."""
     reader = PdfReader(BytesIO(pdf_bytes))
     texto = ""
+    linhas_pdf: list[str] = []
+    page_break_token = "__PAGE_BREAK__"
     for page in reader.pages:
         page_text = page.extract_text() or ""
         texto += page_text + "\n"
-
-    linhas_pdf = texto.splitlines()
+        linhas_pdf.extend(page_text.splitlines())
+        linhas_pdf.append(page_break_token)
+    if linhas_pdf and linhas_pdf[-1] == page_break_token:
+        linhas_pdf.pop()
 
     def linha_apos(label):
         idx = texto.find(label)
@@ -6890,6 +6894,8 @@ def extrair_dados_pdf(pdf_bytes):
             if conteudo in linha:
                 for prox in linhas_pdf[idx + 1:]:
                     prox = prox.strip()
+                    if prox == page_break_token:
+                        continue
                     if prox:
                         return prox
                 break
@@ -7030,6 +7036,8 @@ def extrair_dados_pdf(pdf_bytes):
     artigo = ""
     ktb_codes: list[str] = []
     for idx, linha in enumerate(linhas_pdf):
+        if linha == page_break_token:
+            continue
         if "ktb-code" in linha.lower():
             codigo_ktb = ""
 
@@ -7103,6 +7111,9 @@ def extrair_dados_pdf(pdf_bytes):
     i = 0
     while i < len(linhas_pdf):
         linha = linhas_pdf[i].strip()
+        if linha == page_break_token:
+            i += 1
+            continue
         m = padrao_item.match(linha)
         if m:
             codigo = m.group(1)
@@ -7131,6 +7142,9 @@ def extrair_dados_pdf(pdf_bytes):
                     if not prev:
                         k -= 1
                         continue
+                    if prev == page_break_token:
+                        k -= 1
+                        continue
                     if linha_rodape_ktb(prev):
                         k -= 1
                         continue
@@ -7141,15 +7155,25 @@ def extrair_dados_pdf(pdf_bytes):
                     break
 
             j = i + 1
+            pagina_quebrada = False
             while j < len(linhas_pdf):
                 prox = linhas_pdf[j].strip()
+                if prox == page_break_token:
+                    pagina_quebrada = True
+                    j += 1
+                    continue
                 if not prox:
                     j += 1
                     continue
                 if linha_rodape_ktb(prox):
                     j += 1
                     continue
-                if padrao_item.match(prox) or prox in {"Quantity", "Description"} or prox.endswith(":"):
+                if padrao_item.match(prox):
+                    break
+                if prox in {"Quantity", "Description", "Unit"} or prox.endswith(":"):
+                    if pagina_quebrada:
+                        j += 1
+                        continue
                     break
                 if j + 1 < len(linhas_pdf) and padrao_item.match(linhas_pdf[j + 1].strip()):
                     break
@@ -7180,9 +7204,10 @@ def extrair_dados_pdf(pdf_bytes):
                     prox_limpo = limpar_ktb(prox)
                     if prox_limpo:
                         desc_partes.append(prox_limpo)
+                        pagina_quebrada = False
                 j += 1
 
-            desc = limpar_ktb(" ".join(desc_partes).strip())
+            desc = limpar_ktb("\n".join(desc_partes).strip())
             item_index = len(itens)
             item = {"codigo": codigo, "descricao": desc}
             if item_index < len(ktb_codes):
