@@ -6970,6 +6970,8 @@ def extrair_dados_pdf(pdf_bytes):
         if not texto_desc:
             return ""
         marcadores_rodape = (
+            "pers.haft.ges.",
+            "beteiligungsges.",
             "geschäftsführer:",
             "de2143879",
             "ktb import-export",
@@ -7062,7 +7064,7 @@ def extrair_dados_pdf(pdf_bytes):
                 linha = padrao_item.sub("", linha).strip()
             descricao = linha
             if extra:
-                descricao = f"{descricao} {extra}".strip()
+                descricao = f"{descricao}\n{extra}".strip()
             break
 
     if not artigo and ktb_codes:
@@ -7077,6 +7079,8 @@ def extrair_dados_pdf(pdf_bytes):
         return any(palavra in texto_linha.lower() for palavra in palavras_quantidade)
 
     def deve_assumir_quantidade(token_final: str, texto_linha: str) -> bool:
+        if re.search(r"\bMOQ\b", texto_linha, re.IGNORECASE):
+            return False
         if not token_final.isdigit():
             return False
         if tem_indicador_quantidade(texto_linha):
@@ -7096,7 +7100,7 @@ def extrair_dados_pdf(pdf_bytes):
         if m:
             codigo = m.group(1)
             restante = m.group(2).strip()
-            desc_partes = []
+            desc_partes: list[str] = []
             quantidade_item = None
 
             tokens = restante.split()
@@ -7111,7 +7115,7 @@ def extrair_dados_pdf(pdf_bytes):
             if restante:
                 restante_limpo = limpar_ktb(restante)
                 if restante_limpo:
-                    desc_partes.append(restante_limpo)
+                    desc_partes.append(restante_limpo.strip())
             else:
                 # Se a linha do código não tiver descrição, procurar nas linhas anteriores
                 k = i - 1
@@ -7122,7 +7126,7 @@ def extrair_dados_pdf(pdf_bytes):
                         continue
                     if padrao_item.match(prev) or prev in {"Quantity", "Description"} or prev.endswith(":"):
                         break
-                    desc_partes.insert(0, prev)
+                    desc_partes.insert(0, prev.strip())
                     k -= 1
                     break
 
@@ -7162,10 +7166,10 @@ def extrair_dados_pdf(pdf_bytes):
                 if prox:
                     prox_limpo = limpar_ktb(prox)
                     if prox_limpo:
-                        desc_partes.append(prox_limpo)
+                        desc_partes.append(prox_limpo.strip())
                 j += 1
 
-            desc = limpar_ktb(" ".join(desc_partes).strip())
+            desc = limpar_ktb("\n".join(desc_partes).strip())
             item_index = len(itens)
             item = {"codigo": codigo, "descricao": desc}
             if item_index < len(ktb_codes):
