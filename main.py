@@ -1242,6 +1242,19 @@ def processar_criacao_cotacoes(contexto: dict, forcar: bool = False) -> bool:
         )
 
         if rfq_id:
+            if not enviar_emails:
+                pdf_existente = obter_pdf_da_db(
+                    rfq_id,
+                    "pedido",
+                    processo_id=processo_id,
+                )
+                if not pdf_existente:
+                    gerar_e_armazenar_pdf(
+                        rfq_id,
+                        fornecedor_id,
+                        data_cotacao,
+                        artigos_fornecedor,
+                    )
             status_info = email_status or {}
             fornecedor_info = fornecedores_info[fornecedor_id]
             status_info.setdefault("fornecedor", fornecedor_info[1])
