@@ -4359,31 +4359,39 @@ class InquiryPDF(FPDF):
         vat_used = False
         for i, col in enumerate(bank_cols):
             x = 15 + i * col_w
-            self.set_xy(x, start_y)
             bank_name = col.get("Bank", "")
             iban = col.get("IBAN", "")
             extras = {k: v for k, v in col.items() if k not in {"Bank", "IBAN"}}
-
-            line_parts = []
-            if bank_name or "Bank" in col:
-                line_parts.append(f"Bank: {bank_name}")
-            if iban or "IBAN" in col:
-                iban_line = f"IBAN: {iban}"
-                if vat_info and not vat_used:
-                    iban_line = f"{iban_line}    {vat_info}"
-                    vat_used = True
-                line_parts.append(iban_line)
+            line_y = start_y
 
             self.set_font("Helvetica", "", 9)
-            self.multi_cell(col_w, 4, "    ".join(part for part in line_parts if part).strip())
+            if bank_name or "Bank" in col:
+                self.set_xy(x, line_y)
+                self.cell(col_w, 4, f"Bank: {bank_name}", ln=1)
+                line_y = self.get_y()
+
+            if iban or "IBAN" in col:
+                iban_line = f"IBAN: {iban}"
+                self.set_xy(x, line_y)
+                if vat_info and not vat_used:
+                    self.cell(col_w * 0.6, 4, iban_line)
+                    self.cell(col_w * 0.4, 4, vat_info, ln=1, align="R")
+                    vat_used = True
+                else:
+                    self.cell(col_w, 4, iban_line, ln=1)
+                line_y = self.get_y()
 
             for label, value in extras.items():
+                self.set_xy(x, line_y)
                 self.set_font("Helvetica", "B", 9)
                 self.cell(col_w, 4, label, ln=1)
                 self.set_font("Helvetica", "", 9)
+                line_y = self.get_y()
+                self.set_xy(x, line_y)
                 self.multi_cell(col_w, 4, value)
+                line_y = self.get_y()
 
-            max_y = max(max_y, self.get_y())
+            max_y = max(max_y, line_y)
         # Última coluna com info legal
         legal_x = 15 + len(bank_cols) * col_w
         self.set_xy(legal_x, start_y)
@@ -4803,7 +4811,6 @@ class ClientQuotationPDF(InquiryPDF):
             base["lines"] = self.cfg.get(
                 "conditions",
                 [
-                    "Proposal validity: 30 days",
                     "Prices do not include VAT",
                     "Payment terms: To be agreed",
                 ],
@@ -4858,7 +4865,7 @@ class ClientQuotationPDF(InquiryPDF):
 
     def _quote_meta_lines(self):
         lines = []
-        for label in ("Quote #", "Your Ref", "Quote Date", "Due Date"):
+        for label in ("Quote #", "Your Ref", "Quote Date", "Valid Until"):
             val = self.quote_metadata.get(label) or "—"
             lines.append((label, val))
         return lines
@@ -5238,7 +5245,7 @@ class ClientQuotationPDF(InquiryPDF):
             "Quote #": quote_number or "—",
             "Your Ref": your_ref or "—",
             "Quote Date": quote_date or "—",
-            "Due Date": due_date or "—",
+            "Valid Until": due_date or "—",
         }
 
         self.add_page()
@@ -5613,7 +5620,6 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
             conds = config.get("conditions")
             terms_block = config.get("terms", {})
             term_lines = terms_block.get("lines") or conds or [
-                "Proposal validity: 30 days",
                 "Prices do not include VAT",
                 "Payment terms: To be agreed",
             ]
