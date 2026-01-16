@@ -5623,15 +5623,17 @@ def gerar_pdf_cliente(rfq_id, resposta_ids: Iterable[int] | None = None):
             LEFT JOIN unidade u ON a.unidade_id = u.id
         """
 
+        preco_filter = "COALESCE(rf.preco_venda_desconto, rf.preco_venda, 0) > 0"
+
         if resposta_ids_set:
             placeholders = ",".join(["?"] * len(resposta_ids_set))
             c.execute(
-                f"{base_query} WHERE rf.id IN ({placeholders}) ORDER BY ordem, rf.id",
+                f"{base_query} WHERE rf.id IN ({placeholders}) AND {preco_filter} ORDER BY ordem, rf.id",
                 tuple(resposta_ids_set),
             )
         else:
             c.execute(
-                f"{base_query} WHERE rf.rfq_id = ? ORDER BY ordem, rf.id",
+                f"{base_query} WHERE rf.rfq_id = ? AND {preco_filter} ORDER BY ordem, rf.id",
                 (rfq_id,),
             )
 
@@ -6706,12 +6708,10 @@ def responder_cotacao_dialog(cotacao):
                 cancelar = st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True)
 
         if submeter:
-            respostas_validas = [r for r in respostas if r[1] > 0]
-
-            if respostas_validas:
+            if respostas:
                 sucesso, info_envio = guardar_respostas(
                     cotacao['id'],
-                    respostas_validas,
+                    respostas,
                     custo_envio,
                     custo_embalagem,
                     observacoes,
@@ -6731,7 +6731,7 @@ def responder_cotacao_dialog(cotacao):
                     st.success("Resposta guardada com sucesso.")
                     st.rerun()
             else:
-                st.error("Por favor, preencha pelo menos um preço")
+                st.error("Por favor, indique pelo menos um artigo.")
 
         if cancelar:
             st.rerun()
@@ -6809,6 +6809,7 @@ def criar_cotacao_cliente_dialog(
         st.markdown('<div class="cliente-cotacao-form">', unsafe_allow_html=True)
 
         selecao_respostas: dict[int, bool] = {}
+        precos_respostas: dict[int, float] = {}
         for resposta in respostas:
             descricao_completa = resposta.get("descricao") or resposta.get("descricao_original") or "Artigo"
             descricao = limitar_descricao_artigo(descricao_completa)
@@ -6820,6 +6821,8 @@ def criar_cotacao_cliente_dialog(
                 or resposta.get("preco_venda")
                 or 0
             )
+            preco_valor = float(preco or 0)
+            precos_respostas[resposta["id"]] = preco_valor
             moeda = resposta.get("moeda") or "EUR"
             validade = resposta.get("validade_preco") or ""
             fornecedor_valor = resposta.get("fornecedor_nome")
@@ -6853,16 +6856,19 @@ def criar_cotacao_cliente_dialog(
                 help_linhas.append(f"Prazo de entrega: {prazo} semana(s)")
             if validade_fmt:
                 help_linhas.append(f"Validade: {validade_fmt}")
+            if preco_valor <= 0:
+                help_linhas.append("Preço a 0. Este artigo não será incluído na cotação do cliente.")
             help_text = "\n".join([linha for linha in help_linhas if linha]) or None
 
-            incluir_default = bool((preco and preco > 0) or ((resposta.get("custo") or 0) > 0))
+            incluir_default = bool(preco_valor > 0 or ((resposta.get("custo") or 0) > 0))
             if respostas_destacadas_ids:
                 incluir_default = resposta['id'] in respostas_destacadas_ids
             selecao_respostas[resposta['id']] = st.checkbox(
                 legenda,
-                value=incluir_default,
+                value=incluir_default if preco_valor > 0 else False,
                 key=f"cliente_sel_{rfq_id}_{resposta['id']}",
                 help=help_text,
+                disabled=preco_valor <= 0,
             )
 
         st.markdown('</div>', unsafe_allow_html=True)
@@ -6906,7 +6912,11 @@ def criar_cotacao_cliente_dialog(
     if not submitted:
         return
 
-    selecionados = [rid for rid, ativo in selecao_respostas.items() if ativo]
+    selecionados = [
+        rid
+        for rid, ativo in selecao_respostas.items()
+        if ativo and precos_respostas.get(rid, 0) > 0
+    ]
     if not selecionados:
         st.error("Selecione pelo menos um artigo para gerar a cotação do cliente.")
         return
