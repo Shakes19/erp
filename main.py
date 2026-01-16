@@ -54,7 +54,6 @@ from services.pdf_service import (
     converter_msg_para_pdf,
     processar_upload_pdf,
 )
-from services.email_archive_service import renderizar_pagina_importacao
 from services.email_service import (
     clear_email_cache,
     get_system_email_config,
@@ -5969,12 +5968,6 @@ def reset_pdf_management_state() -> None:
     _clear_session_state_prefixes(("tipo_pdf_gest_", "upload_pdf_gest_"))
 
 
-def reset_importacao_emails_state() -> None:
-    """Limpa estado temporário utilizado na importação de emails."""
-
-    _clear_session_state_keys(("email_eml_uploader",))
-
-
 def reset_artigos_state() -> None:
     """Reinicia filtros e pesquisas na área de artigos."""
 
@@ -6193,7 +6186,6 @@ MENU_RESET_HANDLERS: dict[str, Callable[[], None]] = {
     "📩 Process Center": reset_process_center_state,
     "📊 Relatórios": lambda: None,
     "📄 PDFs": reset_pdf_management_state,
-    "📥 Arquivar Emails": reset_importacao_emails_state,
     "📦 Artigos": reset_artigos_state,
     "👤 Perfil": reset_perfil_state,
     "⚙️ Configurações": reset_configuracoes_state,
@@ -7600,7 +7592,6 @@ with st.sidebar:
         "📩 Process Center",
         "📊 Relatórios",
         "📄 PDFs",
-        "📥 Arquivar Emails",
         "📦 Artigos",
         "👤 Perfil",
     ]
@@ -10207,9 +10198,6 @@ elif menu_option == "📄 PDFs":
                     st.info("Apenas administradores podem atualizar o PDF.")
     else:
         st.info("Nenhum processo disponível")
-
-elif menu_option == "📥 Arquivar Emails":
-    renderizar_pagina_importacao()
 
 elif menu_option == "📦 Artigos":
     st.title("📦 Gestão de Artigos")
