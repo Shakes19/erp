@@ -229,10 +229,13 @@ def processar_upload_pdf(uploaded_file):
         nome = item.name
         conteudo = item.getvalue()
         lower_nome = nome.lower()
-        if lower_nome.endswith(".eml"):
+        mime_type = (getattr(item, "type", "") or "").lower()
+        is_eml = lower_nome.endswith(".eml") or mime_type == "message/rfc822"
+        is_msg = lower_nome.endswith(".msg") or mime_type == "application/vnd.ms-outlook"
+        if is_eml:
             nome = os.path.splitext(nome)[0] + ".pdf"
             conteudo = converter_eml_para_pdf(conteudo)
-        elif lower_nome.endswith(".msg"):
+        elif is_msg:
             nome = os.path.splitext(nome)[0] + ".pdf"
             conteudo = converter_msg_para_pdf(conteudo)
         processed.append((nome, conteudo))
