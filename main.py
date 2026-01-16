@@ -6966,27 +6966,38 @@ def extrair_dados_pdf(pdf_bytes):
     cliente = limpar_final_destination(cliente)
     nome = limpar_final_destination(nome)
 
+    marcadores_rodape = (
+        "geschäftsführer:",
+        "de2143879",
+        "ktb import-export",
+        "eoricobadeff",
+        "commerzbank",
+        "deutsche bank",
+        "ust.id-nr",
+        "vat-no",
+        "santanderbank",
+        "hypovereinsbank",
+        "aeo de aeof",
+        "amtsgericht hamburg",
+        "hrb18348",
+        "hra74400",
+        "iban",
+        "swift / bic",
+        "bank swift",
+        "pers.haft.ges",
+        "beteiligungsges",
+        "sitz hamburg",
+    )
+
+    def linha_rodape_ktb(texto_linha: str) -> bool:
+        if not texto_linha:
+            return False
+        texto_min = texto_linha.lower()
+        return any(marcador in texto_min for marcador in marcadores_rodape)
+
     def limpar_rodape_ktb(texto_desc: str) -> str:
         if not texto_desc:
             return ""
-        marcadores_rodape = (
-            "geschäftsführer:",
-            "de2143879",
-            "ktb import-export",
-            "eoricobadeff",
-            "commerzbank",
-            "deutsche bank",
-            "ust.id-nr",
-            "vat-no",
-            "santanderbank",
-            "hypovereinsbank",
-            "aeo de aeof",
-            "amtsgericht hamburg",
-            "hrb18348",
-            "hra74400",
-            "iban",
-            "swift / bic",
-        )
         texto_min = texto_desc.lower()
         for marcador in marcadores_rodape:
             idx = texto_min.find(marcador)
@@ -7120,6 +7131,9 @@ def extrair_dados_pdf(pdf_bytes):
                     if not prev:
                         k -= 1
                         continue
+                    if linha_rodape_ktb(prev):
+                        k -= 1
+                        continue
                     if padrao_item.match(prev) or prev in {"Quantity", "Description"} or prev.endswith(":"):
                         break
                     desc_partes.insert(0, prev)
@@ -7130,6 +7144,9 @@ def extrair_dados_pdf(pdf_bytes):
             while j < len(linhas_pdf):
                 prox = linhas_pdf[j].strip()
                 if not prox:
+                    j += 1
+                    continue
+                if linha_rodape_ktb(prox):
                     j += 1
                     continue
                 if padrao_item.match(prox) or prox in {"Quantity", "Description"} or prox.endswith(":"):
