@@ -7,6 +7,7 @@ from html.parser import HTMLParser
 
 import streamlit as st
 from fpdf import FPDF
+from PIL import Image
 
 from db import fetch_one
 import extract_msg
@@ -36,9 +37,14 @@ class _HtmlBodyParser(HTMLParser):
         super().__init__()
         self.parts: list[str] = []
         self.image_cids: list[str] = []
+        self._skip_depth = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag.lower() == "img":
+        tag_name = tag.lower()
+        if tag_name in {"style", "script", "head"}:
+            self._skip_depth += 1
+            return
+        if tag_name == "img":
             attrs_map = dict(attrs)
             src = attrs_map.get("src") or ""
             if src.lower().startswith("cid:"):
@@ -46,7 +52,13 @@ class _HtmlBodyParser(HTMLParser):
                 if cid:
                     self.image_cids.append(cid)
 
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in {"style", "script", "head"} and self._skip_depth:
+            self._skip_depth -= 1
+
     def handle_data(self, data: str) -> None:
+        if self._skip_depth:
+            return
         if data:
             self.parts.append(data)
 
@@ -93,8 +105,6 @@ def _extract_email_body_and_images(message) -> tuple[str, list[tuple[str, bytes]
                 inline_images.append(image)
     if not body:
         body = "\n".join(text_parts).strip()
-        if not body and html_parts:
-            body = " ".join(html_parts).strip()
     return body, inline_images
 
 
@@ -102,6 +112,7 @@ def _append_inline_images(pdf: FPDF, inline_images: list[tuple[str, bytes]]) -> 
     if not inline_images:
         return
     max_width = pdf.w - pdf.l_margin - pdf.r_margin
+    max_height = pdf.h - pdf.t_margin - pdf.b_margin
     temp_files: list[str] = []
     try:
         for content_type, payload in inline_images:
@@ -114,7 +125,16 @@ def _append_inline_images(pdf: FPDF, inline_images: list[tuple[str, bytes]]) -> 
             temp_files.append(tmp_path)
             try:
                 pdf.ln(4)
-                pdf.image(tmp_path, w=max_width)
+                with Image.open(tmp_path) as img:
+                    width_px, height_px = img.size
+                if width_px <= 0 or height_px <= 0:
+                    continue
+                scale = min(max_width / width_px, max_height / height_px)
+                width_mm = width_px * scale
+                height_mm = height_px * scale
+                if pdf.get_y() + height_mm > pdf.h - pdf.b_margin:
+                    pdf.add_page()
+                pdf.image(tmp_path, w=width_mm, h=height_mm)
                 pdf.ln(4)
             except Exception:
                 continue
@@ -124,6 +144,7 @@ def _append_inline_images(pdf: FPDF, inline_images: list[tuple[str, bytes]]) -> 
                 os.remove(path)
             except OSError:
                 pass
+
 
 @st.cache_data(show_spinner=False)
 def load_pdf_config(tipo):
