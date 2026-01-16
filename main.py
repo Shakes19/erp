@@ -6966,9 +6966,38 @@ def extrair_dados_pdf(pdf_bytes):
     cliente = limpar_final_destination(cliente)
     nome = limpar_final_destination(nome)
 
-    def limpar_ktb(texto_desc):
+    def limpar_rodape_ktb(texto_desc: str) -> str:
         if not texto_desc:
             return ""
+        marcadores_rodape = (
+            "geschäftsführer:",
+            "de2143879",
+            "ktb import-export",
+            "eoricobadeff",
+            "commerzbank",
+            "deutsche bank",
+            "ust.id-nr",
+            "vat-no",
+            "santanderbank",
+            "hypovereinsbank",
+            "aeo de aeof",
+            "amtsgericht hamburg",
+            "hrb18348",
+            "hra74400",
+            "iban",
+            "swift / bic",
+        )
+        texto_min = texto_desc.lower()
+        for marcador in marcadores_rodape:
+            idx = texto_min.find(marcador)
+            if idx != -1:
+                return texto_desc[:idx].strip()
+        return texto_desc
+
+    def limpar_ktb(texto_desc: str) -> str:
+        if not texto_desc:
+            return ""
+        texto_desc = limpar_rodape_ktb(texto_desc)
         idx = texto_desc.lower().find("ktb-code")
         if idx != -1:
             return texto_desc[:idx].strip()
