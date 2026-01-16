@@ -1459,6 +1459,18 @@ def criar_base_dados_completa():
     for tabela_legada in ("cliente_final", "moeda", "pais", "solicitante"):
         c.execute(f"DROP TABLE IF EXISTS {tabela_legada}")
 
+    # Tabela para documentos arquivados (emails convertidos em PDF)
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS documentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename_original TEXT,
+            assunto TEXT,
+            pdf_blob BLOB
+        )
+        """
+    )
+
     # Criar índices para melhor performance
     indices = [
         "CREATE INDEX IF NOT EXISTS idx_rfq_fornecedor ON rfq(fornecedor_id)",
@@ -1583,5 +1595,4 @@ def criar_processo(
         return processo_id, numero
     finally:
         session.close()
-
 
