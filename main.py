@@ -6966,34 +6966,49 @@ def extrair_dados_pdf(pdf_bytes):
     cliente = limpar_final_destination(cliente)
     nome = limpar_final_destination(nome)
 
+    marcadores_rodape_ktb = (
+        "pers.haft.ges.",
+        "beteiligungsges.",
+        "geschäftsführer:",
+        "de2143879",
+        "ktb import-export",
+        "eoricobadeff",
+        "commerzbank",
+        "deutsche bank",
+        "ust.id-nr",
+        "vat-no",
+        "santanderbank",
+        "hypovereinsbank",
+        "aeo de aeof",
+        "amtsgericht hamburg",
+        "hrb18348",
+        "hra74400",
+        "iban",
+        "swift / bic",
+        "sitz hamburg",
+        "bank swift",
+    )
+
+    def contem_rodape_ktb(texto_desc: str) -> bool:
+        if not texto_desc:
+            return False
+        texto_min = texto_desc.lower()
+        return any(marcador in texto_min for marcador in marcadores_rodape_ktb)
+
     def limpar_rodape_ktb(texto_desc: str) -> str:
         if not texto_desc:
             return ""
-        marcadores_rodape = (
-            "pers.haft.ges.",
-            "beteiligungsges.",
-            "geschäftsführer:",
-            "de2143879",
-            "ktb import-export",
-            "eoricobadeff",
-            "commerzbank",
-            "deutsche bank",
-            "ust.id-nr",
-            "vat-no",
-            "santanderbank",
-            "hypovereinsbank",
-            "aeo de aeof",
-            "amtsgericht hamburg",
-            "hrb18348",
-            "hra74400",
-            "iban",
-            "swift / bic",
-        )
         texto_min = texto_desc.lower()
-        for marcador in marcadores_rodape:
-            idx = texto_min.find(marcador)
-            if idx != -1:
-                return texto_desc[:idx].strip()
+        indices = [
+            texto_min.find(marcador)
+            for marcador in marcadores_rodape_ktb
+            if marcador in texto_min
+        ]
+        if indices:
+            idx = min(indices)
+            if idx <= 0:
+                return ""
+            return texto_desc[:idx].strip()
         return texto_desc
 
     def limpar_ktb(texto_desc: str) -> str:
@@ -7054,6 +7069,8 @@ def extrair_dados_pdf(pdf_bytes):
         for linha in reversed(linhas_antes):
             linha = linha.strip()
             if not linha or linha.lower() in {"quantity %", "unit", "piece", "quantity"}:
+                continue
+            if contem_rodape_ktb(linha):
                 continue
             if linha.isdigit() and len(linha) <= 3:
                 continue
@@ -7124,6 +7141,9 @@ def extrair_dados_pdf(pdf_bytes):
                     if not prev:
                         k -= 1
                         continue
+                    if contem_rodape_ktb(prev):
+                        k -= 1
+                        continue
                     if padrao_item.match(prev) or prev in {"Quantity", "Description"} or prev.endswith(":"):
                         break
                     desc_partes.insert(0, prev.strip())
@@ -7143,6 +7163,8 @@ def extrair_dados_pdf(pdf_bytes):
                 if prox.lower() in {"piece", "quantity", "description", "unit"}:
                     j += 1
                     continue
+                if contem_rodape_ktb(prox):
+                    break
                 if "ktb-code" in prox.lower():
                     break
                 match_piece = padrao_piece_qtd.search(prox)
