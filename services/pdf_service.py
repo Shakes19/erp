@@ -3,7 +3,6 @@ import os
 import tempfile
 from email import policy
 from email.parser import BytesParser
-from html.parser import HTMLParser
 
 import streamlit as st
 from fpdf import FPDF
@@ -22,110 +21,13 @@ def ensure_latin1(value: str | int | float | None) -> str:
 
     text = text.replace("€", "\x80")
 
-    try:
-        return text.encode("latin-1", errors="strict").decode("latin-1")
-    except UnicodeEncodeError:
-        # ``fpdf`` só aceita caracteres latin-1. Convertemos caracteres
-        # CP1252 (como travessões) para o intervalo latin-1, substituindo
-        # o que ainda for incompatível.
-        return text.encode("cp1252", errors="replace").decode("latin-1")
+    for encoding in ("latin-1", "cp1252"):
+        try:
+            return text.encode(encoding, errors="strict").decode(encoding)
+        except UnicodeEncodeError:
+            continue
 
-
-class _HtmlBodyParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.parts: list[str] = []
-        self.image_cids: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag.lower() == "img":
-            attrs_map = dict(attrs)
-            src = attrs_map.get("src") or ""
-            if src.lower().startswith("cid:"):
-                cid = src[4:].strip().strip("<>").lower()
-                if cid:
-                    self.image_cids.append(cid)
-
-    def handle_data(self, data: str) -> None:
-        if data:
-            self.parts.append(data)
-
-    def get_text(self) -> str:
-        return " ".join(part.strip() for part in self.parts if part.strip())
-
-
-def _extract_email_body_and_images(message) -> tuple[str, list[tuple[str, bytes]]]:
-    text_parts: list[str] = []
-    html_parts: list[str] = []
-    cid_to_image: dict[str, tuple[str, bytes]] = {}
-
-    if message.is_multipart():
-        for part in message.walk():
-            content_disposition = part.get_content_disposition()
-            content_type = part.get_content_type()
-            if content_type == "text/plain" and not content_disposition:
-                text_parts.append(part.get_content())
-                continue
-            if content_type == "text/html" and not content_disposition:
-                html_parts.append(part.get_content())
-                continue
-            if content_type.startswith("image/"):
-                cid = (part.get("Content-ID") or "").strip().strip("<>").lower()
-                if not cid:
-                    cid = (part.get("Content-Location") or "").strip().lower()
-                if cid:
-                    payload = part.get_content()
-                    if isinstance(payload, str):
-                        payload = payload.encode()
-                    cid_to_image[cid] = (content_type, payload)
-    else:
-        text_parts.append(message.get_content())
-
-    inline_images: list[tuple[str, bytes]] = []
-    body = ""
-    if html_parts:
-        parser = _HtmlBodyParser()
-        parser.feed("\n".join(html_parts))
-        body = parser.get_text()
-        for cid in parser.image_cids:
-            image = cid_to_image.get(cid)
-            if image:
-                inline_images.append(image)
-    if not body:
-        body = "\n".join(text_parts).strip()
-        if not body and html_parts:
-            body = " ".join(html_parts).strip()
-    return body, inline_images
-
-
-def _append_inline_images(pdf: FPDF, inline_images: list[tuple[str, bytes]]) -> None:
-    if not inline_images:
-        return
-    max_width = pdf.w - pdf.l_margin - pdf.r_margin
-    temp_files: list[str] = []
-    try:
-        for content_type, payload in inline_images:
-            suffix = ""
-            if "/" in content_type:
-                suffix = f".{content_type.split('/', 1)[1]}"
-            with tempfile.NamedTemporaryFile(suffix=suffix or ".img", delete=False) as tmp:
-                tmp.write(payload)
-                tmp_path = tmp.name
-            temp_files.append(tmp_path)
-            try:
-                pdf.ln(4)
-                pdf.image(tmp_path, w=max_width)
-                pdf.ln(4)
-            except Exception:
-                continue
-    finally:
-        for path in temp_files:
-            try:
-                os.remove(path)
-            except OSError:
-                pass
-
-
+    return text.encode("latin-1", errors="replace").decode("latin-1")
 @st.cache_data(show_spinner=False)
 def load_pdf_config(tipo):
     """Load PDF layout configuration from ``pdf_layout.json``."""
@@ -259,9 +161,14 @@ def converter_eml_para_pdf(eml_bytes: bytes) -> bytes:
     for line in header_lines:
         pdf.multi_cell(0, 10, ensure_latin1(line))
 
-    body, inline_images = _extract_email_body_and_images(message)
+    body = ""
+    if message.is_multipart():
+        for part in message.walk():
+            if part.get_content_type() == "text/plain" and not part.get_content_disposition():
+                body += part.get_content()
+    else:
+        body = message.get_content()
     pdf.multi_cell(0, 10, ensure_latin1(body.strip()))
-    _append_inline_images(pdf, inline_images)
     # ``fpdf`` produz saída em texto Latin-1. Alguns emails podem conter
     # caracteres fora desse intervalo (por exemplo, travessões “–”). Ao
     # codificar com ``errors='replace'`` garantimos que o PDF é gerado sem
