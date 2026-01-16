@@ -10133,8 +10133,8 @@ elif menu_option == "📄 PDFs":
                 else:
                     anexos_sem_associacao.append(entrada)
 
-            tab_view, tab_replace, tab_add = st.tabs(
-                ["Visualizar PDFs", "Substituir PDFs", "Adicionar PDF"]
+            tab_view, tab_add, tab_replace = st.tabs(
+                ["Visualizar PDFs", "Adicionar PDF", "Substituir PDFs"]
             )
 
             with tab_view:
@@ -10201,6 +10201,82 @@ elif menu_option == "📄 PDFs":
                 else:
                     st.info("Resposta Cliente não encontrada")
 
+                correspondencia_entries = _entradas_por_prefixo("correspondencia")
+                if correspondencia_entries:
+                    for idx, entrada in enumerate(correspondencia_entries, 1):
+                        label = "📨 Correspondencia"
+                        if len(correspondencia_entries) > 1:
+                            label += f" #{idx}"
+                        if entrada.get("nome"):
+                            label += f" • {entrada['nome']}"
+                        exibir_pdf(label, entrada.get("dados"))
+                else:
+                    st.info("Correspondencia não encontrada")
+
+            with tab_add:
+                if st.session_state.get("role") == "admin":
+                    opcoes_adicao: list[dict[str, object]] = [
+                        {"label": "Pedido Cliente", "tipo": "anexo_cliente", "rfq_id": None, "multiple": True}
+                    ]
+                    for rfq in rfqs_processo:
+                        fornecedor_nome = rfq.get("fornecedor") or "Fornecedor"
+                        rfq_id = rfq.get("id")
+                        opcoes_adicao.append(
+                            {
+                                "label": f"Pedido Fornecedor - {fornecedor_nome}",
+                                "tipo": f"pedido_fornecedor_rfq_{rfq_id}",
+                                "rfq_id": rfq_id,
+                                "multiple": False,
+                            }
+                        )
+                        opcoes_adicao.append(
+                            {
+                                "label": f"Resposta Fornecedor - {fornecedor_nome}",
+                                "tipo": f"anexo_fornecedor_rfq_{rfq_id}",
+                                "rfq_id": rfq_id,
+                                "multiple": True,
+                            }
+                        )
+                    opcoes_adicao.append(
+                        {"label": "Resposta Cliente", "tipo": "cliente", "rfq_id": None, "multiple": False}
+                    )
+                    opcoes_adicao.append(
+                        {"label": "Correspondencia", "tipo": "correspondencia", "rfq_id": None, "multiple": True}
+                    )
+
+                    label_adicao = st.selectbox(
+                        "Tipo de PDF a adicionar",
+                        [item["label"] for item in opcoes_adicao],
+                        key=f"tipo_pdf_adicionar_{processo_id}",
+                    )
+                    selecionado = next(
+                        item for item in opcoes_adicao if item["label"] == label_adicao
+                    )
+                    novo_pdf = st.file_uploader(
+                        "Adicionar PDF",
+                        type=["pdf", "eml", "msg"],
+                        accept_multiple_files=selecionado["multiple"],
+                        key=f"upload_pdf_adicionar_{processo_id}",
+                    )
+                    if novo_pdf and st.button(
+                        "💾 Guardar PDF", key=f"guardar_pdf_adicionar_{processo_id}"
+                    ):
+                        anexos_novos = processar_upload_pdf(novo_pdf)
+                        if anexos_novos:
+                            sucesso = adicionar_pdf_uploads(
+                                selecionado["rfq_id"],
+                                selecionado["tipo"],
+                                anexos_novos,
+                                processo_id=processo_id,
+                            )
+                            if sucesso:
+                                st.success("PDF adicionado com sucesso!")
+                                obter_processos_para_gestao_pdf.clear()
+                                obter_rfqs_por_processo.clear()
+                                st.rerun()
+                else:
+                    st.info("Apenas administradores podem adicionar PDF.")
+
             with tab_replace:
                 if st.session_state.get("role") == "admin":
                     opcoes_substituicao: list[dict[str, object]] = [
@@ -10259,67 +10335,6 @@ elif menu_option == "📄 PDFs":
                                 st.rerun()
                 else:
                     st.info("Apenas administradores podem atualizar o PDF.")
-
-            with tab_add:
-                if st.session_state.get("role") == "admin":
-                    opcoes_adicao: list[dict[str, object]] = [
-                        {"label": "Pedido Cliente", "tipo": "anexo_cliente", "rfq_id": None, "multiple": True}
-                    ]
-                    for rfq in rfqs_processo:
-                        fornecedor_nome = rfq.get("fornecedor") or "Fornecedor"
-                        rfq_id = rfq.get("id")
-                        opcoes_adicao.append(
-                            {
-                                "label": f"Pedido Fornecedor - {fornecedor_nome}",
-                                "tipo": f"pedido_fornecedor_rfq_{rfq_id}",
-                                "rfq_id": rfq_id,
-                                "multiple": False,
-                            }
-                        )
-                        opcoes_adicao.append(
-                            {
-                                "label": f"Resposta Fornecedor - {fornecedor_nome}",
-                                "tipo": f"anexo_fornecedor_rfq_{rfq_id}",
-                                "rfq_id": rfq_id,
-                                "multiple": True,
-                            }
-                        )
-                    opcoes_adicao.append(
-                        {"label": "Resposta Cliente", "tipo": "cliente", "rfq_id": None, "multiple": False}
-                    )
-
-                    label_adicao = st.selectbox(
-                        "Tipo de PDF a adicionar",
-                        [item["label"] for item in opcoes_adicao],
-                        key=f"tipo_pdf_adicionar_{processo_id}",
-                    )
-                    selecionado = next(
-                        item for item in opcoes_adicao if item["label"] == label_adicao
-                    )
-                    novo_pdf = st.file_uploader(
-                        "Adicionar PDF",
-                        type=["pdf", "eml", "msg"],
-                        accept_multiple_files=selecionado["multiple"],
-                        key=f"upload_pdf_adicionar_{processo_id}",
-                    )
-                    if novo_pdf and st.button(
-                        "💾 Guardar PDF", key=f"guardar_pdf_adicionar_{processo_id}"
-                    ):
-                        anexos_novos = processar_upload_pdf(novo_pdf)
-                        if anexos_novos:
-                            sucesso = adicionar_pdf_uploads(
-                                selecionado["rfq_id"],
-                                selecionado["tipo"],
-                                anexos_novos,
-                                processo_id=processo_id,
-                            )
-                            if sucesso:
-                                st.success("PDF adicionado com sucesso!")
-                                obter_processos_para_gestao_pdf.clear()
-                                obter_rfqs_por_processo.clear()
-                                st.rerun()
-                else:
-                    st.info("Apenas administradores podem adicionar PDF.")
     else:
         st.info("Nenhum processo disponível")
 
