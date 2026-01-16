@@ -21,13 +21,15 @@ def ensure_latin1(value: str | int | float | None) -> str:
 
     text = text.replace("€", "\x80")
 
-    for encoding in ("latin-1", "cp1252"):
-        try:
-            return text.encode(encoding, errors="strict").decode(encoding)
-        except UnicodeEncodeError:
-            continue
+    try:
+        return text.encode("latin-1", errors="strict").decode("latin-1")
+    except UnicodeEncodeError:
+        # ``fpdf`` só aceita caracteres latin-1. Convertemos caracteres
+        # CP1252 (como travessões) para o intervalo latin-1, substituindo
+        # o que ainda for incompatível.
+        return text.encode("cp1252", errors="replace").decode("latin-1")
 
-    return text.encode("latin-1", errors="replace").decode("latin-1")
+
 @st.cache_data(show_spinner=False)
 def load_pdf_config(tipo):
     """Load PDF layout configuration from ``pdf_layout.json``."""
