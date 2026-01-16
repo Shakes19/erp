@@ -4611,6 +4611,8 @@ class InquiryPDF(FPDF):
         if self.get_y() + row_height + sub_height > self.page_break_trigger:
             self.add_page()
             self.table_header()
+            self.set_font(*self._font_tuple(row_font, ("Helvetica", "", 10)))
+            self.set_draw_color(*self._color_tuple(table_cfg.get("border_color"), (223, 227, 232)))
 
         x_start = self.get_x()
         y_start = self.get_y()
