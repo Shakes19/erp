@@ -222,6 +222,25 @@ def test_extrair_dados_pdf_client_table():
     assert dados["itens"][1]["quantidade"] == 3
 
 
+def criar_pdf_descricao_com_numero_isolado_bytes():
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(0, 10, "Our reference: ISO-1")
+    pdf.ln()
+    pdf.cell(0, 10, "Client: Numero Isolado")
+    pdf.ln()
+    pdf.cell(0, 10, "001.00 Widget: 1")
+    return pdf.output(dest="S").encode("latin-1", errors="replace")
+
+
+def test_extrair_dados_pdf_descricao_com_numero_isolado():
+    dados = extrair_dados_pdf(criar_pdf_descricao_com_numero_isolado_bytes())
+    assert dados["descricao"] == "Widget: 1"
+    assert dados["itens"][0]["descricao"] == "Widget: 1"
+    assert dados["quantidade"] == 1
+
+
 def criar_pdf_final_destination_bytes():
     pdf = FPDF()
     pdf.add_page()
